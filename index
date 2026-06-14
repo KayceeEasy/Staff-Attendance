@@ -26,6 +26,7 @@
         #msg { margin-top: 25px; padding: 12px; border-radius: 10px; font-size: 0.9rem; font-weight: 600; display: none; line-height: 1.4; }
     </style>
 </head>
+
 <body>
 
 <div class="card">
