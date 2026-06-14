@@ -26,7 +26,6 @@
         #msg { margin-top: 25px; padding: 12px; border-radius: 10px; font-size: 0.9rem; font-weight: 600; display: none; line-height: 1.4; }
     </style>
 </head>
-
 <body>
 
 <div class="card">
@@ -44,7 +43,7 @@
 </div>
 
 <script>
-    const CLOUD_URL = "https://script.google.com/macros/s/AKfycbyrj257cGtkowcqYvptTd7zchkoBtAnyDGAEpRUqCFxYn5hO21uz9EDZXn__YMTMGAqKA/exec"; // <--- PASTE YOUR URL
+    const CLOUD_URL = "YOUR_APPS_SCRIPT_URL"; // <--- PASTE YOUR URL
     let coords = null;
     let deviceId = localStorage.getItem('office_device_id');
 
