@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Office Attendance Dashboard</title>
+    <title>Office Register</title>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         :root { --primary: #2563eb; --success: #166534; --error: #C00000; --bg: #f8fafc; }
@@ -12,45 +12,37 @@
         .status { padding: 8px 16px; border-radius: 30px; font-size: 0.75rem; font-weight: 700; margin: 15px 0; display: inline-flex; align-items: center; gap: 6px; }
         .waiting { background: #fef9c3; color: #854d0e; }
         .ready { background: #dcfce7; color: #166534; }
-        select { width: 100%; padding: 15px; border-radius: 12px; border: 2px solid #e2e8f0; font-size: 1rem; margin-bottom: 15px; background: white; -webkit-appearance: none; }
+        select { width: 100%; padding: 15px; border-radius: 12px; border: 2px solid #e2e8f0; font-size: 1rem; margin-bottom: 15px; background: white; }
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        button { padding: 18px; border-radius: 12px; border: none; font-weight: 700; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; transition: 0.2s; }
+        button { padding: 18px; border-radius: 12px; border: none; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; }
         .btn-in { background: var(--primary); color: white; }
         .btn-out { background: #0f172a; color: white; }
         button:disabled { opacity: 0.2; }
-        
-        #msg { margin-top: 20px; padding: 12px; border-radius: 10px; font-size: 0.95rem; font-weight: 800; display: none; line-height: 1.4; border: 2px solid transparent; }
+        #msg { margin-top: 20px; padding: 12px; border-radius: 10px; font-size: 0.95rem; font-weight: 800; display: none; border: 2px solid transparent; }
         .msg-late { background: #fee2e2; color: var(--error); border-color: #fca5a5; }
         .msg-welcome { background: #dcfce7; color: var(--success); border-color: #86efac; }
-        .msg-block { background: #f1f5f9; color: #475569; }
-
         .dashboard { background: white; padding: 1.2rem; border-radius: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.03); width: 100%; max-width: 800px; overflow-x: auto; }
-        .dashboard h2 { font-size: 0.85rem; color: #64748b; text-transform: uppercase; margin-bottom: 1rem; letter-spacing: 1px; }
         table { width: 100%; border-collapse: collapse; min-width: 500px; }
-        th { text-align: left; padding: 10px; border-bottom: 2px solid #f1f5f9; font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; }
+        th { text-align: left; padding: 10px; border-bottom: 2px solid #f1f5f9; font-size: 0.7rem; color: #94a3b8; }
         td { padding: 12px 10px; border-bottom: 1px solid #f8fafc; font-size: 0.8rem; }
-        .name-col { font-weight: 700; color: #1e293b; background: #fff; position: sticky; left: 0; }
-        .time-label { font-size: 0.65rem; color: #94a3b8; font-weight: 400; display: block; margin-top: 2px; }
-        .in-time { color: var(--success); font-weight: 600; }
-        .out-missed { color: var(--error); font-weight: 700; font-style: italic; }
+        .in-time { color: var(--success); font-weight: 600; display: block; }
+        .out-time { color: #94a3b8; font-size: 0.65rem; }
+        .out-missed { color: var(--error); font-weight: 700; font-style: italic; font-size: 0.65rem; }
     </style>
 </head>
 <body>
-
     <div class="card">
         <i data-lucide="map-pin" size="32" color="#2563eb"></i>
-        <h1 style="font-size: 1.3rem; margin: 10px 0;">Office Register</h1>
+        <h1>Attendance</h1>
         <div id="loc-status" class="status waiting">Verifying GPS...</div>
-        <select id="staff-name"><option>Loading...</option></select>
+        <select id="staff-name"><option value="">Loading List...</option></select>
         <div class="btn-group">
-            <button id="in-btn" class="btn-in" disabled onclick="submit('IN')"><i data-lucide="log-in"></i> Sign In</button>
-            <button id="out-btn" class="btn-out" disabled onclick="submit('OUT')"><i data-lucide="log-out"></i> Sign Out</button>
+            <button id="in-btn" class="btn-in" disabled onclick="submit('IN')">Sign In</button>
+            <button id="out-btn" class="btn-out" disabled onclick="submit('OUT')">Sign Out</button>
         </div>
         <div id="msg"></div>
     </div>
-
     <div class="dashboard">
-        <h2>Weekly Breakdown (Mon - Fri)</h2>
         <table id="history-table">
             <thead><tr id="table-head"><th>Staff</th></tr></thead>
             <tbody id="table-body"></tbody>
@@ -65,8 +57,7 @@
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playTune(type) {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
         osc.connect(gain); gain.connect(audioCtx.destination);
         if (type === 'HAPPY') {
             osc.frequency.setValueAtTime(523, audioCtx.currentTime); 
@@ -79,17 +70,16 @@
         }
     }
 
-    lucide.createIcons();
-
     window.onload = () => {
         refreshDashboard();
         navigator.geolocation.getCurrentPosition((pos) => {
             coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            const s = document.getElementById('loc-status');
-            s.innerText = "Location Ready"; s.className = "status ready";
+            document.getElementById('loc-status').innerText = "Location Verified";
+            document.getElementById('loc-status').className = "status ready";
             document.getElementById('in-btn').disabled = false;
             document.getElementById('out-btn').disabled = false;
         }, null, { enableHighAccuracy: true });
+        lucide.createIcons();
     };
 
     async function refreshDashboard() {
@@ -97,52 +87,38 @@
             const resp = await fetch(CLOUD_URL);
             const data = await resp.json();
             const select = document.getElementById('staff-name');
-            select.innerHTML = '<option value="">Select your name...</option>';
+            select.innerHTML = '<option value="">Select Name</option>';
             data.names.forEach(n => select.innerHTML += `<option value="${n}">${n}</option>`);
             const saved = localStorage.getItem('saved_name');
             if (saved) select.value = saved;
 
-            document.getElementById('table-head').innerHTML = '<th>Staff</th>' + data.dates.map(d => `<th>${d.split('/')[0]}/${d.split('/')[1]}</th>`).join('');
+            document.getElementById('table-head').innerHTML = '<th>Staff</th>' + data.dates.map(d => `<th>${d.slice(0,5)}</th>`).join('');
             const tbody = document.getElementById('table-body');
             tbody.innerHTML = '';
             data.names.forEach(name => {
-                let row = `<tr><td class="name-col">${name}</td>`;
+                let row = `<tr><td style="font-weight:700">${name}</td>`;
                 data.dates.forEach(date => {
                     const entry = data.grid[name][date];
-                    const outClass = entry.out === "Missed" ? "out-missed" : "time-label";
+                    const outClass = entry.out === "Missed" ? "out-missed" : "out-time";
                     row += `<td><span class="in-time">${entry.in}</span><span class="${outClass}">${entry.out}</span></td>`;
                 });
                 tbody.innerHTML += row + `</tr>`;
             });
-        } catch (e) {}
+        } catch (e) { document.getElementById('staff-name').innerHTML = '<option>Connection Error</option>'; }
     }
 
     async function submit(action) {
         if (audioCtx.state === 'suspended') audioCtx.resume();
         const name = document.getElementById('staff-name').value;
         const msg = document.getElementById('msg');
-        if (!name) return alert("Select name");
-
-        msg.style.display = "block"; msg.innerText = "Verifying...";
-        msg.className = "msg-block";
-
+        if (!name) return alert("Select Name");
+        msg.style.display = "block"; msg.innerText = "Syncing..."; msg.className = "";
         try {
-            const resp = await fetch(CLOUD_URL, {
-                method: "POST",
-                body: JSON.stringify({ name, deviceId, action, lat: coords.lat, lon: coords.lon })
-            });
+            const resp = await fetch(CLOUD_URL, { method: "POST", body: JSON.stringify({ name, deviceId, action, lat: coords.lat, lon: coords.lon }) });
             const result = await resp.text();
             const [status, text] = result.split('|');
-
-            if (status === 'WELCOME') {
-                playTune('HAPPY'); msg.className = "msg-welcome";
-            } else if (status === 'LATE') {
-                playTune('SAD'); msg.className = "msg-late";
-            } else if (status === 'NORMAL') {
-                playTune('HAPPY'); msg.className = "msg-welcome";
-            } else {
-                playTune('SAD'); msg.className = "msg-block";
-            }
+            if (status === 'WELCOME' || status === 'NORMAL') { playTune('HAPPY'); msg.className = "msg-welcome"; } 
+            else { playTune('SAD'); msg.className = "msg-late"; }
             msg.innerText = text || result;
             localStorage.setItem('saved_name', name);
             refreshDashboard();
