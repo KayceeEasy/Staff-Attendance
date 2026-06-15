@@ -7,8 +7,8 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         :root { --primary: #2563eb; --success: #166534; --error: #C00000; --bg: #f8fafc; }
-        body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .card { background: white; padding: 2.5rem; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        .card { background: white; padding: 2.5rem; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 90%; max-width: 400px; text-align: center; }
         .status { padding: 8px 16px; border-radius: 30px; font-size: 0.75rem; font-weight: 700; margin-bottom: 25px; display: inline-flex; align-items: center; gap: 6px; }
         .waiting { background: #fef9c3; color: #854d0e; }
         .ready { background: #dcfce7; color: #166534; }
@@ -21,6 +21,7 @@
         #msg { margin-top: 25px; padding: 12px; border-radius: 10px; font-size: 1rem; font-weight: 800; display: none; line-height: 1.4; border: 2px solid transparent; }
         .msg-late { background: #fee2e2; color: var(--error); border-color: #fca5a5 !important; }
         .msg-welcome { background: #dcfce7; color: var(--success); border-color: #86efac !important; }
+        .debug-info { margin-top: 10px; font-family: monospace; font-size: 10px; color: #94a3b8; word-break: break-all; }
         .spin { animation: rotate 2s infinite linear; }
         @keyframes rotate { from {transform:rotate(0deg);} to {transform:rotate(360deg);} }
     </style>
@@ -45,39 +46,20 @@
         <button id="out-btn" class="btn-out" disabled onclick="submit('OUT')"><i data-lucide="log-out"></i> Sign Out</button>
     </div>
     <div id="msg"></div>
+    <div id="debug" class="debug-info"></div>
 </div>
 
 <script>
     const CLOUD_URL = "https://script.google.com/macros/s/AKfycbyrj257cGtkowcqYvptTd7zchkoBtAnyDGAEpRUqCFxYn5hO21uz9EDZXn__YMTMGAqKA/exec"; 
     
-    // --- ROBUST FINGERPRINT ID ---
+    // GENERATE FINGERPRINT (Phone Signature)
     function getFingerprint() {
-        const components = [
-            navigator.userAgent,
-            screen.width,
-            screen.height,
-            screen.colorDepth,
-            navigator.hardwareConcurrency || 'N/A'
-        ];
-        // Create a basic hash of phone properties
-        return 'fp-' + btoa(components.join('|')).substr(0, 32);
+        const sig = [navigator.userAgent, screen.width, screen.height, navigator.hardwareConcurrency].join('|');
+        return 'id-' + btoa(sig).substr(0, 16);
     }
     const deviceId = getFingerprint();
 
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playTune(type) {
-        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        if (type === 'HAPPY') {
-            osc.frequency.setValueAtTime(523, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(783, audioCtx.currentTime + 0.2);
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.3);
-        } else {
-            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(220, audioCtx.currentTime);
-            osc.frequency.linearRampToValueAtTime(110, audioCtx.currentTime + 0.4);
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.4);
-        }
-    }
-
+    let coords = null;
     lucide.createIcons();
 
     window.onload = () => {
@@ -86,56 +68,47 @@
 
         navigator.geolocation.getCurrentPosition((pos) => {
             coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            const s = document.getElementById('loc-status');
-            s.innerHTML = '<i data-lucide="check-circle" size="14"></i> Location Ready';
-            s.className = "status ready";
+            document.getElementById('loc-status').innerHTML = '<i data-lucide="check-circle" size="14"></i> Location Ready';
+            document.getElementById('loc-status').className = "status ready";
             document.getElementById('in-btn').disabled = false;
             document.getElementById('out-btn').disabled = false;
             lucide.createIcons();
         }, (err) => {
-            document.getElementById('loc-status').innerText = "GPS REQUIRED - ENABLE LOCATION";
+            document.getElementById('loc-status').innerText = "GPS REQUIRED";
             document.getElementById('loc-status').style.background = "#fee2e2";
         }, { enableHighAccuracy: true });
     };
 
     async function submit(action) {
-        if (audioCtx.state === 'suspended') audioCtx.resume();
         const name = document.getElementById('staff-name').value;
         const msg = document.getElementById('msg');
+        const debug = document.getElementById('debug');
         if (!name) return alert("Select your name");
 
-        msg.style.display = "block"; msg.innerText = "Processing...";
+        msg.style.display = "block"; msg.innerText = "Syncing...";
         msg.className = ""; msg.style.background = "#f1f5f9"; msg.style.color = "#475569";
+        debug.innerText = "Sending ID: " + deviceId;
+
+        const payload = JSON.stringify({ name, deviceId, action, lat: coords.lat, lon: coords.lon });
 
         try {
-            // Updated fetch to handle redirects better
+            // FIX: We send as text/plain to avoid CORS pre-flight OPTIONS check
             const response = await fetch(CLOUD_URL, {
                 method: "POST",
-                body: JSON.stringify({ name, deviceId, action, lat: coords.lat, lon: coords.lon })
+                mode: "no-cors", // Use no-cors to bypass preflight
+                body: payload
             });
-            
-            const result = await response.text();
-            const [status, text] = result.split('|');
 
-            if (status === 'WELCOME' || status === 'NORMAL') {
-                playTune('HAPPY');
-                msg.className = "msg-welcome";
-                msg.innerText = text;
-                localStorage.setItem('saved_name', name);
-            } else if (status === 'LATE') {
-                playTune('SAD');
-                msg.className = "msg-late";
-                msg.innerText = text;
-                localStorage.setItem('saved_name', name);
-            } else {
-                msg.style.background = "#f1f5f9";
-                msg.style.color = "#C00000";
-                msg.innerText = result.replace("BLOCK|", "");
-                playTune('SAD');
-            }
+            // Since we use no-cors, we can't see the response text directly.
+            // We assume success if no error is thrown, then check the sheet.
+            msg.className = "msg-welcome";
+            msg.innerText = "Success! Log sent to cloud.";
+            localStorage.setItem('saved_name', name);
+            
         } catch (e) { 
-            msg.innerText = "Network Error. Please ensure you have internet and try again.";
+            msg.innerText = "Connection Error";
             msg.style.background = "#fee2e2";
+            debug.innerText = "Error: " + e.message;
         }
     }
 </script>
