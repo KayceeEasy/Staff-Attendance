@@ -6,88 +6,110 @@
     <title>Office Attendance</title>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; background: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .card { background: white; padding: 2.5rem; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.1); width: 90%; max-width: 420px; text-align: center; }
-        h1 { font-size: 1.75rem; color: #1e293b; margin: 1rem 0; }
-        .status { padding: 8px 16px; border-radius: 30px; font-size: 0.8rem; font-weight: 700; margin-bottom: 25px; display: inline-flex; align-items: center; gap: 6px; }
+        :root { 
+            --primary: #2563eb; 
+            --bg: #f8fafc; 
+            --text: #1e293b; 
+            --success-bg: #dcfce7;
+            --success-text: #166534;
+            --late-bg: #fee2e2;
+            --late-text: #C00000; /* Legible High-Contrast Red */
+        }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .card { background: white; padding: 2.5rem; border-radius: 24px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); width: 90%; max-width: 400px; text-align: center; }
+        h1 { font-size: 1.5rem; margin: 1rem 0; }
+        .status { padding: 8px 16px; border-radius: 30px; font-size: 0.75rem; font-weight: 700; margin-bottom: 25px; display: inline-flex; align-items: center; gap: 6px; }
         .waiting { background: #fef9c3; color: #854d0e; }
         .ready { background: #dcfce7; color: #166534; }
-        
-        select { width: 100%; padding: 16px; border-radius: 12px; border: 2px solid #e2e8f0; font-size: 1rem; margin-bottom: 20px; outline: none; transition: 0.2s; }
-        select:focus { border-color: #2563eb; }
-        
+        select { width: 100%; padding: 16px; border-radius: 12px; border: 2px solid #e2e8f0; font-size: 1rem; margin-bottom: 20px; outline: none; -webkit-appearance: none; background: white; cursor: pointer; }
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         button { padding: 18px; border-radius: 12px; border: none; font-weight: 700; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; transition: 0.2s; }
-        .btn-in { background: #2563eb; color: white; }
+        .btn-in { background: var(--primary); color: white; }
         .btn-out { background: #0f172a; color: white; }
-        button:disabled { opacity: 0.2; transform: scale(0.98); }
-        button:active { transform: scale(0.95); }
-        
-        #msg { margin-top: 25px; padding: 12px; border-radius: 10px; font-size: 0.9rem; font-weight: 600; display: none; line-height: 1.4; }
+        button:disabled { opacity: 0.2; }
+        #msg { margin-top: 25px; padding: 12px; border-radius: 10px; font-size: 1rem; font-weight: 800; display: none; line-height: 1.4; border: 2px solid transparent; }
+        .msg-late { background: var(--late-bg); color: var(--late-text); border-color: #fca5a5 !important; }
+        .msg-welcome { background: var(--success-bg); color: var(--success-text); border-color: #86efac !important; }
+        .spin { animation: rotate 2s infinite linear; }
+        @keyframes rotate { from {transform:rotate(0deg);} to {transform:rotate(360deg);} }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <div id="icon"><i data-lucide="smartphone" size="44" color="#2563eb"></i></div>
-    <h1>Office Register</h1>
-    <div id="loc-status" class="status waiting"><i data-lucide="loader" class="spin"></i> Verifying GPS Location...</div>
+    <i data-lucide="smartphone-charging" size="48" color="#2563eb"></i>
+    <h1>Staff Attendance</h1>
+    <div id="loc-status" class="status waiting"><i data-lucide="loader" class="spin" size="14"></i> Verifying Location...</div>
 
-    <select id="staff-name"><option>Fetching staff list...</option></select>
+    <select id="staff-name"><option value="">Loading names...</option></select>
 
     <div class="btn-group">
-        <button id="in-btn" class="btn-in" disabled onclick="submit('IN')"><i data-lucide="check-circle"></i> Sign In</button>
+        <button id="in-btn" class="btn-in" disabled onclick="submit('IN')"><i data-lucide="user-check"></i> Sign In</button>
         <button id="out-btn" class="btn-out" disabled onclick="submit('OUT')"><i data-lucide="log-out"></i> Sign Out</button>
     </div>
     <div id="msg"></div>
 </div>
 
 <script>
-    const CLOUD_URL = "https://script.google.com/macros/s/AKfycbyrj257cGtkowcqYvptTd7zchkoBtAnyDGAEpRUqCFxYn5hO21uz9EDZXn__YMTMGAqKA/exec"; // <--- PASTE YOUR URL
+    const CLOUD_URL = "https://script.google.com/macros/s/AKfycbyrj257cGtkowcqYvptTd7zchkoBtAnyDGAEpRUqCFxYn5hO21uz9EDZXn__YMTMGAqKA/exec"; 
     let coords = null;
-    let deviceId = localStorage.getItem('office_device_id');
+    let deviceId = localStorage.getItem('office_device_id') || ('dev-' + Math.random().toString(36).substr(2, 9));
+    localStorage.setItem('office_device_id', deviceId);
 
-    // Generate unique phone ID if it doesn't exist
-    if (!deviceId) {
-        deviceId = 'dev-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now();
-        localStorage.setItem('office_device_id', deviceId);
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playTune(type) {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        if (type === 'HAPPY') {
+            osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+            osc.frequency.exponentialRampToValueAtTime(783.99, audioCtx.currentTime + 0.2); // G5
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+        } else {
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(220, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(110, audioCtx.currentTime + 0.4);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+        }
     }
 
     lucide.createIcons();
 
     window.onload = async () => {
-        // 1. Fetch Staff
         try {
             const resp = await fetch(CLOUD_URL);
             const names = await resp.json();
             const select = document.getElementById('staff-name');
-            select.innerHTML = '<option value="">Who is signing in?</option>';
+            select.innerHTML = '<option value="">Select your name...</option>';
             names.forEach(n => select.innerHTML += `<option value="${n}">${n}</option>`);
-        } catch (e) { document.getElementById('staff-name').innerHTML = '<option>Error: Check Connection</option>'; }
+            
+            // AUTO-SELECT NAME FROM MEMORY
+            const rememberedName = localStorage.getItem('saved_staff_name');
+            if (rememberedName) select.value = rememberedName;
 
-        // 2. Get GPS
+        } catch (e) { document.getElementById('staff-name').innerHTML = '<option>Connection Error</option>'; }
+
         navigator.geolocation.getCurrentPosition((pos) => {
             coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
             const s = document.getElementById('loc-status');
-            s.innerHTML = '<i data-lucide="map-pin"></i> GPS Ready: In Range'; 
+            s.innerHTML = '<i data-lucide="check-circle" size="14"></i> Ready at Office'; 
             s.className = "status ready";
             document.getElementById('in-btn').disabled = false;
             document.getElementById('out-btn').disabled = false;
             lucide.createIcons();
         }, (err) => {
-            document.getElementById('loc-status').innerText = "Please enable GPS to sign in";
+            document.getElementById('loc-status').innerText = "GPS REQUIRED";
             document.getElementById('loc-status').style.background = "#fee2e2";
-            document.getElementById('loc-status').style.color = "#991b1b";
         }, { enableHighAccuracy: true });
     };
 
     async function submit(action) {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
         const name = document.getElementById('staff-name').value;
         const msg = document.getElementById('msg');
         if (!name) return alert("Please select your name");
 
-        msg.style.display = "block"; msg.innerText = "Processing...";
-        msg.style.background = "#f1f5f9"; msg.style.color = "#475569";
+        msg.style.display = "block"; msg.innerText = "Verifying...";
+        msg.className = ""; msg.style.background = "#f1f5f9"; msg.style.color = "#475569";
 
         try {
             const resp = await fetch(CLOUD_URL, {
@@ -95,15 +117,25 @@
                 body: JSON.stringify({ name, deviceId, action, lat: coords.lat, lon: coords.lon })
             });
             const result = await resp.text();
-            msg.innerText = result;
-            msg.style.background = result.includes("Success") ? "#dcfce7" : "#fee2e2";
-            msg.style.color = result.includes("Success") ? "#166534" : "#991b1b";
-        } catch (e) { msg.innerText = "Connection failed. Try again."; }
+            const [status, text] = result.split('|');
+
+            if (status === 'WELCOME' || status === 'NORMAL') {
+                localStorage.setItem('saved_staff_name', name); // SAVE TO MEMORY
+                playTune('HAPPY');
+                msg.className = "msg-welcome";
+                msg.innerText = text;
+            } else if (status === 'LATE') {
+                localStorage.setItem('saved_staff_name', name); // SAVE TO MEMORY
+                playTune('SAD');
+                msg.className = "msg-late";
+                msg.innerText = text;
+            } else {
+                msg.style.background = "#fee2e2"; msg.style.color = "#991b1b";
+                msg.innerText = result.replace("Error_BLOCK: ", "");
+                playTune('SAD');
+            }
+        } catch (e) { msg.innerText = "Sync failed. Try again."; }
     }
 </script>
-<style>
-    .spin { animation: rotate 2s infinite linear; }
-    @keyframes rotate { from {transform:rotate(0deg);} to {transform:rotate(360deg);} }
-</style>
 </body>
 </html>
