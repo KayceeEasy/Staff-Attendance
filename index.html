@@ -12,7 +12,7 @@
         .status { padding: 8px 16px; border-radius: 30px; font-size: 0.75rem; font-weight: 700; margin-bottom: 25px; display: inline-flex; align-items: center; gap: 6px; }
         .waiting { background: #fef9c3; color: #854d0e; }
         .ready { background: #dcfce7; color: #166534; }
-        select { width: 100%; padding: 16px; border-radius: 12px; border: 2px solid #e2e8f0; font-size: 1rem; margin-bottom: 20px; background: white; -webkit-appearance: none; cursor: pointer; }
+        select { width: 100%; padding: 16px; border-radius: 12px; border: 2px solid #e2e8f0; font-size: 1rem; margin-bottom: 20px; background: white; cursor: pointer; outline: none; -webkit-appearance: none; }
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         button { padding: 18px; border-radius: 12px; border: none; font-weight: 700; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; transition: 0.2s; }
         .btn-in { background: var(--primary); color: white; }
@@ -34,21 +34,13 @@
 
     <select id="staff-name">
         <option value="">Select your name...</option>
-        <option>Uche</option>
-        <option>Julianah</option>
-        <option>Blessingjoy</option>
-        <option>Esther</option>
-        <option>Paschaline</option>
-        <option>Ikechukwu</option>
-        <option>Ayomide</option>
-        <option>Deborah</option>
-        <option>Elizabeth</option>
-        <option>Valentine</option>
-        <option>Kenneth</option>
-        <option>Martha</option>
+        <option>Uche</option><option>Julianah</option><option>Blessingjoy</option>
+        <option>Esther</option><option>Paschaline</option><option>Ikechukwu</option>
+        <option>Ayomide</option><option>Deborah</option><option>Elizabeth</option>
+        <option>Valentine</option><option>Kenneth</option><option>Martha</option>
     </select>
 
-      <div class="btn-group">
+    <div class="btn-group">
         <button id="in-btn" class="btn-in" disabled onclick="submit('IN')"><i data-lucide="user-check"></i> Sign In</button>
         <button id="out-btn" class="btn-out" disabled onclick="submit('OUT')"><i data-lucide="log-out"></i> Sign Out</button>
     </div>
@@ -58,12 +50,19 @@
 <script>
     const CLOUD_URL = "https://script.google.com/macros/s/AKfycbyrj257cGtkowcqYvptTd7zchkoBtAnyDGAEpRUqCFxYn5hO21uz9EDZXn__YMTMGAqKA/exec"; 
     
-    // GENERATE ROBUST DEVICE ID
-    let deviceId = localStorage.getItem('office_device_id');
-    if (!deviceId) {
-        deviceId = 'id-' + Math.random().toString(36).substr(2, 16);
-        localStorage.setItem('office_device_id', deviceId);
+    // --- ROBUST FINGERPRINT ID ---
+    function getFingerprint() {
+        const components = [
+            navigator.userAgent,
+            screen.width,
+            screen.height,
+            screen.colorDepth,
+            navigator.hardwareConcurrency || 'N/A'
+        ];
+        // Create a basic hash of phone properties
+        return 'fp-' + btoa(components.join('|')).substr(0, 32);
     }
+    const deviceId = getFingerprint();
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playTune(type) {
@@ -73,7 +72,8 @@
             osc.frequency.setValueAtTime(523, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(783, audioCtx.currentTime + 0.2);
             gain.gain.setValueAtTime(0.1, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.3);
         } else {
-            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(220, audioCtx.currentTime); osc.frequency.linearRampToValueAtTime(110, audioCtx.currentTime + 0.4);
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(220, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(110, audioCtx.currentTime + 0.4);
             gain.gain.setValueAtTime(0.1, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.4);
         }
     }
@@ -86,13 +86,14 @@
 
         navigator.geolocation.getCurrentPosition((pos) => {
             coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            document.getElementById('loc-status').innerHTML = '<i data-lucide="check-circle" size="14"></i> Location Verified';
-            document.getElementById('loc-status').className = "status ready";
+            const s = document.getElementById('loc-status');
+            s.innerHTML = '<i data-lucide="check-circle" size="14"></i> Location Ready';
+            s.className = "status ready";
             document.getElementById('in-btn').disabled = false;
             document.getElementById('out-btn').disabled = false;
             lucide.createIcons();
         }, (err) => {
-            document.getElementById('loc-status').innerText = "GPS REQUIRED - ALLOW LOCATION";
+            document.getElementById('loc-status').innerText = "GPS REQUIRED - ENABLE LOCATION";
             document.getElementById('loc-status').style.background = "#fee2e2";
         }, { enableHighAccuracy: true });
     };
@@ -107,31 +108,33 @@
         msg.className = ""; msg.style.background = "#f1f5f9"; msg.style.color = "#475569";
 
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
-
-            const resp = await fetch(CLOUD_URL, {
+            // Updated fetch to handle redirects better
+            const response = await fetch(CLOUD_URL, {
                 method: "POST",
-                mode: "cors", // Explicitly allow CORS
                 body: JSON.stringify({ name, deviceId, action, lat: coords.lat, lon: coords.lon })
             });
             
-            const result = await resp.text();
+            const result = await response.text();
             const [status, text] = result.split('|');
 
             if (status === 'WELCOME' || status === 'NORMAL') {
-                playTune('HAPPY'); msg.className = "msg-welcome"; msg.innerText = text;
+                playTune('HAPPY');
+                msg.className = "msg-welcome";
+                msg.innerText = text;
                 localStorage.setItem('saved_name', name);
             } else if (status === 'LATE') {
-                playTune('SAD'); msg.className = "msg-late"; msg.innerText = text;
+                playTune('SAD');
+                msg.className = "msg-late";
+                msg.innerText = text;
                 localStorage.setItem('saved_name', name);
             } else {
                 msg.style.background = "#f1f5f9";
+                msg.style.color = "#C00000";
                 msg.innerText = result.replace("BLOCK|", "");
                 playTune('SAD');
             }
         } catch (e) { 
-            msg.innerText = "Network Error: Check Internet and avoid Private Browsing."; 
+            msg.innerText = "Network Error. Please ensure you have internet and try again.";
             msg.style.background = "#fee2e2";
         }
     }
