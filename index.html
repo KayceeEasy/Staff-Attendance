@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Office Attendance</title>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
@@ -48,7 +48,7 @@
         <option>Martha</option>
     </select>
 
-    <div class="btn-group">
+      <div class="btn-group">
         <button id="in-btn" class="btn-in" disabled onclick="submit('IN')"><i data-lucide="user-check"></i> Sign In</button>
         <button id="out-btn" class="btn-out" disabled onclick="submit('OUT')"><i data-lucide="log-out"></i> Sign Out</button>
     </div>
@@ -57,22 +57,23 @@
 
 <script>
     const CLOUD_URL = "https://script.google.com/macros/s/AKfycbyrj257cGtkowcqYvptTd7zchkoBtAnyDGAEpRUqCFxYn5hO21uz9EDZXn__YMTMGAqKA/exec"; 
-    let coords = null;
-    let deviceId = localStorage.getItem('office_device_id') || ('dev-' + Math.random().toString(36).substr(2, 9));
-    localStorage.setItem('office_device_id', deviceId);
+    
+    // GENERATE ROBUST DEVICE ID
+    let deviceId = localStorage.getItem('office_device_id');
+    if (!deviceId) {
+        deviceId = 'id-' + Math.random().toString(36).substr(2, 16);
+        localStorage.setItem('office_device_id', deviceId);
+    }
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playTune(type) {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
         osc.connect(gain); gain.connect(audioCtx.destination);
         if (type === 'HAPPY') {
-            osc.frequency.setValueAtTime(523, audioCtx.currentTime); 
-            osc.frequency.exponentialRampToValueAtTime(783, audioCtx.currentTime + 0.2);
+            osc.frequency.setValueAtTime(523, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(783, audioCtx.currentTime + 0.2);
             gain.gain.setValueAtTime(0.1, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.3);
         } else {
-            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(220, audioCtx.currentTime);
-            osc.frequency.linearRampToValueAtTime(110, audioCtx.currentTime + 0.4);
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(220, audioCtx.currentTime); osc.frequency.linearRampToValueAtTime(110, audioCtx.currentTime + 0.4);
             gain.gain.setValueAtTime(0.1, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.4);
         }
     }
@@ -80,20 +81,18 @@
     lucide.createIcons();
 
     window.onload = () => {
-        // Auto-select remembered name
         const savedName = localStorage.getItem('saved_name');
         if (savedName) document.getElementById('staff-name').value = savedName;
 
         navigator.geolocation.getCurrentPosition((pos) => {
             coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            const s = document.getElementById('loc-status');
-            s.innerHTML = '<i data-lucide="check-circle" size="14"></i> Location Ready'; 
-            s.className = "status ready";
+            document.getElementById('loc-status').innerHTML = '<i data-lucide="check-circle" size="14"></i> Location Verified';
+            document.getElementById('loc-status').className = "status ready";
             document.getElementById('in-btn').disabled = false;
             document.getElementById('out-btn').disabled = false;
             lucide.createIcons();
         }, (err) => {
-            document.getElementById('loc-status').innerText = "GPS REQUIRED";
+            document.getElementById('loc-status').innerText = "GPS REQUIRED - ALLOW LOCATION";
             document.getElementById('loc-status').style.background = "#fee2e2";
         }, { enableHighAccuracy: true });
     };
@@ -102,35 +101,39 @@
         if (audioCtx.state === 'suspended') audioCtx.resume();
         const name = document.getElementById('staff-name').value;
         const msg = document.getElementById('msg');
-        if (!name) return alert("Please select your name");
+        if (!name) return alert("Select your name");
 
-        msg.style.display = "block"; msg.innerText = "Syncing...";
+        msg.style.display = "block"; msg.innerText = "Processing...";
         msg.className = ""; msg.style.background = "#f1f5f9"; msg.style.color = "#475569";
 
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
             const resp = await fetch(CLOUD_URL, {
                 method: "POST",
+                mode: "cors", // Explicitly allow CORS
                 body: JSON.stringify({ name, deviceId, action, lat: coords.lat, lon: coords.lon })
             });
+            
             const result = await resp.text();
             const [status, text] = result.split('|');
 
             if (status === 'WELCOME' || status === 'NORMAL') {
-                playTune('HAPPY');
-                msg.className = "msg-welcome";
-                msg.innerText = text;
+                playTune('HAPPY'); msg.className = "msg-welcome"; msg.innerText = text;
                 localStorage.setItem('saved_name', name);
             } else if (status === 'LATE') {
-                playTune('SAD');
-                msg.className = "msg-late";
-                msg.innerText = text;
+                playTune('SAD'); msg.className = "msg-late"; msg.innerText = text;
                 localStorage.setItem('saved_name', name);
             } else {
                 msg.style.background = "#f1f5f9";
                 msg.innerText = result.replace("BLOCK|", "");
                 playTune('SAD');
             }
-        } catch (e) { msg.innerText = "Error: Check Internet."; }
+        } catch (e) { 
+            msg.innerText = "Network Error: Check Internet and avoid Private Browsing."; 
+            msg.style.background = "#fee2e2";
+        }
     }
 </script>
 </body>
