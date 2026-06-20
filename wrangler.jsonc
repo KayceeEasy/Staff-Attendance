@@ -1,0 +1,13 @@
+{
+  "name": "staff-attendance",
+  "compatibility_date": "2026-06-15",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "."
+  },
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}
