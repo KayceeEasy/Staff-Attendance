@@ -60,11 +60,22 @@
     const deviceId = getFingerprint();
 
     let coords = null;
-    lucide.createIcons();
+    try { lucide.createIcons(); } catch (e) { console.warn('Icon library failed to load:', e.message); }
 
     window.onload = () => {
-        const savedName = localStorage.getItem('saved_name');
-        if (savedName) document.getElementById('staff-name').value = savedName;
+        try {
+            const savedName = localStorage.getItem('saved_name');
+            if (savedName) document.getElementById('staff-name').value = savedName;
+        } catch (e) {
+            console.warn('Could not restore saved name:', e.message);
+        }
+
+        if (!navigator.geolocation) {
+            document.getElementById('loc-status').innerText = "Geolocation not supported by this browser";
+            document.getElementById('loc-status').style.background = "#fee2e2";
+            document.getElementById('loc-status').style.color = "#991b1b";
+            return;
+        }
 
         navigator.geolocation.getCurrentPosition((pos) => {
             coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
@@ -72,11 +83,15 @@
             document.getElementById('loc-status').className = "status ready";
             document.getElementById('in-btn').disabled = false;
             document.getElementById('out-btn').disabled = false;
-            lucide.createIcons();
+            try { lucide.createIcons(); } catch (e) { console.warn('Icon refresh failed:', e.message); }
         }, (err) => {
-            document.getElementById('loc-status').innerText = "GPS REQUIRED";
+            const reasons = { 1: 'Permission denied — allow location access in browser settings', 2: 'Position unavailable — GPS signal not found', 3: 'Request timed out — try again in an open area' };
+            const detail = reasons[err.code] || ('Location error (code ' + err.code + ')');
+            document.getElementById('loc-status').innerText = detail;
             document.getElementById('loc-status').style.background = "#fee2e2";
-        }, { enableHighAccuracy: true });
+            document.getElementById('loc-status').style.color = "#991b1b";
+            console.error('Geolocation error:', err.code, err.message);
+        }, { enableHighAccuracy: true, timeout: 15000 });
     };
 
     async function submit(action) {
@@ -85,30 +100,62 @@
         const debug = document.getElementById('debug');
         if (!name) return alert("Select your name");
 
+        if (!coords) {
+            msg.style.display = "block";
+            msg.innerText = "Location not available yet — please wait for GPS or refresh the page.";
+            msg.className = "msg-late";
+            return;
+        }
+
         msg.style.display = "block"; msg.innerText = "Syncing...";
         msg.className = ""; msg.style.background = "#f1f5f9"; msg.style.color = "#475569";
         debug.innerText = "Sending ID: " + deviceId;
 
         const payload = JSON.stringify({ name, deviceId, action, lat: coords.lat, lon: coords.lon });
 
+        // Try CORS-enabled request first for full response visibility,
+        // fall back to no-cors if the server doesn't support it.
+        let usedNoCors = false;
         try {
-            // FIX: We send as text/plain to avoid CORS pre-flight OPTIONS check
-            const response = await fetch(CLOUD_URL, {
-                method: "POST",
-                mode: "no-cors", // Use no-cors to bypass preflight
-                body: payload
-            });
+            let response = await fetch(CLOUD_URL, { method: "POST", body: payload });
 
-            // Since we use no-cors, we can't see the response text directly.
-            // We assume success if no error is thrown, then check the sheet.
+            if (!response.ok) {
+                const errorBody = await response.text().catch(() => '');
+                throw new Error('Server responded with ' + response.status + (errorBody ? ': ' + errorBody : ''));
+            }
+
             msg.className = "msg-welcome";
-            msg.innerText = "Success! Log sent to cloud.";
+            msg.innerText = "Success! Attendance recorded.";
+        } catch (e) {
+            if (e.message && e.message.includes('Server responded with')) {
+                // Definite server error — propagate it
+                msg.innerText = e.message;
+                msg.className = "msg-late";
+                debug.innerText = "Error: " + e.message;
+                return;
+            }
+
+            // Network/CORS failure — retry with no-cors as fallback
+            try {
+                await fetch(CLOUD_URL, { method: "POST", mode: "no-cors", body: payload });
+                usedNoCors = true;
+                // Opaque response: cannot verify server-side success
+                msg.className = "msg-welcome";
+                msg.innerText = "Request sent (unverified — please confirm on the attendance sheet).";
+                debug.innerText = "Note: Response could not be verified due to CORS restrictions.";
+            } catch (retryErr) {
+                msg.innerText = "Connection failed — check your internet and try again.";
+                msg.className = "msg-late";
+                debug.innerText = "Error: " + retryErr.message;
+                console.error('Attendance submission failed:', retryErr);
+                return;
+            }
+        }
+
+        try {
             localStorage.setItem('saved_name', name);
-            
-        } catch (e) { 
-            msg.innerText = "Connection Error";
-            msg.style.background = "#fee2e2";
-            debug.innerText = "Error: " + e.message;
+        } catch (e) {
+            console.warn('Could not save name to local storage:', e.message);
         }
     }
 </script>
