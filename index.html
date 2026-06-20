@@ -5,33 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Office Attendance</title>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        :root { --primary: #2563eb; --success: #166534; --error: #C00000; --bg: #f8fafc; }
-        body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
-        .card { background: white; padding: 2.5rem; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 90%; max-width: 400px; text-align: center; }
-        .status { padding: 8px 16px; border-radius: 30px; font-size: 0.75rem; font-weight: 700; margin-bottom: 25px; display: inline-flex; align-items: center; gap: 6px; }
-        .waiting { background: #fef9c3; color: #854d0e; }
-        .ready { background: #dcfce7; color: #166534; }
-        select { width: 100%; padding: 16px; border-radius: 12px; border: 2px solid #e2e8f0; font-size: 1rem; margin-bottom: 20px; background: white; cursor: pointer; outline: none; -webkit-appearance: none; }
-        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        button { padding: 18px; border-radius: 12px; border: none; font-weight: 700; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; transition: 0.2s; }
-        .btn-in { background: var(--primary); color: white; }
-        .btn-out { background: #0f172a; color: white; }
-        button:disabled { opacity: 0.2; }
-        #msg { margin-top: 25px; padding: 12px; border-radius: 10px; font-size: 1rem; font-weight: 800; display: none; line-height: 1.4; border: 2px solid transparent; }
-        .msg-late { background: #fee2e2; color: var(--error); border-color: #fca5a5 !important; }
-        .msg-welcome { background: #dcfce7; color: var(--success); border-color: #86efac !important; }
-        .debug-info { margin-top: 10px; font-family: monospace; font-size: 10px; color: #94a3b8; word-break: break-all; }
-        .spin { animation: rotate 2s infinite linear; }
-        @keyframes rotate { from {transform:rotate(0deg);} to {transform:rotate(360deg);} }
-    </style>
+    <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
 
 <div class="card">
     <i data-lucide="map-pin" size="48" color="#2563eb"></i>
     <h1 style="font-size: 1.5rem; margin: 1rem 0;">Staff Attendance</h1>
-    <div id="loc-status" class="status waiting"><i data-lucide="loader" class="spin" size="14"></i> Verifying Location...</div>
+    <div id="loc-status" class="status status--waiting"><i data-lucide="loader" class="spin" size="14"></i> Verifying Location...</div>
 
     <select id="staff-name">
         <option value="">Select your name...</option>
@@ -49,68 +30,7 @@
     <div id="debug" class="debug-info"></div>
 </div>
 
-<script>
-    const CLOUD_URL = "https://script.google.com/macros/s/AKfycbyrj257cGtkowcqYvptTd7zchkoBtAnyDGAEpRUqCFxYn5hO21uz9EDZXn__YMTMGAqKA/exec"; 
-    
-    // GENERATE FINGERPRINT (Phone Signature)
-    function getFingerprint() {
-        const sig = [navigator.userAgent, screen.width, screen.height, navigator.hardwareConcurrency].join('|');
-        return 'id-' + btoa(sig).substr(0, 16);
-    }
-    const deviceId = getFingerprint();
-
-    let coords = null;
-    lucide.createIcons();
-
-    window.onload = () => {
-        const savedName = localStorage.getItem('saved_name');
-        if (savedName) document.getElementById('staff-name').value = savedName;
-
-        navigator.geolocation.getCurrentPosition((pos) => {
-            coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            document.getElementById('loc-status').innerHTML = '<i data-lucide="check-circle" size="14"></i> Location Ready';
-            document.getElementById('loc-status').className = "status ready";
-            document.getElementById('in-btn').disabled = false;
-            document.getElementById('out-btn').disabled = false;
-            lucide.createIcons();
-        }, (err) => {
-            document.getElementById('loc-status').innerText = "GPS REQUIRED";
-            document.getElementById('loc-status').style.background = "#fee2e2";
-        }, { enableHighAccuracy: true });
-    };
-
-    async function submit(action) {
-        const name = document.getElementById('staff-name').value;
-        const msg = document.getElementById('msg');
-        const debug = document.getElementById('debug');
-        if (!name) return alert("Select your name");
-
-        msg.style.display = "block"; msg.innerText = "Syncing...";
-        msg.className = ""; msg.style.background = "#f1f5f9"; msg.style.color = "#475569";
-        debug.innerText = "Sending ID: " + deviceId;
-
-        const payload = JSON.stringify({ name, deviceId, action, lat: coords.lat, lon: coords.lon });
-
-        try {
-            // FIX: We send as text/plain to avoid CORS pre-flight OPTIONS check
-            const response = await fetch(CLOUD_URL, {
-                method: "POST",
-                mode: "no-cors", // Use no-cors to bypass preflight
-                body: payload
-            });
-
-            // Since we use no-cors, we can't see the response text directly.
-            // We assume success if no error is thrown, then check the sheet.
-            msg.className = "msg-welcome";
-            msg.innerText = "Success! Log sent to cloud.";
-            localStorage.setItem('saved_name', name);
-            
-        } catch (e) { 
-            msg.innerText = "Connection Error";
-            msg.style.background = "#fee2e2";
-            debug.innerText = "Error: " + e.message;
-        }
-    }
-</script>
+<script src="js/utils.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>
