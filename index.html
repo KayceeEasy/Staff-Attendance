@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Office Attendance</title>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/lucide@0.460.0" integrity="sha384-ieG+IKD0d/ZPXyCBTMVAbqsQdns8QGJR/e26WMw7M4fkaI/rHcS/YIoi+ah9WGge" crossorigin="anonymous"></script>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://unpkg.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src https://script.google.com; img-src 'self' data:;">
     <style>
         :root { --primary: #2563eb; --success: #166534; --error: #C00000; --bg: #f8fafc; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
@@ -21,7 +22,6 @@
         #msg { margin-top: 25px; padding: 12px; border-radius: 10px; font-size: 1rem; font-weight: 800; display: none; line-height: 1.4; border: 2px solid transparent; }
         .msg-late { background: #fee2e2; color: var(--error); border-color: #fca5a5 !important; }
         .msg-welcome { background: #dcfce7; color: var(--success); border-color: #86efac !important; }
-        .debug-info { margin-top: 10px; font-family: monospace; font-size: 10px; color: #94a3b8; word-break: break-all; }
         .spin { animation: rotate 2s infinite linear; }
         @keyframes rotate { from {transform:rotate(0deg);} to {transform:rotate(360deg);} }
     </style>
@@ -46,18 +46,31 @@
         <button id="out-btn" class="btn-out" disabled onclick="submit('OUT')"><i data-lucide="log-out"></i> Sign Out</button>
     </div>
     <div id="msg"></div>
-    <div id="debug" class="debug-info"></div>
+
 </div>
 
 <script>
-    const CLOUD_URL = "https://script.google.com/macros/s/AKfycbyrj257cGtkowcqYvptTd7zchkoBtAnyDGAEpRUqCFxYn5hO21uz9EDZXn__YMTMGAqKA/exec"; 
+    // Backend endpoint — restrict access on the Apps Script side (e.g. allowlisted origins/referrers)
+    const CLOUD_URL = "https://script.google.com/macros/s/AKfycbyrj257cGtkowcqYvptTd7zchkoBtAnyDGAEpRUqCFxYn5hO21uz9EDZXn__YMTMGAqKA/exec";
     
-    // GENERATE FINGERPRINT (Phone Signature)
+    const VALID_STAFF = ['Uche','Julianah','Blessingjoy','Esther','Paschaline','Ikechukwu','Ayomide','Deborah','Elizabeth','Valentine','Kenneth','Martha'];
+
     function getFingerprint() {
-        const sig = [navigator.userAgent, screen.width, screen.height, navigator.hardwareConcurrency].join('|');
-        return 'id-' + btoa(sig).substr(0, 16);
+        const sig = [
+            navigator.userAgent, screen.width, screen.height,
+            navigator.hardwareConcurrency, navigator.language,
+            new Date().getTimezoneOffset(),
+            screen.colorDepth
+        ].join('|');
+        let hash = 0;
+        for (let i = 0; i < sig.length; i++) {
+            hash = ((hash << 5) - hash) + sig.charCodeAt(i);
+            hash |= 0;
+        }
+        return 'fp-' + Math.abs(hash).toString(36);
     }
     const deviceId = getFingerprint();
+    let lastSubmitTime = 0;
 
     let coords = null;
     lucide.createIcons();
@@ -68,26 +81,34 @@
 
         navigator.geolocation.getCurrentPosition((pos) => {
             coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            document.getElementById('loc-status').innerHTML = '<i data-lucide="check-circle" size="14"></i> Location Ready';
-            document.getElementById('loc-status').className = "status ready";
+            const locStatus = document.getElementById('loc-status');
+            locStatus.textContent = '\u2713 Location Ready';
+            locStatus.className = "status ready";
             document.getElementById('in-btn').disabled = false;
             document.getElementById('out-btn').disabled = false;
-            lucide.createIcons();
         }, (err) => {
-            document.getElementById('loc-status').innerText = "GPS REQUIRED";
+            document.getElementById('loc-status').textContent = "GPS REQUIRED";
             document.getElementById('loc-status').style.background = "#fee2e2";
         }, { enableHighAccuracy: true });
     };
 
     async function submit(action) {
+        const now = Date.now();
+        if (now - lastSubmitTime < 10000) return alert('Please wait before submitting again.');
+
         const name = document.getElementById('staff-name').value;
         const msg = document.getElementById('msg');
-        const debug = document.getElementById('debug');
         if (!name) return alert("Select your name");
+        if (!VALID_STAFF.includes(name)) return alert('Invalid staff selection.');
+        if (action !== 'IN' && action !== 'OUT') return;
+        if (!coords || typeof coords.lat !== 'number' || typeof coords.lon !== 'number') return alert('Location not available.');
 
-        msg.style.display = "block"; msg.innerText = "Syncing...";
+        lastSubmitTime = now;
+
+        document.getElementById('in-btn').disabled = true;
+        document.getElementById('out-btn').disabled = true;
+        msg.style.display = "block"; msg.textContent = "Syncing...";
         msg.className = ""; msg.style.background = "#f1f5f9"; msg.style.color = "#475569";
-        debug.innerText = "Sending ID: " + deviceId;
 
         const payload = JSON.stringify({ name, deviceId, action, lat: coords.lat, lon: coords.lon });
 
@@ -102,13 +123,16 @@
             // Since we use no-cors, we can't see the response text directly.
             // We assume success if no error is thrown, then check the sheet.
             msg.className = "msg-welcome";
-            msg.innerText = "Success! Log sent to cloud.";
+            msg.textContent = "Success! Log sent to cloud.";
             localStorage.setItem('saved_name', name);
             
         } catch (e) { 
-            msg.innerText = "Connection Error";
+            msg.textContent = "Connection Error";
             msg.style.background = "#fee2e2";
-            debug.innerText = "Error: " + e.message;
+            msg.style.color = "#991b1b";
+        } finally {
+            document.getElementById('in-btn').disabled = false;
+            document.getElementById('out-btn').disabled = false;
         }
     }
 </script>
