@@ -1,6 +1,6 @@
 {
   "name": "Lifecard Staff Attendance",
-  "short_name": "Lifecard",
+  "short_name": "Lifecard Attendance",
   "description": "Daily attendance tracking for Lifecard staff.",
   "start_url": "/Staff-Attendance/",
   "display": "standalone",

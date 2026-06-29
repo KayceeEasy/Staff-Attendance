@@ -66,14 +66,29 @@ window.onload = async () => {
 };
 
 function requestLocation() {
-    navigator.geolocation.getCurrentPosition((pos) => {
-        coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-        document.getElementById('loc-status').innerText = "Location Verified";
-        document.getElementById('loc-status').className = "status ready";
-    }, (err) => {
-        document.getElementById('loc-status').innerText = "GPS REQUIRED";
-        document.getElementById('loc-status').style.background = "#fee2e2";
-    }, { enableHighAccuracy: true });
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            // Update UI to show success
+            document.getElementById('loc-status').innerText = "Location Verified";
+            document.getElementById('loc-status').className = "status ready";
+        },
+        (err) => {
+            let userMsg = "Location access is required to sign in.";
+            
+            // Check for specific error types
+            if (err.code === 1) {
+                userMsg = "Location access was denied. Please tap the 'Lock' icon in your browser URL bar and enable Location permissions, then refresh the page.";
+            } else if (err.code === 2) {
+                userMsg = "Location service is disabled on your device. Please turn on 'Location' or 'GPS' in settings.";
+            }
+            
+            document.getElementById('loc-status').innerText = "GPS REQUIRED";
+            document.getElementById('loc-status').style.background = "#fee2e2";
+            alert(userMsg);
+        },
+        { enableHighAccuracy: true }
+    );
 }
 
 window.addEventListener('beforeinstallprompt', (e) => {
