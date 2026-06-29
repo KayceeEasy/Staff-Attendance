@@ -78,9 +78,9 @@ function requestLocation() {
             
             // Check for specific error types
             if (err.code === 1) {
-                userMsg = "Location access was denied. Please tap the 'Lock' icon in your browser URL bar and enable Location permissions, then refresh the page.";
+                userMsg = "Location access was denied. Please allow location, then refresh the page.";
             } else if (err.code === 2) {
-                userMsg = "Location service is disabled on your device. Please turn on 'Location' or 'GPS' in settings.";
+                userMsg = "Location service is disabled on your device. Please allow location, then refresh the page.";
             }
             
             document.getElementById('loc-status').innerText = "GPS REQUIRED";
