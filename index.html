@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#2563eb">
     <link rel="apple-touch-icon" href="icon-192.png">
     <base target="_top">
+    <meta name="theme-color" content="#2563eb">
     <script src="https://unpkg.com/lucide@latest"></script>
-    <link rel="stylesheet" href="style.css">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 </head>
 <body>
@@ -33,7 +33,7 @@
 <script src="script.js"></script>
 <script>
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('./sw.js')
+        navigator.serviceWorker.register('/Staff-Attendance/sw.js')
             .catch(err => console.log('SW registration failed: ', err));
     }
 </script>
