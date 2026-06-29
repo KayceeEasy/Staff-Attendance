@@ -1,30 +1,18 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <base target="_top">
     <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        :root { --primary: #2563eb; --success: #166534; --error: #C00000; --bg: #f8fafc; }
-        body { font-family: sans-serif; background: var(--bg); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; -webkit-tap-highlight-color: transparent; }
-        .card { background: white; padding: 2.5rem; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
-        .status { padding: 8px 16px; border-radius: 30px; font-size: 0.75rem; font-weight: 700; margin-bottom: 25px; display: inline-flex; align-items: center; gap: 6px; }
-        .waiting { background: #fef9c3; color: #854d0e; }
-        .ready { background: #dcfce7; color: #166534; }
-        select { width: 100%; padding: 16px; border-radius: 12px; border: 2px solid #e2e8f0; font-size: 1rem; margin-bottom: 20px; background: white; outline: none; -webkit-appearance: none; }
-        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        button { padding: 18px; border-radius: 12px; border: none; font-weight: 700; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; transition: 0.2s; }
-        .btn-in { background: var(--primary); color: white; }
-        .btn-out { background: #0f172a; color: white; }
-        button:disabled { opacity: 0.2; }
-        #msg { margin-top: 25px; padding: 12px; border-radius: 10px; font-size: 1rem; font-weight: 800; display: none; line-height: 1.4; border: 2px solid transparent; }
-        .msg-late { background: #fee2e2; color: var(--error); border-color: #fca5a5 !important; }
-        .msg-welcome { background: #dcfce7; color: var(--success); border-color: #86efac !important; }
-    </style>
+    <link rel="stylesheet" href="style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 </head>
 <body>
 <div class="card">
     <i data-lucide="map-pin" size="48" color="#2563eb"></i>
-    <h1 style="font-size: 1.5rem; margin: 1rem 0;">Staff Attendance</h1>
+    <h1 style="font-size: 1.5rem;">Staff Attendance</h1>
     <div id="loc-status" class="status waiting">Verifying GPS...</div>
     <select id="staff-name">
         <option value="">Select your name...</option>
@@ -38,87 +26,15 @@
         <button id="out-btn" class="btn-out" disabled onclick="submit('OUT')">Sign Out</button>
     </div>
     <div id="msg"></div>
+    <button id="install-btn" style="display:none; background: #eee; color: #333; margin-top: 10px;">
+        Install App
+    </button>
 </div>
-
+<script src="script.js"></script>
 <script>
-    // --- ADVANCED FUZZY IDENTITY ---
-    async function generateIdentity() {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        ctx.textBaseline = "top"; ctx.font = "14px 'Arial'";
-        ctx.fillStyle = "#f60"; ctx.fillRect(125,1,62,20);
-        ctx.fillText('Lifecard-Security-v2', 2, 15);
-        const hw = btoa(canvas.toDataURL()).substr(-16, 16);
-        
-        let salt = localStorage.getItem('attendance_salt');
-        if (!salt) {
-            salt = Math.random().toString(36).substring(2, 10);
-            localStorage.setItem('attendance_salt', salt);
-        }
-        return `ID-${hw}-${salt}`;
-    }
-
-    let deviceId = "";
-    let coords = null;
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-    function playWindowsSound(isConnect) {
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        const now = audioCtx.currentTime;
-        if (isConnect) {
-            playNote(659.25, now, 0.12); // Windows Connect Tone
-            playNote(783.99, now + 0.12, 0.2);
-        } else {
-            playNote(783.99, now, 0.12); // Windows Disconnect Tone
-            playNote(659.25, now + 0.12, 0.12);
-            playNote(523.25, now + 0.24, 0.2);
-        }
-    }
-
-    function playNote(freq, start, duration) {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine'; osc.frequency.setValueAtTime(freq, start);
-        gain.gain.setValueAtTime(0.1, start);
-        gain.gain.exponentialRampToValueAtTime(0.01, start + duration);
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.start(start); osc.stop(start + duration);
-    }
-
-    window.onload = async () => {
-        lucide.createIcons();
-        deviceId = await generateIdentity();
-        const saved = localStorage.getItem('saved_name');
-        if (saved) document.getElementById('staff-name').value = saved;
-
-        navigator.geolocation.getCurrentPosition((pos) => {
-            coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            document.getElementById('loc-status').innerText = "Location Verified";
-            document.getElementById('loc-status').className = "status ready";
-            document.getElementById('in-btn').disabled = false;
-            document.getElementById('out-btn').disabled = false;
-        }, () => {
-            document.getElementById('loc-status').innerText = "GPS REQUIRED";
-            document.getElementById('loc-status').style.background = "#fee2e2";
-        }, { enableHighAccuracy: true });
-    };
-
-    function submit(action) {
-        const name = document.getElementById('staff-name').value;
-        const msg = document.getElementById('msg');
-        if (!name) return alert("Select Name");
-        msg.style.display = "block"; msg.innerText = "Syncing..."; msg.className = "";
-        
-        google.script.run.withSuccessHandler((result) => {
-            const [status, text] = result.split('|');
-            if (status === 'WELCOME' || status === 'NORMAL') {
-                playWindowsSound(true); msg.className = "msg-welcome";
-            } else {
-                playWindowsSound(false); msg.className = "msg-late";
-            }
-            msg.innerText = text || result;
-            localStorage.setItem('saved_name', name);
-        }).processAttendance({ name, deviceId, action, lat: coords.lat, lon: coords.lon });
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js')
+            .catch(err => console.log('SW registration failed: ', err));
     }
 </script>
 </body>

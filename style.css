@@ -1,0 +1,37 @@
+:root { --primary: #2563eb; --success: #166534; --error: #C00000; --bg: #f8fafc; }
+* { box-sizing: border-box; }
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: var(--bg);
+    font-family: sans-serif;
+}
+.card { 
+    background: white; 
+    padding: 2rem; 
+    border-radius: 24px; 
+    box-shadow: 0 10px 25px rgba(0,0,0,0.05); 
+    width: 90%; 
+    max-width: 400px; 
+    max-height: 95vh; 
+    overflow-y: auto; 
+    text-align: center; 
+}
+.status { padding: 8px 16px; border-radius: 30px; font-size: 0.75rem; font-weight: 700; margin-bottom: 25px; display: inline-flex; align-items: center; gap: 6px; }
+.waiting { background: #fef9c3; color: #854d0e; }
+.ready { background: #dcfce7; color: #166534; }
+select { width: 100%; padding: 16px; border-radius: 12px; border: 2px solid #e2e8f0; font-size: 1rem; margin-bottom: 20px; background: white; outline: none; -webkit-appearance: none; }
+.btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+button { padding: 18px; border-radius: 12px; border: none; font-weight: 700; cursor: pointer; transition: 0.2s; }
+.btn-in { background: var(--primary); color: white; }
+.btn-out { background: #0f172a; color: white; }
+button:disabled { opacity: 0.2; }
+#msg { margin-top: 25px; padding: 12px; border-radius: 10px; font-size: 1rem; font-weight: 800; display: none; line-height: 1.4; border: 2px solid transparent; }
+.msg-late { background: #fee2e2; color: var(--error); border-color: #fca5a5 !important; }
+.msg-welcome { background: #dcfce7; color: var(--success); border-color: #86efac !important; }
+#install-btn { width: 100%; padding: 12px; border-radius: 12px; border: 2px solid #e2e8f0; cursor: pointer; background: white; margin-top: 15px; font-weight: bold; }
