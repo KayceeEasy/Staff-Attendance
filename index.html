@@ -26,13 +26,15 @@
         <button id="out-btn" class="btn-out" disabled onclick="submit('OUT')">Sign Out</button>
     </div>
     <div id="msg"></div>
+    <div id="last-action" class="last-action">Last action: none yet</div>
     <div class="log-card">
         <div class="log-head">
             <strong>Recent attendance</strong>
-            <span id="last-synced">Last synced: —</span>
+            <span id="last-synced">Last synced: -</span>
         </div>
         <ul id="log-list"></ul>
     </div>
+    <button id="admin-access-btn" class="admin-btn" type="button">Admin access</button>
     <button id="install-btn" style="display:none; background: #eee; color: #333; margin-top: 10px;">
         Install App
     </button>

@@ -1,4 +1,12 @@
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxw2NO8BwcVYdiHyZfzVFFkY_D8VTaBBuMayNcRWopDFAi0PKwiuOKXZxJXVyPZvEP0-w/exec";
+const MAX_HISTORY_ITEMS = 5;
+const DEVICE_LOCK_KEY = 'attendance_device_lock';
+const DEVICE_RESET_CODE = 'lifecard-reset-2026';
+const OWNERSHIP_MODES = {
+    verify: 'verify-owner',
+    register: 'register-owner',
+    reassign: 'reassign-owner'
+};
 const STORAGE_KEYS = {
     pendingQueue: 'attendance_pending_queue',
     recentLog: 'attendance_recent_log',
@@ -68,10 +76,10 @@ function renderRecentLog() {
         return;
     }
 
-    logList.innerHTML = entries.slice(0, 6).map((entry) => {
+    logList.innerHTML = entries.slice(0, MAX_HISTORY_ITEMS).map((entry) => {
         const statusText = entry.status === 'pending' ? 'Pending sync' : entry.status === 'synced' ? 'Synced' : 'Saved offline';
         const statusClass = entry.status === 'pending' ? 'pending' : entry.status === 'synced' ? 'synced' : 'offline';
-        return `<li><div><strong>${entry.name}</strong><div class="meta">${entry.action} • ${statusText}</div><span class="status-pill ${statusClass}">${statusText}</span></div><div class="meta">${formatTimestamp(entry.timestamp)}</div></li>`;
+        return `<li><div><strong>${entry.name}</strong><div class="meta">${entry.action} - ${statusText}</div><span class="status-pill ${statusClass}">${statusText}</span></div><div class="meta">${formatTimestamp(entry.timestamp)}</div></li>`;
     }).join('');
 }
 
@@ -82,10 +90,108 @@ function updateLastSyncedLabel() {
     label.innerText = lastSynced ? `Last synced: ${lastSynced}` : 'Last synced: none';
 }
 
+function injectBackendScript(url) {
+    const script = document.createElement('script');
+    script.src = url;
+    script.async = true;
+    script.onload = () => script.remove();
+    script.onerror = () => script.remove();
+    document.body.appendChild(script);
+}
+
+function normalizeOwnershipResponse(data) {
+    if (!data) return { allowed: false, message: 'No response from backend.' };
+    if (typeof data === 'string') {
+        const lower = data.toLowerCase();
+        if (lower.includes('denied')) return { allowed: false, message: data };
+        if (lower.includes('allowed')) return { allowed: true, message: data };
+        return { allowed: true, message: data };
+    }
+    if (typeof data === 'object') {
+        return {
+            allowed: data.allowed === true || data.ok === true || data.status === 'allowed',
+            owner: data.owner || data.deviceOwner || data.name || null,
+            message: data.message || data.result || 'Backend response received.'
+        };
+    }
+    return { allowed: false, message: 'Unexpected backend response.' };
+}
+
+function verifyDeviceOwnership(name, callback) {
+    const callbackName = `verifyOwner_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    window[callbackName] = (data) => {
+        const normalized = normalizeOwnershipResponse(data);
+        callback(normalized);
+        delete window[callbackName];
+    };
+
+    const params = new URLSearchParams({
+        callback: callbackName,
+        mode: OWNERSHIP_MODES.verify,
+        deviceId,
+        name: name || ''
+    });
+    injectBackendScript(`${SCRIPT_URL}?${params.toString()}`);
+}
+
+function registerDeviceOwnership(name, callback) {
+    const callbackName = `registerOwner_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    window[callbackName] = (data) => {
+        const normalized = normalizeOwnershipResponse(data);
+        callback(normalized);
+        delete window[callbackName];
+    };
+
+    const params = new URLSearchParams({
+        callback: callbackName,
+        mode: OWNERSHIP_MODES.register,
+        deviceId,
+        name: name || ''
+    });
+    injectBackendScript(`${SCRIPT_URL}?${params.toString()}`);
+}
+
+function reassignDeviceOwnership(newName, resetCode, callback) {
+    const callbackName = `reassignOwner_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    window[callbackName] = (data) => {
+        const normalized = normalizeOwnershipResponse(data);
+        callback(normalized);
+        delete window[callbackName];
+    };
+
+    const params = new URLSearchParams({
+        callback: callbackName,
+        mode: OWNERSHIP_MODES.reassign,
+        deviceId,
+        name: newName || '',
+        resetCode: resetCode || ''
+    });
+    injectBackendScript(`${SCRIPT_URL}?${params.toString()}`);
+}
+
+function updateLastActionLabel() {
+    const label = document.getElementById('last-action');
+    if (!label) return;
+    const lastAction = readStoredJson(STORAGE_KEYS.lastAction, null);
+    if (!lastAction) {
+        label.innerText = 'Last action: none yet';
+        return;
+    }
+    const actionText = lastAction.action === 'IN' ? 'Signed in' : 'Signed out';
+    label.innerText = `Last action: ${lastAction.name} - ${actionText} - ${formatTimestamp(lastAction.timestamp)}`;
+}
+
+function renderAdminInfo() {
+    const ownerEl = document.getElementById('admin-device-owner');
+    const pendingEl = document.getElementById('admin-pending-count');
+    if (ownerEl) ownerEl.innerText = localStorage.getItem(DEVICE_LOCK_KEY) || 'Not set';
+    if (pendingEl) pendingEl.innerText = String(readStoredJson(STORAGE_KEYS.pendingQueue, []).length);
+}
+
 function saveRecentEntry(entry) {
     const entries = readStoredJson(STORAGE_KEYS.recentLog, []);
     entries.unshift(entry);
-    writeStoredJson(STORAGE_KEYS.recentLog, entries.slice(0, 8));
+    writeStoredJson(STORAGE_KEYS.recentLog, entries.slice(0, MAX_HISTORY_ITEMS));
     renderRecentLog();
 }
 
@@ -117,6 +223,27 @@ function preventDuplicateSubmission(action, name) {
 
 function rememberLastAction(action, name) {
     writeStoredJson(STORAGE_KEYS.lastAction, { date: getTodayKey(), action, name, timestamp: new Date().toISOString() });
+    updateLastActionLabel();
+}
+
+function enforceDeviceLock(name) {
+    const deviceOwner = localStorage.getItem(DEVICE_LOCK_KEY);
+    if (!deviceOwner) return { allowed: true, lockSet: false };
+    if (deviceOwner !== name) {
+        alert(`This device is locked to ${deviceOwner}. Please use the registered device for ${deviceOwner}.`);
+        return { allowed: false, lockSet: true };
+    }
+    return { allowed: true, lockSet: true };
+}
+
+function setDeviceLock(name) {
+    localStorage.setItem(DEVICE_LOCK_KEY, name);
+    renderAdminInfo();
+}
+
+function clearDeviceLock() {
+    localStorage.removeItem(DEVICE_LOCK_KEY);
+    renderAdminInfo();
 }
 
 function queuePendingSubmission(name, action, lat, lon) {
@@ -184,18 +311,41 @@ function updateSignInButtonsState() {
     document.getElementById('out-btn').disabled = !canUseButtons;
 }
 
-function submit(action) {
+async function submit(action) {
     const name = document.getElementById('staff-name').value;
     if (!name) {
         alert("Select Name");
         updateSignInButtonsState();
         return;
     }
+
+    const localLock = enforceDeviceLock(name);
+    if (!localLock.allowed) {
+        updateSignInButtonsState();
+        return;
+    }
+
     if (preventDuplicateSubmission(action, name)) {
         return;
     }
     if (!coords) {
         requestLocation();
+        updateSignInButtonsState();
+        return;
+    }
+
+    const verified = await new Promise((resolve) => {
+        verifyDeviceOwnership(name, (response) => {
+            if (response.allowed) {
+                resolve(true);
+                return;
+            }
+            alert(response.message || 'This device is not authorized for that staff member.');
+            resolve(false);
+        });
+    });
+
+    if (!verified) {
         updateSignInButtonsState();
         return;
     }
@@ -245,6 +395,13 @@ function handleResponse(data) {
         });
         localStorage.setItem(STORAGE_KEYS.lastSynced, new Date().toLocaleString());
         updateLastSyncedLabel();
+        registerDeviceOwnership(activeSubmission.name, (response) => {
+            if (response.allowed || response.owner || response.message) {
+                if (!localStorage.getItem(DEVICE_LOCK_KEY)) {
+                    setDeviceLock(activeSubmission.name);
+                }
+            }
+        });
         if (activeSubmission.pendingId) {
             removeQueuedSubmission(activeSubmission.pendingId);
         }
@@ -268,7 +425,9 @@ window.onload = async () => {
     });
 
     renderRecentLog();
+    updateLastActionLabel();
     updateLastSyncedLabel();
+    renderAdminInfo();
     updateSignInButtonsState();
     requestLocation();
     flushPendingQueue();
@@ -330,4 +489,33 @@ document.getElementById('install-btn').addEventListener('click', () => {
         deferredPrompt.prompt();
         deferredPrompt = null;
     }
+});
+
+document.getElementById('reset-device-btn').addEventListener('click', () => {
+    const enteredCode = prompt('Enter reset code to remove the device lock:');
+    if (!enteredCode) return;
+    if (enteredCode !== DEVICE_RESET_CODE) {
+        alert('Incorrect reset code.');
+        return;
+    }
+    const newOwner = prompt('Enter the staff name to assign to this device after reset:');
+    if (!newOwner) return;
+    reassignDeviceOwnership(newOwner, enteredCode, (response) => {
+        if (response.allowed || response.message) {
+            setDeviceLock(newOwner);
+            alert(response.message || `Device reassigned to ${newOwner}.`);
+            return;
+        }
+        clearDeviceLock();
+        alert('Device lock reset locally.');
+    });
+});
+
+document.getElementById('clear-history-btn').addEventListener('click', () => {
+    if (!confirm('Clear local history and pending sync items?')) return;
+    localStorage.removeItem(STORAGE_KEYS.recentLog);
+    localStorage.removeItem(STORAGE_KEYS.pendingQueue);
+    renderRecentLog();
+    renderAdminInfo();
+    updateLastSyncedLabel();
 });

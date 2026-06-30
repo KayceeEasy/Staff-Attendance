@@ -87,6 +87,15 @@ button:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
 }
 .msg-late { background: #fef2f2; color: var(--error); border-color: #fecaca !important; }
 .msg-welcome { background: #f0fdf4; color: var(--success); border-color: #bbf7d0 !important; }
+.last-action {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: #eef4ff;
+    color: var(--primary-dark);
+    font-size: 0.83rem;
+    font-weight: 700;
+}
 .log-card {
     margin-top: 16px;
     padding: 12px;
@@ -133,6 +142,81 @@ button:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
 #log-list .status-pill.pending { background: #f59e0b; }
 #log-list .status-pill.synced { background: #16a34a; }
 #log-list .status-pill.offline { background: #64748b; }
+.admin-btn {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: white;
+    font-weight: 600;
+    color: var(--text);
+    margin-top: 12px;
+}
+.admin-btn.secondary {
+    background: #f8fafc;
+}
+.admin-panel {
+    margin-top: 12px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: #f8fbff;
+    text-align: left;
+    overflow: hidden;
+}
+.admin-content {
+    padding: 0 12px 12px;
+    display: grid;
+    gap: 8px;
+}
+.admin-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+.admin-card input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    margin-bottom: 10px;
+}
+.admin-intro {
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+.admin-message {
+    margin-top: 12px;
+    display: none;
+}
+.admin-panel-inline {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: white;
+    margin-top: 10px;
+    padding: 10px;
+}
+.staff-manager {
+    margin-top: 10px;
+}
+.staff-row {
+    align-items: center;
+    padding: 6px 0;
+}
+.staff-actions {
+    display: flex;
+    gap: 6px;
+}
+.admin-btn.small {
+    margin-top: 0;
+    padding: 6px 8px;
+    font-size: 0.8rem;
+    width: auto;
+}
+.admin-btn.danger {
+    color: var(--error);
+}
 #install-btn {
     width: 100%;
     padding: 12px;
