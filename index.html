@@ -13,10 +13,14 @@
 <div class="card">
     <div class="topbar">
         <div class="eyebrow">Staff Attendance</div>
-        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch theme">Dark</button>
+        <div class="topbar-actions">
+            <button id="refresh-btn" class="theme-toggle" type="button" aria-label="Refresh app" title="Refresh">Refresh</button>
+            <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch theme">Dark</button>
+        </div>
     </div>
     <i data-lucide="map-pin" size="48" color="#2563eb"></i>
     <div id="loc-status" class="status waiting">Verifying GPS...</div>
+    <div id="distance-label" class="distance-label"></div>
     <select id="staff-name">
         <option value="">Select your name...</option>
         <option>Uche</option><option>Julianah</option><option>Blessingjoy</option>

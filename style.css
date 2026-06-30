@@ -37,7 +37,8 @@ html, body {
     height: 100%;
     margin: 0;
     padding: 0;
-    overflow: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -365,6 +366,19 @@ button:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
     margin-top: 15px;
     font-weight: bold;
     color: var(--text);
+}
+.topbar-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.distance-label {
+    font-size: 0.72rem;
+    color: var(--muted);
+    opacity: 0.75;
+    margin-top: -8px;
+    margin-bottom: 4px;
+    min-height: 1em;
 }
 .dialog-overlay {
     position: fixed;

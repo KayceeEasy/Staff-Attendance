@@ -195,6 +195,42 @@ function initTheme() {
     }
 }
 
+/* ---------- Hard refresh ----------
+   A normal location.reload() can still serve a stale cached version
+   if a service worker is installed, which defeats the point of a
+   manual refresh button. This unregisters the service worker, clears
+   its caches, then reloads - guaranteeing the latest deployed files
+   are fetched. Wired up to any #refresh-btn present on the page. */
+
+async function hardRefresh() {
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = 'Refreshing...';
+    }
+    try {
+        if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map((reg) => reg.unregister()));
+        }
+        if (window.caches && caches.keys) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map((key) => caches.delete(key)));
+        }
+    } catch (error) {
+        console.warn('Error clearing service worker/cache during refresh:', error);
+    } finally {
+        window.location.reload();
+    }
+}
+
+function initRefreshButton() {
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', hardRefresh);
+    }
+}
+
 /* ---------- Formatting ---------- */
 
 function formatTimestamp(isoString) {

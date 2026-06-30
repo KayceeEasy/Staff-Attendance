@@ -107,6 +107,14 @@ function setMessage(text, className) {
     msg.className = className;
 }
 
+function updateDistanceLabel(distanceStr) {
+    const label = document.getElementById('distance-label');
+    if (!label) return;
+    const dist = parseFloat(distanceStr);
+    if (isNaN(dist)) return;
+    label.textContent = `~${dist.toFixed(0)}m from office`;
+}
+
 /* ---------- Device ownership (server-validated) ---------- */
 
 function verifyDeviceOwnership(name) {
@@ -322,9 +330,10 @@ async function handleAttendanceResponse(data) {
         return;
     }
 
-    const [status, text] = resultString.split('|');
+    const [status, text, distanceStr] = resultString.split('|');
     setMessage(text || 'Action recorded.', (status === 'WELCOME' || status === 'NORMAL') ? 'msg-welcome' : 'msg-late');
     playWindowsSound(status === 'WELCOME' || status === 'NORMAL');
+    updateDistanceLabel(distanceStr);
 
     if (activeSubmission && status !== 'BLOCK') {
         rememberLastAction(activeSubmission.action, activeSubmission.name);
@@ -399,6 +408,7 @@ function requestLocation() {
 
 document.addEventListener('DOMContentLoaded', async () => {
     initTheme();
+    initRefreshButton();
     if (window.lucide && typeof window.lucide.createIcons === 'function') {
         window.lucide.createIcons();
     }

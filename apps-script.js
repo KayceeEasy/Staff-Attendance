@@ -303,7 +303,8 @@ function processAttendance(payload) {
 
   const dist = getDistance(OFFICE_LAT, OFFICE_LON, payload.lat, payload.lon);
   if (dist > RADIUS_METERS) {
-    return 'BLOCK|Denied. You are too far from the office (' + dist.toFixed(0) + 'm).';
+    logDistanceAlert(payload.name, payload.action, dist, payload.lat, payload.lon);
+    return 'BLOCK|Denied. You are too far from the office (' + dist.toFixed(0) + 'm).|' + dist.toFixed(0);
   }
 
   const logs = logsSheet.getDataRange().getValues();
@@ -357,8 +358,8 @@ function processAttendance(payload) {
     }
   }
 
-  logsSheet.appendRow([todayDate, payload.name, payload.action, timeStr, 'Verified']);
-  return status + '|' + greeting;
+  logsSheet.appendRow([todayDate, payload.name, payload.action, timeStr, 'Verified', dist.toFixed(0)]);
+  return status + '|' + greeting + '|' + dist.toFixed(0);
 }
 
 /* ============================================================
@@ -380,6 +381,31 @@ function getOrCreateStaffSheet(ss) {
     staffSheet.appendRow(['Name', 'Device ID']);
   }
   return staffSheet;
+}
+
+/**
+ * Records every attendance attempt blocked for being outside the
+ * allowed radius - kept on a separate sheet from Logs since these
+ * are non-events (no attendance was actually recorded), useful for
+ * spotting GPS spoofing, a misconfigured RADIUS_METERS, or staff
+ * regularly hovering just outside the boundary.
+ */
+function getOrCreateDistanceAlertsSheet(ss) {
+  let alertsSheet = ss.getSheetByName('Distance Alerts');
+  if (!alertsSheet) {
+    alertsSheet = ss.insertSheet('Distance Alerts');
+    alertsSheet.appendRow(['Date', 'Time', 'Name', 'Action', 'Distance(m)', 'Lat', 'Lon']);
+  }
+  return alertsSheet;
+}
+
+function logDistanceAlert(name, action, dist, lat, lon) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const alertsSheet = getOrCreateDistanceAlertsSheet(ss);
+  const now = new Date();
+  const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const timeStr = Utilities.formatDate(now, 'GMT+1', 'hh:mm a');
+  alertsSheet.appendRow([todayDate, timeStr, name, action, dist.toFixed(0), lat, lon]);
 }
 
 function findStaffRecord(name) {
