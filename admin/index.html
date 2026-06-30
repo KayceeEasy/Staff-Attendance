@@ -21,11 +21,14 @@
     </div>
     <form id="admin-login-form" class="admin-form">
         <input id="admin-username" type="text" placeholder="Username" autocomplete="username" required />
-        <input id="admin-password" type="password" placeholder="Password" autocomplete="current-password" required />
+        <div class="password-field-wrap">
+            <input id="admin-password" type="password" placeholder="Password" autocomplete="current-password" required />
+            <button type="button" class="password-toggle" data-toggle-target="admin-password" aria-label="Show password">👁</button>
+        </div>
         <div class="admin-actions">
             <button id="admin-login-btn" class="btn-in" type="submit">Log in</button>
-            <button id="admin-reset-password-btn" class="admin-btn secondary" type="button">Reset admin password</button>
         </div>
+        <a id="forgot-password-link" class="admin-link secondary forgot-link" href="#">Forgot password?</a>
     </form>
     <div id="admin-message" class="admin-message" role="status" aria-live="polite"></div>
     <div id="admin-panel-host"></div>

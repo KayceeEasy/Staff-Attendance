@@ -231,6 +231,29 @@ function initRefreshButton() {
     }
 }
 
+/* ---------- Show/hide password toggle ----------
+   Works on any input with type="password" paired with a sibling
+   button carrying data-toggle-target="<input id>". Used both for
+   static password fields in markup and for ones generated dynamically
+   by showInlineDialog. */
+
+function initPasswordToggle(toggleEl) {
+    const targetId = toggleEl.getAttribute('data-toggle-target');
+    const input = document.getElementById(targetId);
+    if (!input || toggleEl.dataset.toggleBound) return;
+    toggleEl.dataset.toggleBound = 'true';
+    toggleEl.addEventListener('click', () => {
+        const isHidden = input.type === 'password';
+        input.type = isHidden ? 'text' : 'password';
+        toggleEl.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+        toggleEl.classList.toggle('visible', isHidden);
+    });
+}
+
+function initAllPasswordToggles(root = document) {
+    root.querySelectorAll('[data-toggle-target]').forEach(initPasswordToggle);
+}
+
 /* ---------- Formatting ---------- */
 
 function formatTimestamp(isoString) {
@@ -271,14 +294,26 @@ function showInlineDialog({ title, message, fields = [], confirmLabel = 'Confirm
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
         overlay.className = 'dialog-overlay';
-        const fieldsHtml = fields.map((field, idx) => `
-            <input
-                id="dialog-field-${idx}"
-                type="${field.type || 'text'}"
-                placeholder="${field.placeholder || ''}"
-                autocomplete="${field.autocomplete || 'off'}"
-            />
-        `).join('');
+        const fieldsHtml = fields.map((field, idx) => {
+            const inputId = `dialog-field-${idx}`;
+            const input = `
+                <input
+                    id="${inputId}"
+                    type="${field.type || 'text'}"
+                    placeholder="${field.placeholder || ''}"
+                    autocomplete="${field.autocomplete || 'off'}"
+                />
+            `;
+            if (field.type === 'password') {
+                return `
+                    <div class="password-field-wrap">
+                        ${input}
+                        <button type="button" class="password-toggle" data-toggle-target="${inputId}" aria-label="Show password">👁</button>
+                    </div>
+                `;
+            }
+            return input;
+        }).join('');
         overlay.innerHTML = `
             <div class="dialog-box">
                 <h3>${title}</h3>
@@ -292,6 +327,8 @@ function showInlineDialog({ title, message, fields = [], confirmLabel = 'Confirm
         `;
         document.body.appendChild(overlay);
 
+        initAllPasswordToggles(overlay);
+
         const cleanup = (result) => {
             overlay.remove();
             resolve(result);
@@ -299,7 +336,12 @@ function showInlineDialog({ title, message, fields = [], confirmLabel = 'Confirm
 
         overlay.querySelector('[data-action="cancel"]').addEventListener('click', () => cleanup(null));
         overlay.querySelector('[data-action="confirm"]').addEventListener('click', () => {
-            const values = fields.map((_, idx) => overlay.querySelector(`#dialog-field-${idx}`).value.trim());
+            const values = fields.map((field, idx) => {
+                const raw = overlay.querySelector(`#dialog-field-${idx}`).value;
+                // Passwords are taken as-is (a leading/trailing space could be
+                // intentional); everything else is trimmed.
+                return field.type === 'password' ? raw : raw.trim();
+            });
             if (fields.length && values.some((v) => !v)) {
                 showToast('Please fill in all fields.', 'error');
                 return;

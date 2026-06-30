@@ -45,8 +45,12 @@ function routeRequest(params) {
   switch (mode) {
     case 'admin-login':
       return adminLogin(params.username, params.passwordHash);
-    case 'admin-reset-password':
-      return adminResetPassword(params.username, params.newPasswordHash, params.currentPasswordHash);
+    case 'admin-change-password':
+      return adminChangePassword(params.username, params.currentPasswordHash, params.newPasswordHash);
+    case 'admin-forgot-password-request':
+      return adminForgotPasswordRequest(params.username);
+    case 'admin-forgot-password-confirm':
+      return adminForgotPasswordConfirm(params.username, params.code, params.newPasswordHash);
     case 'list-staff':
       return listStaff();
     case 'add-staff':
@@ -77,50 +81,210 @@ function routeRequest(params) {
 }
 
 /* ============================================================
-   ADMIN AUTH
-   Passwords are stored as SHA-256 hashes in Script Properties,
-   never in plaintext. The client hashes before sending; this
-   script only ever compares hash-to-hash.
+   ADMIN AUTH - multi-admin
+   Admin accounts are stored as a JSON object in Script Properties
+   under 'adminAccounts', keyed by lowercase username:
+     { "<username>": { passwordHash, email, role } }
+   Passwords are always SHA-256 hashes - this script never sees or
+   stores raw passwords. The client hashes before sending.
+
+   A separate, fixed developer fallback account (DEVELOPER_USERNAME /
+   DEVELOPER_PASSWORD_HASH below) exists outside this stored object
+   entirely, so it can never be locked out even if adminAccounts gets
+   corrupted or every other admin is removed/forgotten. Set its hash
+   once via setDeveloperPasswordOnce() and keep the plaintext private.
    ============================================================ */
+
+const DEVELOPER_USERNAME = 'kaycee-dev';
+
+function getAdminAccounts() {
+  const raw = PropertiesService.getScriptProperties().getProperty('adminAccounts');
+  return raw ? JSON.parse(raw) : {};
+}
+
+function saveAdminAccounts(accounts) {
+  PropertiesService.getScriptProperties().setProperty('adminAccounts', JSON.stringify(accounts));
+}
 
 function adminLogin(username, passwordHash) {
   if (!username || !passwordHash) {
     return { ok: false, message: 'Username and password are required.' };
   }
-  const props = PropertiesService.getScriptProperties();
-  const storedUser = props.getProperty('adminUsername');
-  const storedHash = props.getProperty('adminPasswordHash');
+  const cleanUsername = username.trim().toLowerCase();
 
-  // First-run bootstrap: if no admin has ever been configured, accept
-  // this login as the initial setup and store the provided credentials.
-  if (!storedUser || !storedHash) {
-    props.setProperty('adminUsername', username);
-    props.setProperty('adminPasswordHash', passwordHash);
-    return { ok: true, message: 'Initial admin account created. Please remember these credentials.' };
+  // Developer fallback - checked first, never lockable via the normal flow.
+  const devHash = PropertiesService.getScriptProperties().getProperty('developerPasswordHash');
+  if (cleanUsername === DEVELOPER_USERNAME.toLowerCase() && devHash) {
+    if (passwordHash === devHash) {
+      return { ok: true, message: 'Developer access granted.', role: 'developer' };
+    }
+    return { ok: false, message: 'Invalid admin credentials.' };
   }
 
-  if (username === storedUser && passwordHash === storedHash) {
-    return { ok: true, message: 'Admin access granted.' };
+  const accounts = getAdminAccounts();
+
+  // First-run bootstrap: if no admin accounts exist yet at all, accept
+  // this login as the initial company-admin setup.
+  if (Object.keys(accounts).length === 0) {
+    accounts[cleanUsername] = { passwordHash, email: '', role: 'admin' };
+    saveAdminAccounts(accounts);
+    return { ok: true, message: 'Initial admin account created. Please remember these credentials and set a recovery email from the admin panel.', role: 'admin' };
+  }
+
+  const account = accounts[cleanUsername];
+  if (account && passwordHash === account.passwordHash) {
+    return { ok: true, message: 'Admin access granted.', role: account.role || 'admin' };
   }
   return { ok: false, message: 'Invalid admin credentials.' };
 }
 
-function adminResetPassword(username, newPasswordHash, currentPasswordHash) {
-  if (!username || !newPasswordHash || !currentPasswordHash) {
-    return { ok: false, message: 'Current password verification is required to reset.' };
+/**
+ * In-portal password change - used when already logged in and the
+ * current password is known. Distinct from the forgot-password flow.
+ */
+function adminChangePassword(username, currentPasswordHash, newPasswordHash) {
+  if (!username || !currentPasswordHash || !newPasswordHash) {
+    return { ok: false, message: 'Current password verification is required to change password.' };
+  }
+  const cleanUsername = username.trim().toLowerCase();
+  const accounts = getAdminAccounts();
+  const account = accounts[cleanUsername];
+  if (!account) {
+    return { ok: false, message: 'Account not found.' };
+  }
+  if (currentPasswordHash !== account.passwordHash) {
+    return { ok: false, message: 'Current password is incorrect. Password not changed.' };
+  }
+  account.passwordHash = newPasswordHash;
+  saveAdminAccounts(accounts);
+  return { ok: true, message: 'Password updated.' };
+}
+
+/**
+ * Sets or updates the recovery email for an admin account. Requires
+ * being logged in (current password), since this controls where
+ * future forgot-password codes get sent.
+ */
+function adminSetRecoveryEmail(username, currentPasswordHash, email) {
+  const cleanUsername = (username || '').trim().toLowerCase();
+  const accounts = getAdminAccounts();
+  const account = accounts[cleanUsername];
+  if (!account) return { ok: false, message: 'Account not found.' };
+  if (currentPasswordHash !== account.passwordHash) {
+    return { ok: false, message: 'Current password is incorrect.' };
+  }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false, message: 'Enter a valid email address.' };
+  }
+  account.email = email.trim();
+  saveAdminAccounts(accounts);
+  return { ok: true, message: 'Recovery email saved.' };
+}
+
+/**
+ * Forgot-password step 1: sends a 6-digit code to the email already
+ * on file for this account. Does not reveal whether the username
+ * exists, to avoid leaking valid usernames to an attacker.
+ */
+function adminForgotPasswordRequest(username) {
+  const cleanUsername = (username || '').trim().toLowerCase();
+  const accounts = getAdminAccounts();
+  const account = accounts[cleanUsername];
+  const genericMessage = 'If that account exists and has a recovery email set, a code has been sent.';
+
+  if (!account || !account.email) {
+    return { ok: true, message: genericMessage };
+  }
+
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
+
+  PropertiesService.getScriptProperties().setProperty(
+    'resetCode_' + cleanUsername,
+    JSON.stringify({ code, expiresAt })
+  );
+
+  try {
+    MailApp.sendEmail({
+      to: account.email,
+      subject: 'Lifecard Attendance - Admin Password Reset Code',
+      body: 'Your password reset code is: ' + code + '\n\nThis code expires in 15 minutes. If you did not request this, you can ignore this email.'
+    });
+  } catch (err) {
+    return { ok: false, message: 'Could not send recovery email. Contact your developer.' };
+  }
+
+  return { ok: true, message: genericMessage };
+}
+
+/**
+ * Forgot-password step 2: verifies the emailed code and sets a new
+ * password. No knowledge of the old password is required - this is
+ * the actual "I forgot my password" path.
+ */
+function adminForgotPasswordConfirm(username, code, newPasswordHash) {
+  const cleanUsername = (username || '').trim().toLowerCase();
+  if (!cleanUsername || !code || !newPasswordHash) {
+    return { ok: false, message: 'Missing required fields.' };
   }
   const props = PropertiesService.getScriptProperties();
-  const storedUser = props.getProperty('adminUsername');
-  const storedHash = props.getProperty('adminPasswordHash');
+  const stored = props.getProperty('resetCode_' + cleanUsername);
+  if (!stored) {
+    return { ok: false, message: 'No reset code was requested, or it already expired. Request a new one.' };
+  }
+  const { code: storedCode, expiresAt } = JSON.parse(stored);
+  if (Date.now() > expiresAt) {
+    props.deleteProperty('resetCode_' + cleanUsername);
+    return { ok: false, message: 'This code has expired. Request a new one.' };
+  }
+  if (code.trim() !== storedCode) {
+    return { ok: false, message: 'Incorrect code.' };
+  }
 
-  if (!storedUser || !storedHash) {
-    return { ok: false, message: 'No admin account exists yet. Log in first to create one.' };
+  const accounts = getAdminAccounts();
+  const account = accounts[cleanUsername];
+  if (!account) {
+    return { ok: false, message: 'Account not found.' };
   }
-  if (username !== storedUser || currentPasswordHash !== storedHash) {
-    return { ok: false, message: 'Current credentials are incorrect. Password not changed.' };
-  }
-  props.setProperty('adminPasswordHash', newPasswordHash);
-  return { ok: true, message: 'Admin password updated.' };
+  account.passwordHash = newPasswordHash;
+  saveAdminAccounts(accounts);
+  props.deleteProperty('resetCode_' + cleanUsername);
+  return { ok: true, message: 'Password reset. You can now log in with your new password.' };
+}
+
+/**
+ * Run once manually from the Apps Script editor to create the fixed
+ * developer fallback account. This account is intentionally outside
+ * adminAccounts so it survives even if all other admins are removed.
+ * Change DEV_PASSWORD_PLAINTEXT below, run this once, then keep the
+ * plaintext private - only the hash is stored.
+ */
+function setDeveloperPasswordOnce() {
+  const DEV_PASSWORD_PLAINTEXT = 'change-this-before-running'; // change this before running
+  const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, DEV_PASSWORD_PLAINTEXT)
+    .map((b) => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0'))
+    .join('');
+  PropertiesService.getScriptProperties().setProperty('developerPasswordHash', hash);
+  Logger.log('Developer password hash stored for username: ' + DEVELOPER_USERNAME);
+}
+
+/**
+ * Run once manually to create an additional company-admin account
+ * (or to add more admins later) without going through the first-run
+ * bootstrap flow. Edit the values below before running.
+ */
+function addAdminAccountOnce() {
+  const NEW_USERNAME = 'company-admin'; // change this
+  const NEW_PASSWORD_PLAINTEXT = 'change-this-before-running'; // change this
+  const NEW_EMAIL = 'admin@example.com'; // change this - required for forgot-password to work
+
+  const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, NEW_PASSWORD_PLAINTEXT)
+    .map((b) => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0'))
+    .join('');
+  const accounts = getAdminAccounts();
+  accounts[NEW_USERNAME.toLowerCase()] = { passwordHash: hash, email: NEW_EMAIL, role: 'admin' };
+  saveAdminAccounts(accounts);
+  Logger.log('Admin account created for: ' + NEW_USERNAME);
 }
 
 /* ============================================================

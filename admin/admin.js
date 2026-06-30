@@ -4,6 +4,7 @@
  */
 
 let isAdminLoggedIn = false;
+let currentAdminUsername = '';
 
 /* ---------- Auth ---------- */
 
@@ -12,10 +13,26 @@ async function authenticateAdmin(username, password) {
     return callBackend({ mode: 'admin-login', username, passwordHash });
 }
 
-async function resetAdminPassword(username, currentPassword, newPassword) {
+/* In-portal change - requires the current password, used when already logged in. */
+async function changeAdminPassword(username, currentPassword, newPassword) {
     const currentPasswordHash = await sha256Hex(currentPassword);
     const newPasswordHash = await sha256Hex(newPassword);
-    return callBackend({ mode: 'admin-reset-password', username, currentPasswordHash, newPasswordHash });
+    return callBackend({ mode: 'admin-change-password', username, currentPasswordHash, newPasswordHash });
+}
+
+async function setRecoveryEmail(username, currentPassword, email) {
+    const currentPasswordHash = await sha256Hex(currentPassword);
+    return callBackend({ mode: 'admin-set-recovery-email', username, currentPasswordHash, email });
+}
+
+/* Forgot-password - no current password needed, verified by emailed code instead. */
+async function requestPasswordResetCode(username) {
+    return callBackend({ mode: 'admin-forgot-password-request', username });
+}
+
+async function confirmPasswordReset(username, code, newPassword) {
+    const newPasswordHash = await sha256Hex(newPassword);
+    return callBackend({ mode: 'admin-forgot-password-confirm', username, code, newPasswordHash });
 }
 
 /* ---------- Staff management ---------- */
@@ -145,6 +162,13 @@ function renderAdminPanel() {
                         <button id="reset-device-btn" class="admin-btn secondary" type="button">Reassign a device</button>
                     </div>
                 </div>
+                <div class="admin-account-section">
+                    <h3>Your account</h3>
+                    <div class="admin-actions compact">
+                        <button id="change-password-btn" class="admin-btn secondary" type="button">Change password</button>
+                        <button id="set-recovery-email-btn" class="admin-btn secondary" type="button">Set recovery email</button>
+                    </div>
+                </div>
             </div>
         </div>
     `;
@@ -176,6 +200,87 @@ function renderAdminPanel() {
             showToast('Could not reach the server.', 'error');
         }
     });
+
+    document.getElementById('change-password-btn').addEventListener('click', async () => {
+        const result = await showInlineDialog({
+            title: 'Change password',
+            message: 'Enter your current password to confirm, then your new password.',
+            fields: [
+                { placeholder: 'Current password', type: 'password', autocomplete: 'current-password' },
+                { placeholder: 'New password', type: 'password', autocomplete: 'new-password' }
+            ],
+            confirmLabel: 'Update password'
+        });
+        if (!result) return;
+        const [currentPassword, newPassword] = result;
+        try {
+            const response = await changeAdminPassword(currentAdminUsername, currentPassword, newPassword);
+            showToast(response.message || 'Password change request completed.', response.ok ? 'success' : 'error');
+        } catch (error) {
+            showToast('Could not reach the server.', 'error');
+        }
+    });
+
+    document.getElementById('set-recovery-email-btn').addEventListener('click', async () => {
+        const result = await showInlineDialog({
+            title: 'Set recovery email',
+            message: 'This email will receive a code if you ever need to reset a forgotten password. Requires your current password to confirm.',
+            fields: [
+                { placeholder: 'Current password', type: 'password', autocomplete: 'current-password' },
+                { placeholder: 'Recovery email', type: 'email', autocomplete: 'email' }
+            ],
+            confirmLabel: 'Save email'
+        });
+        if (!result) return;
+        const [currentPassword, email] = result;
+        try {
+            const response = await setRecoveryEmail(currentAdminUsername, currentPassword, email);
+            showToast(response.message || 'Recovery email request completed.', response.ok ? 'success' : 'error');
+        } catch (error) {
+            showToast('Could not reach the server.', 'error');
+        }
+    });
+}
+
+/* ---------- Forgot password (locked-out flow, no current password needed) ---------- */
+
+async function runForgotPasswordFlow() {
+    const usernameStep = await showInlineDialog({
+        title: 'Forgot password',
+        message: 'Enter your admin username. If a recovery email is on file, a 6-digit code will be sent to it.',
+        fields: [{ placeholder: 'Username', type: 'text', autocomplete: 'username' }],
+        confirmLabel: 'Send code'
+    });
+    if (!usernameStep) return;
+    const username = usernameStep[0];
+
+    try {
+        const requestResponse = await requestPasswordResetCode(username);
+        showToast(requestResponse.message || 'Check your email for a code.', requestResponse.ok ? 'success' : 'error');
+        if (!requestResponse.ok) return;
+    } catch (error) {
+        showToast('Could not reach the server.', 'error');
+        return;
+    }
+
+    const confirmStep = await showInlineDialog({
+        title: 'Enter reset code',
+        message: 'Enter the 6-digit code emailed to you, then choose a new password.',
+        fields: [
+            { placeholder: '6-digit code', type: 'text', autocomplete: 'one-time-code' },
+            { placeholder: 'New password', type: 'password', autocomplete: 'new-password' }
+        ],
+        confirmLabel: 'Reset password'
+    });
+    if (!confirmStep) return;
+    const [code, newPassword] = confirmStep;
+
+    try {
+        const confirmResponse = await confirmPasswordReset(username, code, newPassword);
+        showToast(confirmResponse.message || 'Password reset request completed.', confirmResponse.ok ? 'success' : 'error');
+    } catch (error) {
+        showToast('Could not reach the server.', 'error');
+    }
 }
 
 /* ---------- Login flow ---------- */
@@ -215,7 +320,9 @@ async function handleAdminLogin(event) {
         setLoginLoading(false);
         if (response.ok) {
             isAdminLoggedIn = true;
+            currentAdminUsername = username;
             document.getElementById('admin-login-form').style.display = 'none';
+            document.getElementById('forgot-password-link').style.display = 'none';
             renderAdminPanel();
             messageEl.textContent = response.message || 'Admin access granted.';
             messageEl.className = 'admin-message success';
@@ -232,29 +339,15 @@ async function handleAdminLogin(event) {
 
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
+    initRefreshButton();
+    initAllPasswordToggles();
     document.getElementById('admin-login-form').addEventListener('submit', handleAdminLogin);
 
-    document.getElementById('admin-reset-password-btn').addEventListener('click', async () => {
-        const messageEl = document.getElementById('admin-message');
-        const result = await showInlineDialog({
-            title: 'Reset admin password',
-            message: 'Enter your current credentials to confirm, then the new password.',
-            fields: [
-                { placeholder: 'Username', type: 'text', autocomplete: 'username' },
-                { placeholder: 'Current password', type: 'password', autocomplete: 'current-password' },
-                { placeholder: 'New password', type: 'password', autocomplete: 'new-password' }
-            ],
-            confirmLabel: 'Update password'
+    const forgotLink = document.getElementById('forgot-password-link');
+    if (forgotLink) {
+        forgotLink.addEventListener('click', (event) => {
+            event.preventDefault();
+            runForgotPasswordFlow();
         });
-        if (!result) return;
-        const [username, currentPassword, newPassword] = result;
-        try {
-            const response = await resetAdminPassword(username, currentPassword, newPassword);
-            messageEl.textContent = response.message || 'Password reset request completed.';
-            messageEl.className = response.ok ? 'admin-message success' : 'admin-message error';
-        } catch (error) {
-            messageEl.textContent = 'Could not reach the server.';
-            messageEl.className = 'admin-message error';
-        }
-    });
+    }
 });
