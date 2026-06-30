@@ -1,3 +1,5 @@
+/** @typedef {GoogleAppsScript} */
+
 const OFFICE_LAT = 6.4518631;
 const OFFICE_LON = 3.5277863;
 const RADIUS_METERS = 200;

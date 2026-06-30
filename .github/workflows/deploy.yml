@@ -1,0 +1,30 @@
+name: Deploy Apps Script
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare Files
+        run: |
+          # Rename apps-script.js to Code.gs so Google can execute it
+          mv apps-script.js Code.gs
+          
+      - name: Install Clasp
+        run: npm install -g @google/clasp
+        
+      - name: Push and Deploy
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
+        run: |
+          set -e
+          echo $CLASPRC_JSON > ~/.clasprc.json
+          clasp push
+          VERSION=$(clasp version "Auto-deploy" | grep -oE '[0-9]+' | tail -1)
+          clasp deploy -i $DEPLOYMENT_ID -v $VERSION
