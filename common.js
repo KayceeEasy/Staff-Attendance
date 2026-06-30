@@ -234,6 +234,8 @@ function normalizeBackendResponse(data) {
         message: data.message || data.result || 'Backend response received.',
         staff: data.staff || null,
         owner: data.owner || data.deviceOwner || null,
+        logs: data.logs || null,
+        config: data.config || null,
         raw: null
     };
 }
