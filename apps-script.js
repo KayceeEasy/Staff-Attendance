@@ -2,81 +2,130 @@ const OFFICE_LAT = 6.4518631;
 const OFFICE_LON = 3.5277863;
 const RADIUS_METERS = 200;
 
+/**
+ * Entry point for GET requests (JSONP fallback path).
+ */
 function doGet(e) {
+  const result = routeRequest(e.parameter);
   const callback = e.parameter.callback || 'callback';
-  const mode = e.parameter.mode || 'attendance';
-
-  let result;
-  switch (mode) {
-    case 'admin-login':
-      result = adminLogin(e.parameter.username, e.parameter.password);
-      break;
-    case 'admin-reset-password':
-      result = adminResetPassword(e.parameter.username, e.parameter.newPassword);
-      break;
-    case 'list-staff':
-      result = listStaff();
-      break;
-    case 'add-staff':
-      result = addStaff(e.parameter.name);
-      break;
-    case 'remove-staff':
-      result = removeStaff(e.parameter.name);
-      break;
-    case 'reset-staff-lock':
-      result = resetStaffLock(e.parameter.name);
-      break;
-    case 'verify-owner':
-      result = verifyOwner({
-        name: e.parameter.name,
-        deviceId: e.parameter.deviceId
-      });
-      break;
-    case 'register-owner':
-      result = registerOwner({
-        name: e.parameter.name,
-        deviceId: e.parameter.deviceId
-      });
-      break;
-    case 'reassign-owner':
-      result = reassignOwner({
-        name: e.parameter.name,
-        deviceId: e.parameter.deviceId,
-        resetCode: e.parameter.resetCode
-      });
-      break;
-    default:
-      result = processAttendance({
-        name: e.parameter.name,
-        action: e.parameter.action,
-        lat: parseFloat(e.parameter.lat),
-        lon: parseFloat(e.parameter.lon),
-        deviceId: e.parameter.deviceId
-      });
-      break;
-  }
-
   return ContentService.createTextOutput(callback + '(' + JSON.stringify({ result }) + ')')
     .setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 
-function adminLogin(username, password) {
-  const storedUser = PropertiesService.getScriptProperties().getProperty('adminUsername') || 'admin';
-  const storedPassword = PropertiesService.getScriptProperties().getProperty('adminPassword') || 'lifecard2026';
-  if (username && password && username === storedUser && password === storedPassword) {
+/**
+ * Entry point for POST requests (preferred path - keeps secrets out
+ * of any URL/access log). Body is sent as text/plain by the client to
+ * avoid a CORS preflight; we parse it as JSON here.
+ */
+function doPost(e) {
+  let params = {};
+  try {
+    params = JSON.parse(e.postData.contents);
+  } catch (err) {
+    return jsonOutput({ ok: false, allowed: false, message: 'Malformed request body.' });
+  }
+  const result = routeRequest(params);
+  return jsonOutput(result);
+}
+
+function jsonOutput(result) {
+  return ContentService.createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Shared routing logic for both GET (JSONP) and POST (JSON) entry points.
+ * All "secret" fields (passwordHash, resetCodeHash) are expected to
+ * already be SHA-256 hex digests produced by the client - this script
+ * never sees or stores raw passwords.
+ */
+function routeRequest(params) {
+  const mode = params.mode || 'attendance';
+
+  switch (mode) {
+    case 'admin-login':
+      return adminLogin(params.username, params.passwordHash);
+    case 'admin-reset-password':
+      return adminResetPassword(params.username, params.newPasswordHash, params.currentPasswordHash);
+    case 'list-staff':
+      return listStaff();
+    case 'add-staff':
+      return addStaff(params.name);
+    case 'remove-staff':
+      return removeStaff(params.name);
+    case 'reset-staff-lock':
+      return resetStaffLock(params.name);
+    case 'verify-owner':
+      return verifyOwner({ name: params.name, deviceId: params.deviceId });
+    case 'register-owner':
+      return registerOwner({ name: params.name, deviceId: params.deviceId });
+    case 'reassign-owner':
+      return reassignOwner({
+        name: params.name,
+        deviceId: params.deviceId,
+        resetCodeHash: params.resetCodeHash
+      });
+    default:
+      return processAttendance({
+        name: params.name,
+        action: params.action,
+        lat: parseFloat(params.lat),
+        lon: parseFloat(params.lon),
+        deviceId: params.deviceId
+      });
+  }
+}
+
+/* ============================================================
+   ADMIN AUTH
+   Passwords are stored as SHA-256 hashes in Script Properties,
+   never in plaintext. The client hashes before sending; this
+   script only ever compares hash-to-hash.
+   ============================================================ */
+
+function adminLogin(username, passwordHash) {
+  if (!username || !passwordHash) {
+    return { ok: false, message: 'Username and password are required.' };
+  }
+  const props = PropertiesService.getScriptProperties();
+  const storedUser = props.getProperty('adminUsername');
+  const storedHash = props.getProperty('adminPasswordHash');
+
+  // First-run bootstrap: if no admin has ever been configured, accept
+  // this login as the initial setup and store the provided credentials.
+  if (!storedUser || !storedHash) {
+    props.setProperty('adminUsername', username);
+    props.setProperty('adminPasswordHash', passwordHash);
+    return { ok: true, message: 'Initial admin account created. Please remember these credentials.' };
+  }
+
+  if (username === storedUser && passwordHash === storedHash) {
     return { ok: true, message: 'Admin access granted.' };
   }
   return { ok: false, message: 'Invalid admin credentials.' };
 }
 
-function adminResetPassword(username, newPassword) {
-  if (!username || !newPassword) {
-    return { ok: false, message: 'Username and password are required.' };
+function adminResetPassword(username, newPasswordHash, currentPasswordHash) {
+  if (!username || !newPasswordHash || !currentPasswordHash) {
+    return { ok: false, message: 'Current password verification is required to reset.' };
   }
-  PropertiesService.getScriptProperties().setProperty('adminUsername', username);
-  PropertiesService.getScriptProperties().setProperty('adminPassword', newPassword);
+  const props = PropertiesService.getScriptProperties();
+  const storedUser = props.getProperty('adminUsername');
+  const storedHash = props.getProperty('adminPasswordHash');
+
+  if (!storedUser || !storedHash) {
+    return { ok: false, message: 'No admin account exists yet. Log in first to create one.' };
+  }
+  if (username !== storedUser || currentPasswordHash !== storedHash) {
+    return { ok: false, message: 'Current credentials are incorrect. Password not changed.' };
+  }
+  props.setProperty('adminPasswordHash', newPasswordHash);
   return { ok: true, message: 'Admin password updated.' };
 }
+
+/* ============================================================
+   STAFF MANAGEMENT
+   ============================================================ */
 
 function listStaff() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -140,6 +189,15 @@ function resetStaffLock(name) {
   return { ok: true, message: 'Staff lock reset.', staff: listStaff().staff };
 }
 
+/* ============================================================
+   DEVICE OWNERSHIP
+   All device-lock enforcement happens here, server-side. The
+   client may also show its own lock message for instant feedback,
+   but it can never bypass these checks - the spreadsheet is the
+   source of truth and processAttendance() re-validates regardless
+   of what the client claims.
+   ============================================================ */
+
 function verifyOwner(payload) {
   const staff = findStaffRecord(payload.name);
   if (!staff) return { allowed: false, message: 'Staff not found.' };
@@ -168,22 +226,33 @@ function registerOwner(payload) {
 }
 
 function reassignOwner(payload) {
-  const resetCode = PropertiesService.getScriptProperties().getProperty('adminResetCode') || 'lifecard-reset-2026';
-  if (payload.resetCode !== resetCode) {
+  const props = PropertiesService.getScriptProperties();
+  const storedResetHash = props.getProperty('adminResetCodeHash');
+  if (!storedResetHash) {
+    return { allowed: false, message: 'No reset code has been configured by the admin yet.' };
+  }
+  if (payload.resetCodeHash !== storedResetHash) {
     return { allowed: false, message: 'Invalid reset code.' };
   }
   saveStaffDeviceId(payload.name, payload.deviceId);
   return { allowed: true, message: 'Device reassigned.' };
 }
 
-function processAttendance(payload) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const logsSheet = ss.getSheetByName('Logs');
-  const staffSheet = getOrCreateStaffSheet(ss);
+/* ============================================================
+   ATTENDANCE
+   ============================================================ */
 
-  if (!logsSheet) {
-    ss.insertSheet('Logs');
+function processAttendance(payload) {
+  if (!payload.name || !payload.action) {
+    return 'BLOCK|Missing required fields.';
   }
+  if (isNaN(payload.lat) || isNaN(payload.lon)) {
+    return 'BLOCK|Location data is missing or invalid. Please enable GPS and try again.';
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const logsSheet = ss.getSheetByName('Logs') || ss.insertSheet('Logs');
+  const staffSheet = getOrCreateStaffSheet(ss);
 
   const now = new Date();
   const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -193,6 +262,7 @@ function processAttendance(payload) {
 
   const staffData = staffSheet.getDataRange().getValues();
   let staffRow = -1;
+  let staffExists = false;
 
   const incomingParts = (payload.deviceId || '').split('-');
   const incomingHW = incomingParts[1] || '';
@@ -200,11 +270,14 @@ function processAttendance(payload) {
 
   for (let i = 1; i < staffData.length; i++) {
     const regName = staffData[i][0].toString().trim();
-    const regFullID = staffData[i][1].toString().trim();
+    if (!regName) continue;
+    const regFullID = staffData[i][1] ? staffData[i][1].toString().trim() : '';
     const regParts = regFullID.split('-');
     const regHW = regParts[1] || '';
     const regSalt = regParts[2] || '';
-    const isCurrentStaff = regName.toLowerCase() === (payload.name || '').trim().toLowerCase();
+    const isCurrentStaff = regName.toLowerCase() === payload.name.trim().toLowerCase();
+
+    if (isCurrentStaff) staffExists = true;
 
     if (regFullID !== '') {
       if (isCurrentStaff) {
@@ -215,15 +288,17 @@ function processAttendance(payload) {
         if (regFullID !== payload.deviceId) {
           staffSheet.getRange(staffRow, 2).setValue(payload.deviceId);
         }
-      } else {
-        if (incomingHW === regHW || incomingSalt === regSalt) {
-          return 'BLOCK|This device is already registered to ' + regName + '. Device sharing is not allowed.';
-        }
+      } else if (incomingHW === regHW || incomingSalt === regSalt) {
+        return 'BLOCK|This device is already registered to ' + regName + '. Device sharing is not allowed.';
       }
     } else if (isCurrentStaff) {
       staffRow = i + 1;
       staffSheet.getRange(staffRow, 2).setValue(payload.deviceId);
     }
+  }
+
+  if (!staffExists) {
+    return 'BLOCK|Staff member not recognized. Contact your administrator.';
   }
 
   const dist = getDistance(OFFICE_LAT, OFFICE_LON, payload.lat, payload.lon);
@@ -238,7 +313,8 @@ function processAttendance(payload) {
   let lastDate = '';
 
   for (let j = logs.length - 1; j >= 1; j--) {
-    if (logs[j][1].toString().trim().toLowerCase() === (payload.name || '').trim().toLowerCase()) {
+    if (!logs[j][1]) continue;
+    if (logs[j][1].toString().trim().toLowerCase() === payload.name.trim().toLowerCase()) {
       const logDate = Utilities.formatDate(new Date(logs[j][0]), 'GMT+1', 'dd/MM/yyyy');
       if (lastAction === '') {
         lastAction = logs[j][2];
@@ -285,6 +361,10 @@ function processAttendance(payload) {
   return status + '|' + greeting;
 }
 
+/* ============================================================
+   HELPERS
+   ============================================================ */
+
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -324,4 +404,19 @@ function saveStaffDeviceId(name, deviceId) {
     }
   }
   staffSheet.appendRow([name, deviceId || '']);
+}
+
+/**
+ * Run this once manually from the Apps Script editor to set the
+ * device-reset code as a hash, instead of leaving it hardcoded in
+ * client-side JS. Change RESET_CODE_PLAINTEXT below, run this
+ * function once, then delete/ignore it - the hash is what's stored.
+ */
+function setDeviceResetCodeOnce() {
+  const RESET_CODE_PLAINTEXT = 'lifecard-reset-2026'; // change this before running
+  const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, RESET_CODE_PLAINTEXT)
+    .map((b) => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0'))
+    .join('');
+  PropertiesService.getScriptProperties().setProperty('adminResetCodeHash', hash);
+  Logger.log('Reset code hash stored. Distribute the plaintext code to admins only.');
 }

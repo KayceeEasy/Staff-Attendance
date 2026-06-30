@@ -1,9 +1,10 @@
-const CACHE_NAME = 'staff-attendance-v2';
+const CACHE_NAME = 'staff-attendance-v3';
 const APP_SHELL = [
   './',
   './index.html',
   './style.css',
   './script.js',
+  './common.js',
   './manifest.json'
 ];
 
