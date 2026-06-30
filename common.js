@@ -141,19 +141,30 @@ async function callBackend(payload, timeoutMs = 12000) {
 }
 
 function normalizeBackendResponse(data) {
-    if (!data) return { ok: false, allowed: false, message: 'No response from backend.' };
-    if (data.result !== undefined) return normalizeBackendResponse(data.result);
+    if (!data) return { ok: false, allowed: false, message: 'No response from backend.', raw: null };
+    if (data.result !== undefined) {
+        const normalized = normalizeBackendResponse(data.result);
+        // Preserve the raw STATUS|message string one level up so callers
+        // that need the original status code (e.g. WELCOME/LATE/BLOCK for
+        // attendance) can still parse it, even though we already derived
+        // ok/allowed/message from it here.
+        if (normalized.raw === null && typeof data.result === 'string') {
+            normalized.raw = data.result;
+        }
+        return normalized;
+    }
     if (typeof data === 'string') {
         const lower = data.toLowerCase();
         const negative = lower.includes('denied') || lower.includes('block');
-        return { ok: !negative, allowed: !negative, message: data };
+        return { ok: !negative, allowed: !negative, message: data, raw: data };
     }
     return {
         ok: data.ok === true || data.allowed === true,
         allowed: data.allowed === true || data.ok === true,
         message: data.message || data.result || 'Backend response received.',
         staff: data.staff || null,
-        owner: data.owner || data.deviceOwner || null
+        owner: data.owner || data.deviceOwner || null,
+        raw: null
     };
 }
 

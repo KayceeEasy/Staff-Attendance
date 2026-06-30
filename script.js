@@ -313,7 +313,7 @@ async function submit(action) {
 }
 
 async function handleAttendanceResponse(data) {
-    const resultString = (data && data.result) || (typeof data === 'string' ? data : null);
+    const resultString = (data && data.raw) || (typeof data === 'string' ? data : null);
     if (!resultString) {
         setMessage('Unexpected response from server.', 'msg-late');
         syncInProgress = false;
