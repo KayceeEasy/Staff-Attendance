@@ -413,7 +413,7 @@ function saveStaffDeviceId(name, deviceId) {
  * function once, then delete/ignore it - the hash is what's stored.
  */
 function setDeviceResetCodeOnce() {
-  const RESET_CODE_PLAINTEXT = 'lifecard-reset-2026'; // change this before running
+  const RESET_CODE_PLAINTEXT = 'lifecard-admin-reset'; // change this before running
   const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, RESET_CODE_PLAINTEXT)
     .map((b) => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0'))
     .join('');
