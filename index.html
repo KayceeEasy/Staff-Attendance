@@ -1,13 +1,25 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <link rel="stylesheet" href="style.css">
-    <link rel="manifest" href="manifest.json" id="manifest-link">
-    <link rel="apple-touch-icon" href="image/png/icon-192.png" id="apple-touch-icon">
-    <base target="_top">
-    <meta name="theme-color" content="#2563eb">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Lifecard Staff Attendance Portal</title>
+    <meta name="description" content="Staff attendance tracking with GPS geofencing. Sign in and sign out at the office." />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Lifecard Attendance" />
+    <meta property="og:title" content="Lifecard Staff Attendance" />
+    <meta property="og:description" content="Daily attendance tracking for Lifecard staff with GPS verification." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://kayceeeasy.github.io/Staff-Attendance/" />
+    <meta property="og:image" content="https://kayceeeasy.github.io/Staff-Attendance/image/png/icon-512.png" />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="manifest" href="manifest.json" id="manifest-link" />
+    <link rel="icon" href="favicon.ico" type="image/x-icon" />
+    <link rel="apple-touch-icon" href="image/png/icon-192.png" id="apple-touch-icon" />
+    <base target="_top" />
     <script src="https://unpkg.com/lucide@latest"></script>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script>
         // Dynamically set paths based on current location for portability
         const APP_BASE = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
@@ -18,50 +30,53 @@
             icon512: APP_BASE + 'image/png/icon-512.png'
         };
     </script>
+</head>
 <body>
-<div class="card">
-    <div class="topbar">
-        <div class="eyebrow">Staff Attendance</div>
-        <div class="topbar-actions">
-            <button id="refresh-btn" class="theme-toggle" type="button" aria-label="Refresh app" title="Refresh">Refresh</button>
-            <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch theme">Dark</button>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <div id="main-content" class="card" role="main" aria-label="Staff Attendance App">
+        <div class="topbar">
+            <div class="eyebrow">Staff Attendance</div>
+            <div class="topbar-actions">
+                <button id="refresh-btn" class="theme-toggle" type="button" aria-label="Refresh app" title="Refresh">Refresh</button>
+                <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch theme">Dark</button>
+            </div>
         </div>
-    </div>
-    <i data-lucide="map-pin" size="48" color="#2563eb"></i>
-    <div id="loc-status" class="status waiting">Verifying GPS...</div>
-    <div id="distance-label" class="distance-label"></div>
-    <select id="staff-name">
-        <option value="">Select your name...</option>
-        <option>Uche</option><option>Julianah</option><option>Blessingjoy</option>
-        <option>Esther</option><option>Paschaline</option><option>Ikechukwu</option>
-        <option>Ayomide</option><option>Deborah</option><option>Elizabeth</option>
-        <option>Valentine</option><option>Kenneth</option><option>Martha</option>
-    </select>
-    <div class="btn-group">
-        <button id="in-btn" class="btn-in" disabled>Sign In</button>
-        <button id="out-btn" class="btn-out" disabled>Sign Out</button>
-    </div>
-    <div id="msg"></div>
-    <div id="last-action" class="last-action">Last action: none yet</div>
-    <div class="log-card">
-        <div class="log-head">
-            <strong>Recent attendance</strong>
-            <span id="last-synced">Last synced: -</span>
+        <i data-lucide="map-pin" size="48" color="#2563eb" aria-hidden="true"></i>
+        <div id="loc-status" class="status waiting" aria-live="polite">Verifying GPS...</div>
+        <div id="distance-label" class="distance-label" aria-live="polite"></div>
+        <label for="staff-name" class="sr-only">Select your name</label>
+        <select id="staff-name" aria-label="Select your staff name">
+            <option value="">Select your name...</option>
+            <option>Uche</option><option>Julianah</option><option>Blessingjoy</option>
+            <option>Esther</option><option>Paschaline</option><option>Ikechukwu</option>
+            <option>Ayomide</option><option>Deborah</option><option>Elizabeth</option>
+            <option>Valentine</option><option>Kenneth</option><option>Martha</option>
+        </select>
+        <div class="btn-group" role="group" aria-label="Attendance actions">
+            <button id="in-btn" class="btn-in" disabled aria-label="Sign in">Sign In</button>
+            <button id="out-btn" class="btn-out" disabled aria-label="Sign out">Sign Out</button>
         </div>
-        <ul id="log-list"></ul>
+        <div id="msg" role="alert" aria-live="assertive"></div>
+        <div id="last-action" class="last-action" aria-live="polite">Last action: none yet</div>
+        <div class="log-card">
+            <div class="log-head">
+                <strong>Recent attendance</strong>
+                <span id="last-synced">Last synced: -</span>
+            </div>
+            <ul id="log-list" aria-label="Recent attendance records"></ul>
+        </div>
+        <a id="admin-access-btn" class="admin-btn admin-link" href="./admin/" aria-label="Admin access">Admin access</a>
+        <button id="install-btn" style="display:none; background: #eee; color: #333; margin-top: 10px;" aria-label="Install app">
+            Install App
+        </button>
     </div>
-    <a id="admin-access-btn" class="admin-btn admin-link" href="./admin/">Admin access</a>
-    <button id="install-btn" style="display:none; background: #eee; color: #333; margin-top: 10px;">
-        Install App
-    </button>
-</div>
-<script src="common.js"></script>
-<script src="script.js"></script>
-<script>
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register(window.APP_PATHS.sw)
-            .catch(err => console.log('SW registration failed: ', err));
-    }
-</script>
+    <script src="common.js"></script>
+    <script src="script.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register(window.APP_PATHS.sw)
+                .catch(err => console.log('SW registration failed: ', err));
+        }
+    </script>
 </body>
 </html>

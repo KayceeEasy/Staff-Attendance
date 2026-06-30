@@ -1,7 +1,7 @@
 {
   "name": "Lifecard Staff Attendance",
   "short_name": "Lifecard Attendance",
-  "description": "Daily attendance tracking for Lifecard staff.",
+  "description": "Daily attendance tracking for Lifecard staff with GPS geofencing. Sign in and sign out at the office.",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#f8fafc",
