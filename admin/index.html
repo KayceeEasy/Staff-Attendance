@@ -8,13 +8,28 @@
 </head>
 <body>
 <div class="card admin-card">
-    <h1>Admin Access</h1>
-    <p class="admin-intro">Use admin credentials to manage device ownership and local sync state.</p>
-    <input id="admin-username" type="text" placeholder="Username" />
-    <input id="admin-password" type="password" placeholder="Password" />
-    <button id="admin-login-btn" class="btn-in" type="button">Log in</button>
-    <button id="admin-reset-password-btn" class="admin-btn secondary" type="button">Reset admin password</button>
-    <div id="admin-message" class="admin-message"></div>
+    <div class="topbar">
+        <div class="eyebrow">Admin Console</div>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch theme">🌙 Dark</button>
+    </div>
+    <div class="admin-hero">
+        <div class="admin-badge">🔐</div>
+        <div>
+            <h1>Admin Access</h1>
+            <p class="admin-intro">Use admin credentials to manage device ownership, staff access, and local sync state.</p>
+        </div>
+    </div>
+    <div class="admin-form">
+        <input id="admin-username" type="text" placeholder="Username" />
+        <input id="admin-password" type="password" placeholder="Password" />
+        <div class="admin-actions">
+            <button id="admin-login-btn" class="btn-in" type="button">Log in</button>
+            <button id="admin-reset-password-btn" class="admin-btn secondary" type="button">Reset admin password</button>
+        </div>
+    </div>
+    <div id="admin-message" class="admin-message" role="status" aria-live="polite"></div>
+    <div id="admin-panel-host"></div>
+    <a class="admin-link secondary" href="../index.html">Back to attendance</a>
 </div>
 <script>
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxw2NO8BwcVYdiHyZfzVFFkY_D8VTaBBuMayNcRWopDFAi0PKwiuOKXZxJXVyPZvEP0-w/exec';
@@ -186,10 +201,10 @@ function loadStaffList() {
 }
 
 function renderAdminPanel() {
-    const message = document.getElementById('admin-message');
+    const panelHost = document.getElementById('admin-panel-host');
     const owner = localStorage.getItem(DEVICE_LOCK_KEY) || 'Not set';
     const pending = readStoredJson(STORAGE_KEYS.pendingQueue, []).length;
-    message.innerHTML = `
+    panelHost.innerHTML = `
         <div class="admin-panel admin-panel-inline">
             <div class="admin-content">
                 <div class="admin-row"><span>Device owner</span><strong>${owner}</strong></div>
@@ -198,9 +213,11 @@ function renderAdminPanel() {
                     <h3>Staff list</h3>
                     <div id="staff-list"></div>
                     <input id="new-staff-name" type="text" placeholder="Add staff name" />
-                    <button id="add-staff-btn" class="admin-btn" type="button">Add staff</button>
-                    <button id="reset-device-btn" class="admin-btn secondary" type="button">Reset device lock</button>
-                    <button id="clear-history-btn" class="admin-btn secondary" type="button">Clear local history</button>
+                    <div class="admin-actions compact">
+                        <button id="add-staff-btn" class="admin-btn" type="button">Add staff</button>
+                        <button id="reset-device-btn" class="admin-btn secondary" type="button">Reset device lock</button>
+                        <button id="clear-history-btn" class="admin-btn secondary" type="button">Clear local history</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -242,13 +259,15 @@ function renderAdminPanel() {
 document.getElementById('admin-login-btn').addEventListener('click', () => {
     const username = document.getElementById('admin-username').value.trim();
     const password = document.getElementById('admin-password').value;
+    const messageEl = document.getElementById('admin-message');
     authenticateAdmin(username, password, (response) => {
         if (response.ok) {
             renderAdminPanel();
-            document.getElementById('admin-message').style.display = 'block';
+            messageEl.textContent = response.message || 'Admin access granted.';
+            messageEl.className = 'admin-message success';
         } else {
-            document.getElementById('admin-message').innerText = response.message || 'Invalid admin credentials.';
-            document.getElementById('admin-message').style.display = 'block';
+            messageEl.textContent = response.message || 'Invalid admin credentials.';
+            messageEl.className = 'admin-message error';
         }
     });
 });
@@ -258,10 +277,10 @@ document.getElementById('admin-reset-password-btn').addEventListener('click', ()
     if (!username) return;
     const newPassword = prompt('Enter a new admin password:');
     if (!newPassword) return;
+    const messageEl = document.getElementById('admin-message');
     resetAdminPassword(username, newPassword, (response) => {
-        const messageEl = document.getElementById('admin-message');
-        messageEl.innerText = response.message || 'Password reset request completed.';
-        messageEl.style.display = 'block';
+        messageEl.textContent = response.message || 'Password reset request completed.';
+        messageEl.className = response.ok ? 'admin-message success' : 'admin-message error';
     });
 });
 </script>

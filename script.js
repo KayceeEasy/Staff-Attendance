@@ -67,6 +67,30 @@ function formatTimestamp(isoString) {
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+function applyTheme(theme) {
+    const root = document.documentElement;
+    const toggle = document.getElementById('theme-toggle');
+    const isDark = theme === 'dark';
+    root.setAttribute('data-theme', isDark ? 'dark' : 'light');
+    if (toggle) {
+        toggle.textContent = isDark ? '☀️ Light' : '🌙 Dark';
+        toggle.setAttribute('aria-pressed', String(isDark));
+    }
+    localStorage.setItem('attendance_theme', isDark ? 'dark' : 'light');
+}
+
+function initTheme() {
+    const savedTheme = localStorage.getItem('attendance_theme');
+    applyTheme(savedTheme === 'dark' ? 'dark' : 'light');
+    const toggle = document.getElementById('theme-toggle');
+    if (toggle) {
+        toggle.addEventListener('click', () => {
+            const nextTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            applyTheme(nextTheme);
+        });
+    }
+}
+
 function renderRecentLog() {
     const logList = document.getElementById('log-list');
     if (!logList) return;
@@ -413,6 +437,7 @@ function handleResponse(data) {
 }
 
 window.onload = async () => {
+    initTheme();
     lucide.createIcons();
     deviceId = await generateIdentity();
     const staffNameSelect = document.getElementById('staff-name');
@@ -481,41 +506,52 @@ function requestLocation() {
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e;
-    document.getElementById('install-btn').style.display = 'block';
-});
-
-document.getElementById('install-btn').addEventListener('click', () => {
-    if (deferredPrompt) {
-        deferredPrompt.prompt();
-        deferredPrompt = null;
+    const installBtn = document.getElementById('install-btn');
+    if (installBtn) {
+        installBtn.style.display = 'block';
     }
 });
 
-document.getElementById('reset-device-btn').addEventListener('click', () => {
-    const enteredCode = prompt('Enter reset code to remove the device lock:');
-    if (!enteredCode) return;
-    if (enteredCode !== DEVICE_RESET_CODE) {
-        alert('Incorrect reset code.');
-        return;
-    }
-    const newOwner = prompt('Enter the staff name to assign to this device after reset:');
-    if (!newOwner) return;
-    reassignDeviceOwnership(newOwner, enteredCode, (response) => {
-        if (response.allowed || response.message) {
-            setDeviceLock(newOwner);
-            alert(response.message || `Device reassigned to ${newOwner}.`);
+const installBtn = document.getElementById('install-btn');
+if (installBtn) {
+    installBtn.addEventListener('click', () => {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            deferredPrompt = null;
+        }
+    });
+}
+
+const resetDeviceBtn = document.getElementById('reset-device-btn');
+if (resetDeviceBtn) {
+    resetDeviceBtn.addEventListener('click', () => {
+        const enteredCode = prompt('Enter reset code to remove the device lock:');
+        if (!enteredCode) return;
+        if (enteredCode !== DEVICE_RESET_CODE) {
+            alert('Incorrect reset code.');
             return;
         }
-        clearDeviceLock();
-        alert('Device lock reset locally.');
+        const newOwner = prompt('Enter the staff name to assign to this device after reset:');
+        if (!newOwner) return;
+        reassignDeviceOwnership(newOwner, enteredCode, (response) => {
+            if (response.allowed || response.message) {
+                setDeviceLock(newOwner);
+                alert(response.message || `Device reassigned to ${newOwner}.`);
+                return;
+            }
+            clearDeviceLock();
+            alert('Device lock reset locally.');
+        });
     });
-});
+}
 
-document.getElementById('clear-history-btn').addEventListener('click', () => {
-    if (!confirm('Clear local history and pending sync items?')) return;
-    localStorage.removeItem(STORAGE_KEYS.recentLog);
-    localStorage.removeItem(STORAGE_KEYS.pendingQueue);
-    renderRecentLog();
-    renderAdminInfo();
-    updateLastSyncedLabel();
+const clearHistoryBtn = document.getElementById('clear-history-btn');
+if (clearHistoryBtn) {
+    clearHistoryBtn.addEventListener('click', () => {
+        if (!confirm('Clear local history and pending sync items?')) return;
+        localStorage.removeItem(STORAGE_KEYS.recentLog);
+        localStorage.removeItem(STORAGE_KEYS.pendingQueue);
+        renderRecentLog();
+        renderAdminInfo();
+        updateLastSyncedLabel();
 });
