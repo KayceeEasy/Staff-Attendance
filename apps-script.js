@@ -1,6 +1,6 @@
 const OFFICE_LAT = 6.4518631;
 const OFFICE_LON = 3.5277863;
-const RADIUS_METERS = 100;
+const RADIUS_METERS = 200;
 
 function doGet(e) {
   const callback = e.parameter.callback || 'callback';
