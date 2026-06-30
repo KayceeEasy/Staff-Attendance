@@ -6,6 +6,7 @@ const RADIUS_METERS = 200;
 
 /**
  * Entry point for GET requests (JSONP fallback path).
+ * @param {{ parameter: { callback: string; }; }} e
  */
 function doGet(e) {
   const result = routeRequest(e.parameter);
@@ -18,6 +19,7 @@ function doGet(e) {
  * Entry point for POST requests (preferred path - keeps secrets out
  * of any URL/access log). Body is sent as text/plain by the client to
  * avoid a CORS preflight; we parse it as JSON here.
+ * @param {{ postData: { contents: string; }; }} e
  */
 function doPost(e) {
   let params = {};
@@ -30,6 +32,9 @@ function doPost(e) {
   return jsonOutput(result);
 }
 
+/**
+ * @param {string | { ok: boolean; message: string; } | Promise<Object> | { allowed: boolean; message: string; }} result
+ */
 function jsonOutput(result) {
   return ContentService.createTextOutput(JSON.stringify(result))
     .setMimeType(ContentService.MimeType.JSON);
@@ -40,6 +45,7 @@ function jsonOutput(result) {
  * All "secret" fields (passwordHash, resetCodeHash) are expected to
  * already be SHA-256 hex digests produced by the client - this script
  * never sees or stores raw passwords.
+ * @param {{ mode?: any; username?: any; passwordHash?: any; currentPasswordHash?: any; newPasswordHash?: any; code?: any; name?: any; deviceId?: any; resetCodeHash?: any; action?: any; lat?: any; lon?: any; }} params
  */
 function routeRequest(params) {
   const mode = params.mode || 'attendance';
@@ -104,10 +110,17 @@ function getAdminAccounts() {
   return raw ? JSON.parse(raw) : {};
 }
 
+/**
+ * @param {any} accounts
+ */
 function saveAdminAccounts(accounts) {
   PropertiesService.getScriptProperties().setProperty('adminAccounts', JSON.stringify(accounts));
 }
 
+/**
+ * @param {string} username
+ * @param {string} passwordHash
+ */
 function adminLogin(username, passwordHash) {
   if (!username || !passwordHash) {
     return { ok: false, message: 'Username and password are required.' };
@@ -143,6 +156,9 @@ function adminLogin(username, passwordHash) {
 /**
  * In-portal password change - used when already logged in and the
  * current password is known. Distinct from the forgot-password flow.
+ * @param {string} username
+ * @param {any} currentPasswordHash
+ * @param {any} newPasswordHash
  */
 function adminChangePassword(username, currentPasswordHash, newPasswordHash) {
   if (!username || !currentPasswordHash || !newPasswordHash) {
@@ -166,6 +182,9 @@ function adminChangePassword(username, currentPasswordHash, newPasswordHash) {
  * Sets or updates the recovery email for an admin account. Requires
  * being logged in (current password), since this controls where
  * future forgot-password codes get sent.
+ * @param {any} username
+ * @param {any} currentPasswordHash
+ * @param {string} email
  */
 function adminSetRecoveryEmail(username, currentPasswordHash, email) {
   const cleanUsername = (username || '').trim().toLowerCase();
@@ -187,6 +206,7 @@ function adminSetRecoveryEmail(username, currentPasswordHash, email) {
  * Forgot-password step 1: sends a 6-digit code to the email already
  * on file for this account. Does not reveal whether the username
  * exists, to avoid leaking valid usernames to an attacker.
+ * @param {any} username
  */
 function adminForgotPasswordRequest(username) {
   const cleanUsername = (username || '').trim().toLowerCase();
@@ -223,6 +243,9 @@ function adminForgotPasswordRequest(username) {
  * Forgot-password step 2: verifies the emailed code and sets a new
  * password. No knowledge of the old password is required - this is
  * the actual "I forgot my password" path.
+ * @param {any} username
+ * @param {string} code
+ * @param {any} newPasswordHash
  */
 function adminForgotPasswordConfirm(username, code, newPasswordHash) {
   const cleanUsername = (username || '').trim().toLowerCase();
@@ -298,27 +321,33 @@ function listStaff() {
   const staffSheet = getOrCreateStaffSheet(ss);
   const rows = staffSheet.getRange(2, 1, Math.max(staffSheet.getLastRow() - 1, 0), 2).getValues();
   const staff = rows
-    .filter((row) => row[0] && row[0].toString().trim())
-    .map((row) => ({
+    .filter((/** @type {{ toString: () => string; }[]} */ row) => row[0] && row[0].toString().trim())
+    .map((/** @type {{ toString: () => string; }[]} */ row) => ({
       name: row[0].toString().trim(),
       deviceId: row[1] ? row[1].toString().trim() : ''
     }));
   return { ok: true, staff: staff };
 }
 
+/**
+ * @param {any} name
+ */
 function addStaff(name) {
   const cleanName = (name || '').toString().trim();
   if (!cleanName) return { ok: false, message: 'Staff name is required.' };
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const staffSheet = getOrCreateStaffSheet(ss);
   const existing = staffSheet.getRange(2, 1, Math.max(staffSheet.getLastRow() - 1, 0), 1).getValues().flat();
-  if (existing.some((item) => item.toString().trim().toLowerCase() === cleanName.toLowerCase())) {
+  if (existing.some((/** @type {{ toString: () => string; }} */ item) => item.toString().trim().toLowerCase() === cleanName.toLowerCase())) {
     return { ok: false, message: 'Staff already exists.' };
   }
   staffSheet.appendRow([cleanName, '']);
   return { ok: true, message: 'Staff added.', staff: listStaff().staff };
 }
 
+/**
+ * @param {any} name
+ */
 function removeStaff(name) {
   const cleanName = (name || '').toString().trim();
   if (!cleanName) return { ok: false, message: 'Staff name is required.' };
@@ -337,6 +366,9 @@ function removeStaff(name) {
   return { ok: true, message: 'Staff removed.', staff: listStaff().staff };
 }
 
+/**
+ * @param {any} name
+ */
 function resetStaffLock(name) {
   const cleanName = (name || '').toString().trim();
   if (!cleanName) return { ok: false, message: 'Staff name is required.' };
@@ -364,6 +396,9 @@ function resetStaffLock(name) {
    of what the client claims.
    ============================================================ */
 
+/**
+ * @param {{ name: any; deviceId: any; }} payload
+ */
 function verifyOwner(payload) {
   const staff = findStaffRecord(payload.name);
   if (!staff) return { allowed: false, message: 'Staff not found.' };
@@ -377,6 +412,9 @@ function verifyOwner(payload) {
   return { allowed: false, message: 'This device is locked to another staff account.' };
 }
 
+/**
+ * @param {{ name: any; deviceId: any; }} payload
+ */
 function registerOwner(payload) {
   const staff = findStaffRecord(payload.name);
   if (!staff) return { allowed: false, message: 'Staff not found.' };
@@ -391,6 +429,9 @@ function registerOwner(payload) {
   return { allowed: false, message: 'This device is locked to another staff account.' };
 }
 
+/**
+ * @param {{ name: any; deviceId: any; resetCodeHash: any; }} payload
+ */
 function reassignOwner(payload) {
   const props = PropertiesService.getScriptProperties();
   const storedResetHash = props.getProperty('adminResetCodeHash');
@@ -408,6 +449,9 @@ function reassignOwner(payload) {
    ATTENDANCE
    ============================================================ */
 
+/**
+ * @param {{ name: any; action: any; lat: any; lon: any; deviceId: any; }} payload
+ */
 function processAttendance(payload) {
   if (!payload.name || !payload.action) {
     return 'BLOCK|Missing required fields.';
@@ -532,6 +576,12 @@ function processAttendance(payload) {
    HELPERS
    ============================================================ */
 
+/**
+ * @param {number} lat1
+ * @param {number} lon1
+ * @param {number} lat2
+ * @param {number} lon2
+ */
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -540,6 +590,9 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
+/**
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ */
 function getOrCreateStaffSheet(ss) {
   let staffSheet = ss.getSheetByName('Staff');
   if (!staffSheet) {
@@ -555,6 +608,7 @@ function getOrCreateStaffSheet(ss) {
  * are non-events (no attendance was actually recorded), useful for
  * spotting GPS spoofing, a misconfigured RADIUS_METERS, or staff
  * regularly hovering just outside the boundary.
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
  */
 function getOrCreateDistanceAlertsSheet(ss) {
   let alertsSheet = ss.getSheetByName('Distance Alerts');
@@ -565,6 +619,13 @@ function getOrCreateDistanceAlertsSheet(ss) {
   return alertsSheet;
 }
 
+/**
+ * @param {any} name
+ * @param {any} action
+ * @param {number} dist
+ * @param {any} lat
+ * @param {any} lon
+ */
 function logDistanceAlert(name, action, dist, lat, lon) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const alertsSheet = getOrCreateDistanceAlertsSheet(ss);
@@ -574,16 +635,23 @@ function logDistanceAlert(name, action, dist, lat, lon) {
   alertsSheet.appendRow([todayDate, timeStr, name, action, dist.toFixed(0), lat, lon]);
 }
 
+/**
+ * @param {any} name
+ */
 function findStaffRecord(name) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const staffSheet = getOrCreateStaffSheet(ss);
   const rows = staffSheet.getRange(2, 1, Math.max(staffSheet.getLastRow() - 1, 0), 2).getValues();
   const cleanName = (name || '').toString().trim().toLowerCase();
-  const match = rows.find((row) => row[0].toString().trim().toLowerCase() === cleanName);
+  const match = rows.find((/** @type {{ toString: () => string; }[]} */ row) => row[0].toString().trim().toLowerCase() === cleanName);
   if (!match) return null;
   return { name: match[0].toString().trim(), deviceId: match[1] ? match[1].toString().trim() : '' };
 }
 
+/**
+ * @param {any} name
+ * @param {any} deviceId
+ */
 function saveStaffDeviceId(name, deviceId) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const staffSheet = getOrCreateStaffSheet(ss);
