@@ -22,9 +22,17 @@ jobs:
         env:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
           DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
-        run: |  
+        run: |
           set -e
-          echo $CLASPRC_JSON > ~/.clasprc.json
+          # Use printf to ensure no extra newline characters are added
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+          
+          # Debug: Verify the file is valid JSON
+          if ! jq . ~/.clasprc.json > /dev/null 2>&1; then
+            echo "Error: The secret is not valid JSON."
+            exit 1
+          fi
+          
           clasp push
           VERSION=$(clasp version "Auto-deploy" | grep -oE '[0-9]+' | tail -1)
           clasp deploy -i $DEPLOYMENT_ID -v $VERSION
