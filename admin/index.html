@@ -10,7 +10,7 @@
 <div class="card admin-card">
     <div class="topbar">
         <div class="eyebrow">Admin Console</div>
-        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch theme">🌙 Dark</button>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch theme">Dark</button>
     </div>
     <div class="admin-hero">
         <div class="admin-badge">🔐</div>
@@ -19,14 +19,14 @@
             <p class="admin-intro">Use admin credentials to manage device ownership, staff access, and local sync state.</p>
         </div>
     </div>
-    <div class="admin-form">
-        <input id="admin-username" type="text" placeholder="Username" />
-        <input id="admin-password" type="password" placeholder="Password" />
+    <form id="admin-login-form" class="admin-form">
+        <input id="admin-username" type="text" placeholder="Username" autocomplete="username" />
+        <input id="admin-password" type="password" placeholder="Password" autocomplete="current-password" />
         <div class="admin-actions">
-            <button id="admin-login-btn" class="btn-in" type="button">Log in</button>
+            <button id="admin-login-btn" class="btn-in" type="submit">Log in</button>
             <button id="admin-reset-password-btn" class="admin-btn secondary" type="button">Reset admin password</button>
         </div>
-    </div>
+    </form>
     <div id="admin-message" class="admin-message" role="status" aria-live="polite"></div>
     <div id="admin-panel-host"></div>
     <a class="admin-link secondary" href="../index.html">Back to attendance</a>
@@ -200,6 +200,31 @@ function loadStaffList() {
     listStaff();
 }
 
+function applyTheme(theme) {
+    const root = document.documentElement;
+    const toggle = document.getElementById('theme-toggle');
+    const isDark = theme === 'dark';
+    root.setAttribute('data-theme', isDark ? 'dark' : 'light');
+    if (toggle) {
+        toggle.textContent = isDark ? 'Light' : 'Dark';
+        toggle.setAttribute('aria-pressed', String(isDark));
+        toggle.setAttribute('title', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+    }
+    localStorage.setItem('attendance_theme', isDark ? 'dark' : 'light');
+}
+
+function initTheme() {
+    const savedTheme = localStorage.getItem('attendance_theme');
+    applyTheme(savedTheme === 'dark' ? 'dark' : 'light');
+    const toggle = document.getElementById('theme-toggle');
+    if (toggle) {
+        toggle.addEventListener('click', () => {
+            const nextTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            applyTheme(nextTheme);
+        });
+    }
+}
+
 function renderAdminPanel() {
     const panelHost = document.getElementById('admin-panel-host');
     const owner = localStorage.getItem(DEVICE_LOCK_KEY) || 'Not set';
@@ -256,11 +281,34 @@ function renderAdminPanel() {
     });
 }
 
-document.getElementById('admin-login-btn').addEventListener('click', () => {
+function setLoginLoading(isLoading) {
+    const loginBtn = document.getElementById('admin-login-btn');
+    const form = document.getElementById('admin-login-form');
+    const messageEl = document.getElementById('admin-message');
+    if (loginBtn) {
+        loginBtn.disabled = isLoading;
+        loginBtn.textContent = isLoading ? 'Checking...' : 'Log in';
+    }
+    if (form) {
+        const inputs = form.querySelectorAll('input');
+        inputs.forEach((input) => {
+            input.disabled = isLoading;
+        });
+    }
+    if (messageEl) {
+        messageEl.textContent = isLoading ? 'Checking admin credentials...' : messageEl.textContent;
+        messageEl.className = isLoading ? 'admin-message' : messageEl.className;
+    }
+}
+
+function handleAdminLogin(event) {
+    if (event) event.preventDefault();
     const username = document.getElementById('admin-username').value.trim();
     const password = document.getElementById('admin-password').value;
     const messageEl = document.getElementById('admin-message');
+    setLoginLoading(true);
     authenticateAdmin(username, password, (response) => {
+        setLoginLoading(false);
         if (response.ok) {
             renderAdminPanel();
             messageEl.textContent = response.message || 'Admin access granted.';
@@ -270,7 +318,10 @@ document.getElementById('admin-login-btn').addEventListener('click', () => {
             messageEl.className = 'admin-message error';
         }
     });
-});
+}
+
+document.getElementById('admin-login-form').addEventListener('submit', handleAdminLogin);
+document.getElementById('admin-login-btn').addEventListener('click', handleAdminLogin);
 
 document.getElementById('admin-reset-password-btn').addEventListener('click', () => {
     const username = prompt('Enter the admin username:');
@@ -283,6 +334,8 @@ document.getElementById('admin-reset-password-btn').addEventListener('click', ()
         messageEl.className = response.ok ? 'admin-message success' : 'admin-message error';
     });
 });
+
+initTheme();
 </script>
 </body>
 </html>
