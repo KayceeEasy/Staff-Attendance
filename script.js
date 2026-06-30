@@ -20,17 +20,31 @@ let syncRetryTimer = null;
 /* ---------- Device identity ---------- */
 
 async function generateIdentity() {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    ctx.textBaseline = 'top';
-    ctx.font = "14px 'Arial'";
-    ctx.fillStyle = '#f60';
-    ctx.fillRect(125, 1, 62, 20);
-    ctx.fillText('Lifecard-Security-v2', 2, 15);
-    const hw = btoa(canvas.toDataURL()).substr(-16, 16);
-    let salt = localStorage.getItem('attendance_salt') || Math.random().toString(36).substring(2, 10);
-    localStorage.setItem('attendance_salt', salt);
-    return `ID-${hw}-${salt}`;
+    try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        ctx.textBaseline = 'top';
+        ctx.font = "14px 'Arial'";
+        ctx.fillStyle = '#f60';
+        ctx.fillRect(125, 1, 62, 20);
+        ctx.fillText('Lifecard-Security-v2', 2, 15);
+        const hw = btoa(canvas.toDataURL()).substr(-16, 16);
+        let salt = localStorage.getItem('attendance_salt') || Math.random().toString(36).substring(2, 10);
+        localStorage.setItem('attendance_salt', salt);
+        return `ID-${hw}-${salt}`;
+    } catch (error) {
+        console.warn('Canvas fingerprinting failed, using fallback device ID:', error.message);
+        // Fallback: use browser fingerprint + random salt
+        const fallbackSalt = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+        localStorage.setItem('attendance_salt', fallbackSalt);
+        const browserInfo = [
+            navigator.userAgent.slice(0, 20),
+            navigator.language,
+            screen.width + 'x' + screen.height,
+            new Date().getTimezoneOffset()
+        ].join('-').slice(0, 16);
+        return `ID-${browserInfo}-${fallbackSalt}`;
+    }
 }
 
 /* ---------- Sound feedback ---------- */
@@ -153,14 +167,24 @@ function saveRecentEntry(entry) {
     renderRecentLog();
 }
 
-function scheduleSyncRetry(delay = 8000) {
+function scheduleSyncRetry(baseDelay = 8000) {
     clearTimeout(syncRetryTimer);
     if (!navigator.onLine || syncInProgress) return;
     const pendingQueue = readStoredJson(STORAGE_KEYS.pendingQueue, []);
     if (!pendingQueue.length) return;
+    
+    // Exponential backoff: 8s, 16s, 32s, max 60s
+    const retryCount = parseInt(localStorage.getItem('sync_retry_count') || '0', 10);
+    const delay = Math.min(baseDelay * Math.pow(2, retryCount), 60000);
+    localStorage.setItem('sync_retry_count', retryCount + 1);
+    
     syncRetryTimer = setTimeout(() => {
         flushPendingQueue();
     }, delay);
+}
+
+function resetSyncRetryCount() {
+    localStorage.removeItem('sync_retry_count');
 }
 
 function preventDuplicateSubmission(action, name) {
@@ -228,6 +252,7 @@ async function flushPendingQueue() {
             deviceId
         });
         await handleAttendanceResponse(data);
+        resetSyncRetryCount(); // Success - reset retry counter
     } catch (error) {
         syncInProgress = false;
         activeSubmission = null;
@@ -241,6 +266,48 @@ function updateSignInButtonsState() {
     const canUseButtons = Boolean(name) && Boolean(coords);
     document.getElementById('in-btn').disabled = !canUseButtons;
     document.getElementById('out-btn').disabled = !canUseButtons;
+}
+
+/* ---------- Staff dropdown ----------
+   Populated from the live Staff sheet via list-staff so newly added
+   staff appear without needing a redeploy. The names baked into the
+   <select> in index.html stay as a fallback so the dropdown still
+   works on first load with no connection; the locally cached list
+   from the last successful fetch is preferred over that hardcoded
+   fallback if available. */
+
+function populateStaffDropdown(names, preserveSelection = true) {
+    const staffNameSelect = document.getElementById('staff-name');
+    if (!staffNameSelect || !names.length) return;
+    const currentValue = preserveSelection ? staffNameSelect.value : '';
+    staffNameSelect.innerHTML = '<option value="">Select your name...</option>' +
+        names.map((name) => `<option>${name}</option>`).join('');
+    if (currentValue && names.includes(currentValue)) {
+        staffNameSelect.value = currentValue;
+    } else {
+        const saved = localStorage.getItem('saved_name');
+        if (saved && names.includes(saved)) staffNameSelect.value = saved;
+    }
+    updateSignInButtonsState();
+}
+
+async function loadStaffDropdown() {
+    // Use the last cached list immediately (covers offline/first paint),
+    // then try to refresh from the server in the background.
+    const cachedNames = readStoredJson('attendance_staff_cache', []);
+    if (cachedNames.length) {
+        populateStaffDropdown(cachedNames);
+    }
+    try {
+        const response = await callBackend({ mode: 'list-staff' });
+        if (response.ok && Array.isArray(response.staff) && response.staff.length) {
+            const names = response.staff.map((entry) => entry.name).sort((a, b) => a.localeCompare(b));
+            writeStoredJson('attendance_staff_cache', names);
+            populateStaffDropdown(names);
+        }
+    } catch (error) {
+        console.warn('Could not refresh staff list from server, using cached/hardcoded list:', error.message);
+    }
 }
 
 /* ---------- Submission flow ---------- */
@@ -404,6 +471,20 @@ function requestLocation() {
     );
 }
 
+/* ---------- Global error handling ---------- */
+
+window.addEventListener('error', (event) => {
+    console.error('Global error:', event.error);
+    logAnalyticsEvent('global_error', { message: event.error?.message, filename: event.filename, lineno: event.lineno });
+    showToast('An unexpected error occurred. Please refresh the page.', 'error');
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('Unhandled promise rejection:', event.reason);
+    logAnalyticsEvent('unhandled_rejection', { reason: event.reason?.message || String(event.reason) });
+    showToast('A network error occurred. Please check your connection.', 'error');
+});
+
 /* ---------- Init ---------- */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -434,34 +515,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateSignInButtonsState();
     requestLocation();
     flushPendingQueue();
-});
+    loadStaffDropdown();
 
-window.addEventListener('online', () => {
-    flushPendingQueue();
-});
-
-window.addEventListener('visibilitychange', () => {
-    if (!document.hidden) {
-        flushPendingQueue();
-    }
-});
-
-setInterval(() => {
-    if (readStoredJson(STORAGE_KEYS.pendingQueue, []).length) {
-        flushPendingQueue();
-    }
-}, 10000);
-
-/* ---------- PWA install prompt ---------- */
-
-window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
-    const installBtn = document.getElementById('install-btn');
-    if (installBtn) installBtn.style.display = 'block';
-});
-
-document.addEventListener('DOMContentLoaded', () => {
+    // PWA install prompt
     const installBtn = document.getElementById('install-btn');
     if (installBtn) {
         installBtn.addEventListener('click', () => {
@@ -472,3 +528,28 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    const installBtn = document.getElementById('install-btn');
+    if (installBtn) installBtn.style.display = 'block';
+});
+
+window.addEventListener('online', () => {
+    flushPendingQueue();
+    loadStaffDropdown();
+});
+
+window.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        flushPendingQueue();
+        loadStaffDropdown();
+    }
+});
+
+setInterval(() => {
+    if (readStoredJson(STORAGE_KEYS.pendingQueue, []).length) {
+        flushPendingQueue();
+    }
+}, 10000);

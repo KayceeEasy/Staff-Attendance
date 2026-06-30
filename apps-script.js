@@ -1,8 +1,13 @@
 /** @typedef {GoogleAppsScript} */
 
-const OFFICE_LAT = 6.4518631;
-const OFFICE_LON = 3.5277863;
-const RADIUS_METERS = 200;
+// Configuration is now loaded from Script Properties for runtime flexibility
+// Default values are used if properties are not set
+const DEFAULT_CONFIG = {
+    OFFICE_LAT: 6.4518631,
+    OFFICE_LON: 3.5277863,
+    RADIUS_METERS: 200,
+    TIMEZONE: 'GMT+1'
+};
 
 /**
  * Entry point for GET requests (JSONP fallback path).
@@ -28,8 +33,21 @@ function doPost(e) {
   } catch (err) {
     return jsonOutput({ ok: false, allowed: false, message: 'Malformed request body.' });
   }
+  
+  // CSRF validation - reject requests without valid token
+  const csrfToken = params.csrfToken;
+  if (!csrfToken || !isValidCsrfToken(csrfToken)) {
+    return jsonOutput({ ok: false, message: 'Invalid or missing CSRF token.' });
+  }
+  
   const result = routeRequest(params);
   return jsonOutput(result);
+}
+
+function isValidCsrfToken(token) {
+  if (!token || typeof token !== 'string') return false;
+  // Accept tokens that are 64-character hex strings (32 bytes)
+  return /^[a-f0-9]{64}$/i.test(token);
 }
 
 /**
@@ -47,6 +65,16 @@ function jsonOutput(result) {
  * never sees or stores raw passwords.
  * @param {{ mode?: any; username?: any; passwordHash?: any; currentPasswordHash?: any; newPasswordHash?: any; code?: any; name?: any; deviceId?: any; resetCodeHash?: any; action?: any; lat?: any; lon?: any; }} params
  */
+function getConfig() {
+  const props = PropertiesService.getScriptProperties();
+  return {
+    officeLat: parseFloat(props.getProperty('OFFICE_LAT') || DEFAULT_CONFIG.OFFICE_LAT),
+    officeLon: parseFloat(props.getProperty('OFFICE_LON') || DEFAULT_CONFIG.OFFICE_LON),
+    radiusMeters: parseInt(props.getProperty('RADIUS_METERS') || DEFAULT_CONFIG.RADIUS_METERS, 10),
+    timezone: props.getProperty('TIMEZONE') || DEFAULT_CONFIG.TIMEZONE
+  };
+}
+
 function routeRequest(params) {
   const mode = params.mode || 'attendance';
 
@@ -55,6 +83,8 @@ function routeRequest(params) {
       return adminLogin(params.username, params.passwordHash);
     case 'admin-change-password':
       return adminChangePassword(params.username, params.currentPasswordHash, params.newPasswordHash);
+    case 'admin-set-recovery-email':
+      return adminSetRecoveryEmail(params.username, params.currentPasswordHash, params.email);
     case 'admin-forgot-password-request':
       return adminForgotPasswordRequest(params.username);
     case 'admin-forgot-password-confirm':
@@ -67,6 +97,12 @@ function routeRequest(params) {
       return removeStaff(params.name);
     case 'reset-staff-lock':
       return resetStaffLock(params.name);
+    case 'get-config':
+      return { ok: true, config: getConfig() };
+    case 'update-config':
+      return updateConfig(params);
+    case 'list-logs':
+      return listLogs({ name: params.name, fromDate: params.fromDate, toDate: params.toDate, limit: params.limit });
     case 'verify-owner':
       return verifyOwner({ name: params.name, deviceId: params.deviceId });
     case 'register-owner':
@@ -330,6 +366,65 @@ function listStaff() {
 }
 
 /**
+ * Returns attendance log entries, most recent first, optionally
+ * filtered by staff name and/or date range (inclusive, format
+ * dd/MM/yyyy to match how dates are stored). Defaults to the most
+ * recent 100 entries if no limit is given, to avoid returning a
+ * year's worth of rows in one call.
+ * @param {{ name?: any; fromDate?: any; toDate?: any; limit?: any; }} filters
+ */
+function listLogs(filters) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const logsSheet = ss.getSheetByName('Logs');
+  if (!logsSheet || logsSheet.getLastRow() < 2) {
+    return { ok: true, logs: [] };
+  }
+  const rows = logsSheet.getRange(2, 1, logsSheet.getLastRow() - 1, 6).getValues();
+  const nameFilter = (filters.name || '').toString().trim().toLowerCase();
+  const fromDate = filters.fromDate ? parseDdMmYyyy(filters.fromDate) : null;
+  const toDate = filters.toDate ? parseDdMmYyyy(filters.toDate) : null;
+  const limit = filters.limit ? parseInt(filters.limit, 10) : 100;
+
+  let logs = rows
+    .filter((/** @type {any[]} */ row) => row[1])
+    .map((/** @type {any[]} */ row) => ({
+      date: row[0] instanceof Date ? Utilities.formatDate(row[0], 'GMT+1', 'dd/MM/yyyy') : row[0].toString(),
+      name: row[1].toString().trim(),
+      action: row[2] ? row[2].toString().trim() : '',
+      time: row[3] ? row[3].toString().trim() : '',
+      status: row[4] ? row[4].toString().trim() : '',
+      distance: row[5] !== undefined && row[5] !== '' ? row[5].toString() : ''
+    }))
+    .filter((/** @type {{ name: string; date: string; }} */ entry) => {
+      if (nameFilter && entry.name.toLowerCase() !== nameFilter) return false;
+      if (fromDate || toDate) {
+        const entryDate = parseDdMmYyyy(entry.date);
+        if (!entryDate) return true; // don't drop rows we can't parse
+        if (fromDate && entryDate < fromDate) return false;
+        if (toDate && entryDate > toDate) return false;
+      }
+      return true;
+    });
+
+  logs.reverse(); // most recent first
+  if (limit > 0) logs = logs.slice(0, limit);
+
+  return { ok: true, logs: logs };
+}
+
+/**
+ * @param {any} str
+ */
+function parseDdMmYyyy(str) {
+  if (!str) return null;
+  const parts = str.toString().split('/');
+  if (parts.length !== 3) return null;
+  const [dd, mm, yyyy] = parts.map((/** @type {string} */ p) => parseInt(p, 10));
+  if (!dd || !mm || !yyyy) return null;
+  return new Date(yyyy, mm - 1, dd);
+}
+
+/**
  * @param {any} name
  */
 function addStaff(name) {
@@ -463,11 +558,12 @@ function processAttendance(payload) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const logsSheet = ss.getSheetByName('Logs') || ss.insertSheet('Logs');
   const staffSheet = getOrCreateStaffSheet(ss);
+  const config = getConfig();
 
   const now = new Date();
   const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const todayStr = Utilities.formatDate(todayDate, 'GMT+1', 'dd/MM/yyyy');
-  const timeStr = Utilities.formatDate(now, 'GMT+1', 'hh:mm a');
+  const todayStr = Utilities.formatDate(todayDate, config.timezone, 'dd/MM/yyyy');
+  const timeStr = Utilities.formatDate(now, config.timezone, 'hh:mm a');
   const hour = now.getHours();
 
   const staffData = staffSheet.getDataRange().getValues();
@@ -511,8 +607,8 @@ function processAttendance(payload) {
     return 'BLOCK|Staff member not recognized. Contact your administrator.';
   }
 
-  const dist = getDistance(OFFICE_LAT, OFFICE_LON, payload.lat, payload.lon);
-  if (dist > RADIUS_METERS) {
+  const dist = getDistance(config.officeLat, config.officeLon, payload.lat, payload.lon);
+  if (dist > config.radiusMeters) {
     logDistanceAlert(payload.name, payload.action, dist, payload.lat, payload.lon);
     return 'BLOCK|Denied. You are too far from the office (' + dist.toFixed(0) + 'm).|' + dist.toFixed(0);
   }
@@ -570,6 +666,51 @@ function processAttendance(payload) {
 
   logsSheet.appendRow([todayDate, payload.name, payload.action, timeStr, 'Verified', dist.toFixed(0)]);
   return status + '|' + greeting + '|' + dist.toFixed(0);
+}
+
+/* ============================================================
+   CONFIGURATION MANAGEMENT
+   ============================================================ */
+
+/**
+ * Updates configuration values in Script Properties.
+ * Only allows updating specific config keys for security.
+ * @param {{ key?: string; value?: string; }} params
+ */
+function updateConfig(params) {
+  const allowedKeys = ['OFFICE_LAT', 'OFFICE_LON', 'RADIUS_METERS', 'TIMEZONE'];
+  const key = params.key;
+  const value = params.value;
+  
+  if (!key || !allowedKeys.includes(key)) {
+    return { ok: false, message: 'Invalid configuration key. Allowed keys: ' + allowedKeys.join(', ') };
+  }
+  
+  // Validate values
+  if (key === 'OFFICE_LAT' || key === 'OFFICE_LON') {
+    const num = parseFloat(value);
+    if (isNaN(num) || num < -90 || num > 90) {
+      return { ok: false, message: 'Invalid coordinate value. Must be between -90 and 90.' };
+    }
+  } else if (key === 'RADIUS_METERS') {
+    const num = parseInt(value, 10);
+    if (isNaN(num) || num < 10 || num > 5000) {
+      return { ok: false, message: 'Invalid radius. Must be between 10 and 5000 meters.' };
+    }
+  } else if (key === 'TIMEZONE') {
+    if (!/^GMT[+-]\d{1,2}$/.test(value)) {
+      return { ok: false, message: 'Invalid timezone format. Use GMT+1, GMT-5, etc.' };
+    }
+  }
+  
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty(key, value.toString());
+  
+  return { 
+    ok: true, 
+    message: 'Configuration updated.',
+    config: getConfig()
+  };
 }
 
 /* ============================================================

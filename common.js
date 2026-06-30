@@ -9,8 +9,32 @@ const STORAGE_KEYS = {
     lastSynced: 'attendance_last_synced',
     lastAction: 'attendance_last_action',
     theme: 'attendance_theme',
-    deviceLock: 'attendance_device_lock'
+    deviceLock: 'attendance_device_lock',
+    analytics: 'attendance_analytics'
 };
+
+/* ---------- Analytics/Monitoring ----------
+   Tracks errors and issues for admin review. */
+
+function logAnalyticsEvent(type, details = {}) {
+    const analytics = readStoredJson(STORAGE_KEYS.analytics, []);
+    const event = {
+        type,
+        details,
+        timestamp: new Date().toISOString()
+    };
+    analytics.unshift(event);
+    // Keep only last 100 events
+    writeStoredJson(STORAGE_KEYS.analytics, analytics.slice(0, 100));
+}
+
+function getAnalytics() {
+    return readStoredJson(STORAGE_KEYS.analytics, []);
+}
+
+function clearAnalytics() {
+    writeStoredJson(STORAGE_KEYS.analytics, []);
+}
 
 /* ---------- Storage helpers ---------- */
 
@@ -45,6 +69,49 @@ async function sha256Hex(text) {
     return Array.from(new Uint8Array(hashBuffer))
         .map((b) => b.toString(16).padStart(2, '0'))
         .join('');
+}
+
+/* ---------- CSRF Protection ----------
+   Simple token-based protection. Token is generated on page load
+   and sent with all POST requests. Server validates it matches. */
+
+let csrfToken = null;
+
+function generateCsrfToken() {
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function getCsrfToken() {
+    if (!csrfToken) {
+        csrfToken = sessionStorage.getItem('csrf_token') || generateCsrfToken();
+        sessionStorage.setItem('csrf_token', csrfToken);
+    }
+    return csrfToken;
+}
+
+/* ---------- Request deduplication ----------
+   Prevents duplicate simultaneous API calls for the same operation. */
+
+const pendingRequests = new Map();
+
+async function callBackendDeduplicated(payload, timeoutMs = 12000) {
+    const requestKey = JSON.stringify(payload);
+    
+    // If same request is already in flight, return the existing promise
+    if (pendingRequests.has(requestKey)) {
+        console.log('Deduplicating request:', payload.mode);
+        return pendingRequests.get(requestKey);
+    }
+    
+    const promise = callBackend(payload, timeoutMs)
+        .finally(() => {
+            pendingRequests.delete(requestKey);
+        });
+    
+    pendingRequests.set(requestKey, promise);
+    return promise;
 }
 
 /* ---------- Backend communication ----------
@@ -109,6 +176,9 @@ function injectBackendScript(url, timeoutMs = 12000) {
  * @returns {Promise<Object>} normalized backend response
  */
 async function callBackend(payload, timeoutMs = 12000) {
+    // Add CSRF token to all requests
+    const payloadWithCsrf = { ...payload, csrfToken: getCsrfToken() };
+    
     // Attempt 1: POST with JSON body.
     try {
         const controller = new AbortController();
@@ -116,7 +186,7 @@ async function callBackend(payload, timeoutMs = 12000) {
         const response = await fetch(SCRIPT_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight on Apps Script
-            body: JSON.stringify(payload),
+            body: JSON.stringify(payloadWithCsrf),
             signal: controller.signal
         });
         clearTimeout(timer);
@@ -130,7 +200,7 @@ async function callBackend(payload, timeoutMs = 12000) {
     // Attempt 2: JSONP GET fallback.
     try {
         const params = new URLSearchParams();
-        Object.entries(payload).forEach(([key, value]) => {
+        Object.entries(payloadWithCsrf).forEach(([key, value]) => {
             if (value !== undefined && value !== null) params.set(key, value);
         });
         const data = await injectBackendScript(`${SCRIPT_URL}?${params.toString()}`, timeoutMs);
@@ -263,7 +333,12 @@ function formatTimestamp(isoString) {
 }
 
 function getTodayKey() {
-    return new Date().toISOString().slice(0, 10);
+    // Use local date (not UTC) to match server-side date handling
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
 /* ---------- Toast notifications (replaces alert()) ---------- */

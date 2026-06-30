@@ -1,11 +1,13 @@
-const CACHE_NAME = 'staff-attendance-v6';
+const CACHE_NAME = 'staff-attendance-v7';
 const APP_SHELL = [
   './',
   './index.html',
   './style.css',
   './script.js',
   './common.js',
-  './manifest.json'
+  './manifest.json',
+  './image/png/icon-192.png',
+  './image/png/icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -36,7 +38,7 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     caches.open(CACHE_NAME).then((cache) =>
-      cache.match(event.request, { ignoreSearch: true }).then((cached) => {
+      cache.match(event.request).then((cached) => {
         const networkFetch = fetch(event.request)
           .then((networkResponse) => {
             if (networkResponse && networkResponse.ok) {

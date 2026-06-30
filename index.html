@@ -2,13 +2,22 @@
 <html>
 <head>
     <link rel="stylesheet" href="style.css">
-    <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="image/png/icon-192.png">
+    <link rel="manifest" href="manifest.json" id="manifest-link">
+    <link rel="apple-touch-icon" href="image/png/icon-192.png" id="apple-touch-icon">
     <base target="_top">
     <meta name="theme-color" content="#2563eb">
     <script src="https://unpkg.com/lucide@latest"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-</head>
+    <script>
+        // Dynamically set paths based on current location for portability
+        const APP_BASE = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+        window.APP_PATHS = {
+            sw: APP_BASE + 'sw.js',
+            manifest: APP_BASE + 'manifest.json',
+            icon192: APP_BASE + 'image/png/icon-192.png',
+            icon512: APP_BASE + 'image/png/icon-512.png'
+        };
+    </script>
 <body>
 <div class="card">
     <div class="topbar">
@@ -50,7 +59,7 @@
 <script src="script.js"></script>
 <script>
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/Staff-Attendance/sw.js')
+        navigator.serviceWorker.register(window.APP_PATHS.sw)
             .catch(err => console.log('SW registration failed: ', err));
     }
 </script>
