@@ -73,8 +73,9 @@ function applyTheme(theme) {
     const isDark = theme === 'dark';
     root.setAttribute('data-theme', isDark ? 'dark' : 'light');
     if (toggle) {
-        toggle.textContent = isDark ? '☀️ Light' : '🌙 Dark';
+        toggle.textContent = isDark ? 'Light' : 'Dark';
         toggle.setAttribute('aria-pressed', String(isDark));
+        toggle.setAttribute('title', isDark ? 'Switch to light mode' : 'Switch to dark mode');
     }
     localStorage.setItem('attendance_theme', isDark ? 'dark' : 'light');
 }
@@ -436,18 +437,22 @@ function handleResponse(data) {
     flushPendingQueue();
 }
 
-window.onload = async () => {
+document.addEventListener('DOMContentLoaded', async () => {
     initTheme();
-    lucide.createIcons();
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+    }
     deviceId = await generateIdentity();
     const staffNameSelect = document.getElementById('staff-name');
     const saved = localStorage.getItem('saved_name');
-    if (saved) staffNameSelect.value = saved;
+    if (saved && staffNameSelect) staffNameSelect.value = saved;
 
-    staffNameSelect.addEventListener('change', () => {
-        localStorage.setItem('saved_name', staffNameSelect.value);
-        updateSignInButtonsState();
-    });
+    if (staffNameSelect) {
+        staffNameSelect.addEventListener('change', () => {
+            localStorage.setItem('saved_name', staffNameSelect.value);
+            updateSignInButtonsState();
+        });
+    }
 
     renderRecentLog();
     updateLastActionLabel();
@@ -456,7 +461,7 @@ window.onload = async () => {
     updateSignInButtonsState();
     requestLocation();
     flushPendingQueue();
-};
+});
 
 window.addEventListener('online', () => {
     flushPendingQueue();
@@ -554,4 +559,5 @@ if (clearHistoryBtn) {
         renderRecentLog();
         renderAdminInfo();
         updateLastSyncedLabel();
-});
+    });
+}
