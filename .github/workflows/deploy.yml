@@ -24,7 +24,11 @@ jobs:
           DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
         run: |
           set -e
-          echo $CLASPRC_JSON > ~/.clasprc.json
+          # Create the file and show the first 10 characters to verify it exists
+          echo "$CLASPRC_JSON" > ~/.clasprc.json
+          echo "Checking file existence and size:"
+          ls -l ~/.clasprc.json
+          head -c 10 ~/.clasprc.json
           clasp push
           VERSION=$(clasp version "Auto-deploy" | grep -oE '[0-9]+' | tail -1)
           clasp deploy -i $DEPLOYMENT_ID -v $VERSION
