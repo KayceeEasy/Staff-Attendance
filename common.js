@@ -133,7 +133,7 @@ async function callBackendDeduplicated(payload, timeoutMs = 12000) {
    already be hashed by the caller before calling this function -
    callBackend never receives raw passwords. */
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxw2NO8BwcVYdiHyZfzVFFkY_D8VTaBBuMayNcRWopDFAi0PKwiuOKXZxJXVyPZvEP0-w/dev';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxw2NO8BwcVYdiHyZfzVFFkY_D8VTaBBuMayNcRWopDFAi0PKwiuOKXZxJXVyPZvEP0-w/exec';
 
 function injectBackendScript(url, timeoutMs = 12000) {
     return new Promise((resolve, reject) => {

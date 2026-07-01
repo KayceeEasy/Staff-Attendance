@@ -249,16 +249,19 @@ function listLogs(filters) {
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
     if (!row[1]) continue;
-    // If the cell is a Date object (old rows stored before the string-storage fix),
-    // convert using JS date methods to avoid Utilities.formatDate timezone double-shift
-    // which produces the 1899 epoch artifact on some rows.
-    var dateStr;
+    
+    // Handle date: could be Date object, string "dd/MM/yyyy", or empty
+    var dateStr = '';
     if (row[0] instanceof Date) {
-      var d = row[0];
-      dateStr = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
-    } else {
+      // If it's a Date object, format it
+      dateStr = Utilities.formatDate(row[0], config.timezone, 'dd/MM/yyyy');
+    } else if (typeof row[0] === 'string') {
+      // If it's already a string, use it as-is
       dateStr = row[0].toString().trim();
     }
+    
+    if (!dateStr) continue;
+    
     if (nameFilter && row[1].toString().trim().toLowerCase() !== nameFilter) continue;
     if (fromDate || toDate) {
       var entryDate = parseDdMmYyyy(dateStr);
