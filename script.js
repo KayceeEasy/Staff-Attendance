@@ -16,6 +16,7 @@ let deferredPrompt;
 let activeSubmission = null;
 let syncInProgress = false;
 let syncRetryTimer = null;
+let installPromptDismissed = false;
 
 /* ---------- Device identity ----------
    Uses IndexedDB as the primary persistence layer for the device UUID
@@ -587,23 +588,66 @@ document.addEventListener('DOMContentLoaded', async () => {
     flushPendingQueue();
     loadStaffDropdown();
 
-    // PWA install prompt
     const installBtn = document.getElementById('install-btn');
+
     if (installBtn) {
-        installBtn.addEventListener('click', () => {
-            if (deferredPrompt) {
-                deferredPrompt.prompt();
-                deferredPrompt = null;
-            }
-        });
+        installBtn.addEventListener('click', triggerInstall);
+        if (!isRunningStandalone()) {
+            installBtn.style.display = 'block';
+        }
     }
 });
+
+/* ---------- PWA Install Prompt ----------
+   Two paths:
+   1. Android/Chrome: intercept beforeinstallprompt, show banner
+      automatically after a short delay (first visit only).
+   2. iOS Safari: beforeinstallprompt never fires; detect standalone
+      mode and Safari UA to show an instructional banner instead.
+   The fallback #install-btn is shown as a secondary option once
+   the prompt has been captured. */
+
+function isRunningStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches ||
+           window.navigator.standalone === true;
+}
+
+function isIosSafari() {
+    const ua = window.navigator.userAgent;
+    return /iphone|ipad|ipod/i.test(ua) && /safari/i.test(ua) && !/crios|fxios/i.test(ua);
+}
+
+async function triggerInstall() {
+    if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        if (outcome !== 'accepted') {
+            showToast('You can install the app anytime via the browser menu.', 'default', 4000);
+        }
+        return;
+    }
+
+    if (isRunningStandalone()) {
+        showToast('This app is already installed.', 'success', 3000);
+        return;
+    }
+
+    showToast('Use your browser’s install option if the prompt does not appear.', 'default', 4000);
+}
 
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e;
     const installBtn = document.getElementById('install-btn');
     if (installBtn) installBtn.style.display = 'block';
+});
+
+window.addEventListener('appinstalled', () => {
+    deferredPrompt = null;
+    const installBtn = document.getElementById('install-btn');
+    if (installBtn) installBtn.style.display = 'none';
+    showToast('App installed successfully!', 'success');
 });
 
 window.addEventListener('online', () => {

@@ -327,11 +327,19 @@ function initPasswordToggle(toggleEl) {
     const input = document.getElementById(targetId);
     if (!input || toggleEl.dataset.toggleBound) return;
     toggleEl.dataset.toggleBound = 'true';
+
+    const syncToggleState = () => {
+        const isHidden = input.type === 'password';
+        toggleEl.textContent = isHidden ? '👁' : '🙈';
+        toggleEl.setAttribute('aria-label', isHidden ? 'Show password' : 'Hide password');
+        toggleEl.classList.toggle('visible', !isHidden);
+    };
+
+    syncToggleState();
     toggleEl.addEventListener('click', () => {
         const isHidden = input.type === 'password';
         input.type = isHidden ? 'text' : 'password';
-        toggleEl.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
-        toggleEl.classList.toggle('visible', isHidden);
+        syncToggleState();
     });
 }
 

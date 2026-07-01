@@ -10,7 +10,7 @@ let currentTab = 'dashboard';
 let autoRefreshTimer = null;
 let allStaffList = [];
 let cachedWeekData = {};
-let currentWeekStart = null; // dd/MM/yyyy format (Monday)
+let currentWeekStart = null;
 let hybridScheduleCache = {};
 
 // Session timeout (5 min inactivity → 30s countdown)
@@ -128,6 +128,26 @@ function showSessionTimeoutWarning() {
     });
 }
 
+function clearAdminLoginForm() {
+    const form = document.getElementById('admin-login-form');
+    const usernameInput = document.getElementById('admin-username');
+    const passwordInput = document.getElementById('admin-password');
+    const messageEl = document.getElementById('admin-message');
+
+    if (form) {
+        form.reset();
+    }
+    if (usernameInput) usernameInput.value = '';
+    if (passwordInput) {
+        passwordInput.value = '';
+        passwordInput.type = 'password';
+    }
+    if (messageEl) {
+        messageEl.textContent = '';
+        messageEl.className = 'admin-message';
+    }
+}
+
 function handleLogout(isTimeout = false) {
     clearTimeout(inactivityTimer);
     clearInterval(sessionCountdownTimer);
@@ -136,6 +156,7 @@ function handleLogout(isTimeout = false) {
     isAdminLoggedIn = false;
     currentAdminUsername = '';
     cachedWeekData = {};
+    clearAdminLoginForm();
     
     // Remove session timeout dialog if present
     const timeoutOverlay = document.querySelector('.session-timeout-overlay');
@@ -430,7 +451,7 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
         <div class="matrix-legend">
             <span class="legend-item"><span class="legend-dot matrix-in"></span> Signed In</span>
             <span class="legend-item"><span class="legend-dot matrix-out"></span> Signed Out</span>
-            <span class="legend-item"><span class="legend-dot matrix-wfh"></span> WFH (Exempt)</span>
+            <span class="legend-item"><span class="legend-dot matrix-wfh"></span> Home</span>
             <span class="legend-item"><span class="legend-dot matrix-absent"></span> Absent</span>
         </div>
     `;
@@ -872,10 +893,6 @@ function renderAdminPanel() {
                     </div>
                 </div>
             </div>
-            <p class="admin-intro" style="margin-top:12px;font-size:0.78rem;">
-                Tip: The "Reset" button clears a staff member's device lock so they can register a new phone. 
-                For device reassignment with reset code, use the dedicated one-time setup function in Apps Script.
-            </p>
         </div>
         
         <!-- Logs Viewer Tab -->
