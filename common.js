@@ -236,6 +236,7 @@ function normalizeBackendResponse(data) {
         owner: data.owner || data.deviceOwner || null,
         logs: data.logs || null,
         config: data.config || null,
+        schedule: data.schedule || null,
         raw: null
     };
 }
