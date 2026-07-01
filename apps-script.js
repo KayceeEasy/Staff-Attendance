@@ -253,10 +253,15 @@ function listLogs(filters) {
     // Handle date: could be Date object, string "dd/MM/yyyy", or empty
     var dateStr = '';
     if (row[0] instanceof Date) {
-      // If it's a Date object, format it
-      dateStr = Utilities.formatDate(row[0], config.timezone, 'dd/MM/yyyy');
-    } else if (typeof row[0] === 'string') {
-      // If it's already a string, use it as-is
+      // Do NOT use Utilities.formatDate here — it applies a timezone offset
+      // on top of how Sheets stores Date objects internally (as UTC), which
+      // produces the December 30 1899 artifact on many rows. Use JS date
+      // methods instead, which read the local wall-clock values directly.
+      var d = row[0];
+      dateStr = String(d.getDate()).padStart(2, '0') + '/' +
+                String(d.getMonth() + 1).padStart(2, '0') + '/' +
+                d.getFullYear();
+    } else {
       dateStr = row[0].toString().trim();
     }
     
@@ -590,9 +595,50 @@ function saveStaffDeviceId(name, deviceId) {
 
 function setDeviceResetCodeOnce() {
   const RESET_CODE_PLAINTEXT = 'lifecard-admin-reset';
-  const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, RESET_CODE_PLAINTEXT).map((b) => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
+  const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, RESET_CODE_PLAINTEXT)
+    .map(function(b) { return (b < 0 ? b + 256 : b).toString(16).padStart(2, '0'); })
+    .join('');
   PropertiesService.getScriptProperties().setProperty('adminResetCodeHash', hash);
-  Logger.log('Reset code hash stored. Distribute the plaintext code to admins only.');
+  Logger.log('Reset code hash stored.');
+}
+
+/**
+ * ONE-TIME MIGRATION: Run this once from the Apps Script editor to
+ * convert any legacy Date-object rows in the Logs sheet to plain
+ * dd/MM/yyyy strings. This permanently fixes the 1899 date artifact
+ * caused by old versions of the script that wrote Date objects instead
+ * of strings. Safe to run multiple times - already-string rows are
+ * left unchanged. Check the execution log for a summary when done.
+ */
+function migrateLogsDateStrings() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const logsSheet = ss.getSheetByName('Logs');
+  if (!logsSheet) { Logger.log('No Logs sheet found.'); return; }
+  const lastRow = logsSheet.getLastRow();
+  if (lastRow < 2) { Logger.log('Logs sheet is empty.'); return; }
+  const range = logsSheet.getRange(2, 1, lastRow - 1, 1);
+  const values = range.getValues();
+  let fixed = 0, skipped = 0;
+  for (var i = 0; i < values.length; i++) {
+    var cell = values[i][0];
+    if (cell instanceof Date) {
+      // Use JS date methods - NOT Utilities.formatDate - to avoid the
+      // timezone double-shift that causes the 1899 artifact.
+      var d = cell;
+      var dateStr = String(d.getDate()).padStart(2, '0') + '/' +
+                    String(d.getMonth() + 1).padStart(2, '0') + '/' +
+                    d.getFullYear();
+      // Sanity check: reject anything that resolved to 1899
+      if (d.getFullYear() < 1950) {
+        Logger.log('Row ' + (i + 2) + ': Skipping suspicious date ' + d.toString());
+        skipped++;
+        continue;
+      }
+      logsSheet.getRange(i + 2, 1).setValue(dateStr);
+      fixed++;
+    }
+  }
+  Logger.log('Migration complete. Fixed: ' + fixed + ' rows. Skipped (suspicious): ' + skipped + ' rows.');
 }
 
 /* ============================================================

@@ -344,7 +344,14 @@ function initAllPasswordToggles(root = document) {
 function formatTimestamp(isoString) {
     if (!isoString) return 'Pending';
     const date = new Date(isoString);
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function formatDateDisplay(isoString) {
+    if (!isoString) return '';
+    const date = new Date(isoString);
+    return date.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }) +
+        ' ' + date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
 function getTodayKey() {

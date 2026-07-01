@@ -480,7 +480,7 @@ async function handleAttendanceResponse(data) {
             timestamp: new Date().toISOString(),
             status: 'synced'
         });
-        localStorage.setItem(STORAGE_KEYS.lastSynced, new Date().toLocaleString());
+        localStorage.setItem(STORAGE_KEYS.lastSynced, formatDateDisplay(new Date().toISOString()));
         updateLastSyncedLabel();
 
         try {
