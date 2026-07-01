@@ -579,6 +579,43 @@ async function loadLogsViewer() {
     }
 }
 
+function normalizeAttendanceStatus(status = '') {
+    const value = (status || '').toString().trim().toLowerCase();
+    if (value.includes('late')) return 'late';
+    if (value.includes('early')) return 'early';
+    if (value.includes('miss')) return 'missed';
+    if (value.includes('on time') || value.includes('on-time') || value.includes('verified') || value.includes('normal') || value.includes('welcome')) return 'ontime';
+    return 'default';
+}
+
+function getStatusBadgeClass(status = '') {
+    switch (normalizeAttendanceStatus(status)) {
+        case 'late':
+        case 'early':
+            return 'late';
+        case 'missed':
+            return 'offline';
+        default:
+            return 'synced';
+    }
+}
+
+function getStatusLabel(status = '') {
+    const value = (status || '').toString().trim();
+    switch (normalizeAttendanceStatus(status)) {
+        case 'late':
+            return 'Late';
+        case 'early':
+            return 'Early Out';
+        case 'missed':
+            return 'Missed';
+        case 'ontime':
+            return 'On Time';
+        default:
+            return value || 'Unknown';
+    }
+}
+
 function renderLogsTable(logs) {
     const host = document.getElementById('logs-list');
     if (!host) return;
@@ -596,7 +633,7 @@ function renderLogsTable(logs) {
                         <span>${escapeHtml(entry.name)}</span>
                         <span class="logs-action ${entry.action === 'IN' ? 'in' : 'out'}">${escapeHtml(entry.action)}</span>
                         <span>${escapeHtml(entry.time)}</span>
-                        <span><span class="status-pill-small ${entry.status?.toLowerCase() === 'verified' ? 'synced' : entry.status?.toLowerCase() === 'late' ? 'late' : 'offline'}">${escapeHtml(entry.status)}</span></span>
+                        <span><span class="status-pill-small ${getStatusBadgeClass(entry.status)}">${escapeHtml(getStatusLabel(entry.status))}</span></span>
                         <span>${escapeHtml(entry.distance || '-')}</span>
                     </div>
                 `).join('')}
@@ -627,11 +664,12 @@ function processAnalyticsData(logs, schedule) {
         if (!staffCounts[name]) staffCounts[name] = { in: 0, out: 0, late: 0, earlyOut: 0, wfhDays: 0, daysPresent: new Set() };
         if (entry.action === 'IN') staffCounts[name].in++;
         if (entry.action === 'OUT') staffCounts[name].out++;
-        if (entry.status === 'LATE') {
+        const statusType = normalizeAttendanceStatus(entry.status);
+        if (statusType === 'late') {
             lateCount++;
             if (entry.action === 'IN') staffCounts[name].late++;
         }
-        if (entry.status === 'LATE' && entry.action === 'OUT') {
+        if (statusType === 'early' && entry.action === 'OUT') {
             earlyOutCount++;
             staffCounts[name].earlyOut++;
         }

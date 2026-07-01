@@ -178,16 +178,16 @@ function adminForgotPasswordConfirm(username, code, newPasswordHash) {
 }
 
 function setDeveloperPasswordOnce() {
-  const DEV_PASSWORD_PLAINTEXT = 'change-this-before-running';
+  const DEV_PASSWORD_PLAINTEXT = 'Neon8888*#.';
   const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, DEV_PASSWORD_PLAINTEXT).map((b) => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
   PropertiesService.getScriptProperties().setProperty('developerPasswordHash', hash);
   Logger.log('Developer password hash stored for username: ' + DEVELOPER_USERNAME);
 }
 
 function addAdminAccountOnce() {
-  const NEW_USERNAME = 'company-admin';
-  const NEW_PASSWORD_PLAINTEXT = 'change-this-before-running';
-  const NEW_EMAIL = 'admin@example.com';
+  const NEW_USERNAME = 'admin';
+  const NEW_PASSWORD_PLAINTEXT = 'Lifecard123';
+  const NEW_EMAIL = 'KennethCOmeh@gmail.com';
   const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, NEW_PASSWORD_PLAINTEXT).map((b) => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
   const accounts = getAdminAccounts();
   accounts[NEW_USERNAME.toLowerCase()] = { passwordHash: hash, email: NEW_EMAIL, role: 'admin' };
@@ -500,23 +500,39 @@ function processAttendance(payload) {
   let forgotMsg = '';
   if (payload.action === 'IN' && lastAction === 'IN' && lastDate !== todayStr) {
     // Store date as string to avoid timezone shifts
-    logsSheet.appendRow([lastDate, payload.name, 'OUT', 'Missed', 'Auto-logged']);
+    logsSheet.appendRow([lastDate, payload.name, 'OUT', 'Missed', 'Missed', '']);
     forgotMsg = '. Note: You forgot to sign out on ' + lastDate;
   }
 
-  let status = 'NORMAL', greeting = '';
+  let responseStatus = 'NORMAL';
+  let logStatus = 'On Time';
+  let greeting = '';
   if (payload.action === 'IN') {
-    if (hour < 9) { status = 'WELCOME'; greeting = 'Welcome! Have a productive day' + forgotMsg; }
-    else { status = 'LATE'; greeting = 'You are late' + forgotMsg; }
+    if (hour < 9) {
+      responseStatus = 'WELCOME';
+      greeting = 'Welcome! Have a productive day' + forgotMsg;
+      logStatus = 'On Time';
+    } else {
+      responseStatus = 'LATE';
+      greeting = 'You are late' + forgotMsg;
+      logStatus = 'Late';
+    }
   } else {
     if (!hasSignedInToday) return 'BLOCK|You cannot sign out without signing in first.';
-    if (hour < 17) { status = 'LATE'; greeting = 'Early sign-out recorded. It is not yet 5:00 PM.'; }
-    else { status = 'NORMAL'; greeting = 'Safe trip, ' + payload.name + '! See you tomorrow.'; }
+    if (hour < 17) {
+      responseStatus = 'LATE';
+      greeting = 'Early sign-out recorded. It is not yet 5:00 PM.';
+      logStatus = 'Early Out';
+    } else {
+      responseStatus = 'NORMAL';
+      greeting = 'Safe trip, ' + payload.name + '! See you tomorrow.';
+      logStatus = 'On Time';
+    }
   }
 
   // Store date as string to avoid timezone shifts when reading back
-  logsSheet.appendRow([todayStr, payload.name, payload.action, timeStr, 'Verified', dist.toFixed(0)]);
-  return status + '|' + greeting + '|' + dist.toFixed(0);
+  logsSheet.appendRow([todayStr, payload.name, payload.action, timeStr, logStatus, dist.toFixed(0)]);
+  return responseStatus + '|' + greeting + '|' + dist.toFixed(0);
 }
 
 /* ============================================================
