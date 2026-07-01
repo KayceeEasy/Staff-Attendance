@@ -17,33 +17,102 @@ let activeSubmission = null;
 let syncInProgress = false;
 let syncRetryTimer = null;
 
-/* ---------- Device identity ---------- */
+/* ---------- Device identity ----------
+   Uses IndexedDB as the primary persistence layer for the device UUID
+   because it survives cache clears, cookie clears, and service worker
+   updates — unlike localStorage which is wiped by those operations.
+   Falls back to localStorage if IndexedDB is unavailable, and falls
+   back further to a session-only ID if both fail.
+   The canvas hardware component is retained as an extra entropy source
+   combined with the stored UUID, not as the sole identifier. */
+
+const IDB_NAME = 'lifecard_attendance';
+const IDB_STORE = 'device';
+const IDB_KEY = 'uuid';
+
+function openDeviceIdb() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(IDB_NAME, 1);
+        req.onupgradeneeded = (event) => {
+            event.target.result.createObjectStore(IDB_STORE);
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+async function getOrCreateDeviceUuid() {
+    // Try IndexedDB first (most durable — survives cache/cookie clears)
+    try {
+        const db = await openDeviceIdb();
+        const existing = await new Promise((resolve, reject) => {
+            const tx = db.transaction(IDB_STORE, 'readonly');
+            const req = tx.objectStore(IDB_STORE).get(IDB_KEY);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+        if (existing) return existing;
+
+        // Not found — generate and store
+        const uuid = crypto.randomUUID
+            ? crypto.randomUUID()
+            : Array.from(crypto.getRandomValues(new Uint8Array(16)))
+                .map((b, i) => ([4, 6, 8, 10].includes(i) ? (b & 0x3f | 0x80).toString(16) : b.toString(16)).padStart(2, '0'))
+                .join('');
+
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction(IDB_STORE, 'readwrite');
+            tx.objectStore(IDB_STORE).put(uuid, IDB_KEY);
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        return uuid;
+    } catch (idbError) {
+        console.warn('IndexedDB unavailable, falling back to localStorage:', idbError.message);
+    }
+
+    // Fallback: localStorage
+    try {
+        const lsKey = 'attendance_device_uuid';
+        let uuid = localStorage.getItem(lsKey);
+        if (!uuid) {
+            uuid = Date.now().toString(36) + Math.random().toString(36).slice(2);
+            localStorage.setItem(lsKey, uuid);
+        }
+        return uuid;
+    } catch (lsError) {
+        console.warn('localStorage also unavailable, using session-only ID:', lsError.message);
+    }
+
+    // Last resort: session-only
+    return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
 
 async function generateIdentity() {
     try {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        ctx.textBaseline = 'top';
-        ctx.font = "14px 'Arial'";
-        ctx.fillStyle = '#f60';
-        ctx.fillRect(125, 1, 62, 20);
-        ctx.fillText('Lifecard-Security-v2', 2, 15);
-        const hw = btoa(canvas.toDataURL()).substr(-16, 16);
-        let salt = localStorage.getItem('attendance_salt') || Math.random().toString(36).substring(2, 10);
-        localStorage.setItem('attendance_salt', salt);
-        return `ID-${hw}-${salt}`;
+        const uuid = await getOrCreateDeviceUuid();
+
+        // Canvas component adds entropy but is not the sole identifier.
+        // If the browser randomizes canvas output, the UUID still holds.
+        let hw = 'xx';
+        try {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.textBaseline = 'top';
+            ctx.font = "14px 'Arial'";
+            ctx.fillStyle = '#f60';
+            ctx.fillRect(125, 1, 62, 20);
+            ctx.fillText('Lifecard-Security-v2', 2, 15);
+            hw = btoa(canvas.toDataURL()).substr(-8, 8);
+        } catch (canvasError) {
+            console.warn('Canvas fingerprinting unavailable:', canvasError.message);
+        }
+
+        return `ID-${hw}-${uuid}`;
     } catch (error) {
-        console.warn('Canvas fingerprinting failed, using fallback device ID:', error.message);
-        // Fallback: use browser fingerprint + random salt
-        const fallbackSalt = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
-        localStorage.setItem('attendance_salt', fallbackSalt);
-        const browserInfo = [
-            navigator.userAgent.slice(0, 20),
-            navigator.language,
-            screen.width + 'x' + screen.height,
-            new Date().getTimezoneOffset()
-        ].join('-').slice(0, 16);
-        return `ID-${browserInfo}-${fallbackSalt}`;
+        console.warn('generateIdentity failed completely, using fallback:', error.message);
+        const emergency = Date.now().toString(36) + Math.random().toString(36).slice(2);
+        return `ID-xx-${emergency}`;
     }
 }
 
@@ -494,6 +563,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.lucide.createIcons();
     }
     deviceId = await generateIdentity();
+    window._deviceId = deviceId; // expose for logAnalyticsEvent in common.js
 
     const staffNameSelect = document.getElementById('staff-name');
     const saved = localStorage.getItem('saved_name');

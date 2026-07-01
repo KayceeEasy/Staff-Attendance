@@ -73,6 +73,8 @@ function routeRequest(params) {
     case 'get-config': return { ok: true, config: getConfig() };
     case 'update-config': return updateConfig(params);
     case 'list-logs': return listLogs({ name: params.name, fromDate: params.fromDate, toDate: params.toDate, limit: params.limit, weekStart: params.weekStart });
+    case 'log-analytics': return logAnalyticsEvent(params.eventType, params.details, params.deviceId);
+    case 'list-analytics': return listAnalyticsEvents(params.limit);
     case 'get-hybrid-schedule': return getHybridSchedule(params.weekStart);
     case 'verify-owner': return verifyOwner({ name: params.name, deviceId: params.deviceId });
     case 'register-owner': return registerOwner({ name: params.name, deviceId: params.deviceId });
@@ -247,7 +249,16 @@ function listLogs(filters) {
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
     if (!row[1]) continue;
-    var dateStr = row[0] instanceof Date ? Utilities.formatDate(row[0], config.timezone, 'dd/MM/yyyy') : row[0].toString();
+    // If the cell is a Date object (old rows stored before the string-storage fix),
+    // convert using JS date methods to avoid Utilities.formatDate timezone double-shift
+    // which produces the 1899 epoch artifact on some rows.
+    var dateStr;
+    if (row[0] instanceof Date) {
+      var d = row[0];
+      dateStr = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+    } else {
+      dateStr = row[0].toString().trim();
+    }
     if (nameFilter && row[1].toString().trim().toLowerCase() !== nameFilter) continue;
     if (fromDate || toDate) {
       var entryDate = parseDdMmYyyy(dateStr);
@@ -464,7 +475,9 @@ function processAttendance(payload) {
   for (let j = logs.length - 1; j >= 0; j--) {
     if (!logs[j][1]) continue;
     if (logs[j][1].toString().trim().toLowerCase() === payload.name.trim().toLowerCase()) {
-      const logDate = logs[j][0] instanceof Date ? Utilities.formatDate(logs[j][0], config.timezone, 'dd/MM/yyyy') : logs[j][0].toString();
+      const logDate = logs[j][0] instanceof Date
+        ? (function(d) { return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear(); })(logs[j][0])
+        : logs[j][0].toString().trim();
       if (lastAction === '') { lastAction = logs[j][2]; lastDate = logDate; }
       if (logDate === todayStr) {
         if (logs[j][2] === 'IN') hasSignedInToday = true;
@@ -503,7 +516,7 @@ function processAttendance(payload) {
    ============================================================ */
 
 function updateConfig(params) {
-  const allowedKeys = ['OFFICE_LAT', 'OFFICE_LON', 'RADIUS_METERS', 'TIMEZONE'];
+  const allowedKeys = ['OFFICE_LAT', 'OFFICE_LON', 'RADIUS_METERS'];
   const key = params.key, value = params.value;
   if (!key || !allowedKeys.includes(key)) return { ok: false, message: 'Invalid configuration key. Allowed keys: ' + allowedKeys.join(', ') };
   if (key === 'OFFICE_LAT' || key === 'OFFICE_LON') {
@@ -512,8 +525,6 @@ function updateConfig(params) {
   } else if (key === 'RADIUS_METERS') {
     const num = parseInt(value, 10);
     if (isNaN(num) || num < 10 || num > 5000) return { ok: false, message: 'Invalid radius. Must be 10-5000.' };
-  } else if (key === 'TIMEZONE') {
-    if (!/^GMT[+-]\d{1,2}$/.test(value)) return { ok: false, message: 'Invalid timezone. Use GMT+1, GMT-5, etc.' };
   }
   PropertiesService.getScriptProperties().setProperty(key, value.toString());
   return { ok: true, message: 'Configuration updated.', config: getConfig() };
@@ -547,9 +558,10 @@ function logDistanceAlert(name, action, dist, lat, lon) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const alertsSheet = getOrCreateDistanceAlertsSheet(ss);
   const now = new Date();
-  const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const timeStr = Utilities.formatDate(now, 'GMT+1', 'hh:mm a');
-  alertsSheet.appendRow([todayDate, timeStr, name, action, dist.toFixed(0), lat, lon]);
+  const config = getConfig();
+  const todayStr = Utilities.formatDate(now, config.timezone, 'dd/MM/yyyy');
+  const timeStr = Utilities.formatDate(now, config.timezone, 'hh:mm a');
+  alertsSheet.appendRow([todayStr, timeStr, name, action, dist.toFixed(0), lat, lon]);
 }
 
 function findStaffRecord(name) {
@@ -578,4 +590,45 @@ function setDeviceResetCodeOnce() {
   const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, RESET_CODE_PLAINTEXT).map((b) => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
   PropertiesService.getScriptProperties().setProperty('adminResetCodeHash', hash);
   Logger.log('Reset code hash stored. Distribute the plaintext code to admins only.');
+}
+
+/* ============================================================
+   CLIENT ANALYTICS
+   Staff device errors/events are reported here so the admin can
+   see them in the Analytics tab rather than being invisible.
+   Stored in a lightweight rolling JSON array in Script Properties
+   (max 100 events, older ones drop off). Not a full logging
+   infrastructure — just enough to surface errors from the field.
+   ============================================================ */
+
+function logAnalyticsEvent(eventType, details, deviceId) {
+  if (!eventType) return { ok: false };
+  const props = PropertiesService.getScriptProperties();
+  let events = [];
+  try { events = JSON.parse(props.getProperty('analyticsEvents') || '[]'); } catch (e) { events = []; }
+  const config = getConfig();
+  const now = new Date();
+  events.unshift({
+    type: eventType,
+    details: details || '',
+    deviceId: deviceId || '',
+    time: Utilities.formatDate(now, config.timezone, 'dd/MM/yyyy HH:mm:ss')
+  });
+  if (events.length > 100) events = events.slice(0, 100);
+  try {
+    props.setProperty('analyticsEvents', JSON.stringify(events));
+  } catch (e) {
+    // Script Properties has a 9KB-per-property limit; if it overflows, trim aggressively
+    events = events.slice(0, 20);
+    props.setProperty('analyticsEvents', JSON.stringify(events));
+  }
+  return { ok: true };
+}
+
+function listAnalyticsEvents(limit) {
+  const props = PropertiesService.getScriptProperties();
+  let events = [];
+  try { events = JSON.parse(props.getProperty('analyticsEvents') || '[]'); } catch (e) { events = []; }
+  const cap = limit ? parseInt(limit, 10) : 50;
+  return { ok: true, events: events.slice(0, cap) };
 }

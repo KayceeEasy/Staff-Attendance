@@ -663,7 +663,7 @@ function processAnalyticsData(logs, schedule) {
     };
 }
 
-function renderAnalytics() {
+function renderAnalytics(deviceEvents = []) {
     const host = document.getElementById('analytics-content');
     if (!host) return;
     
@@ -757,6 +757,27 @@ function renderAnalytics() {
         <div class="logs-footer">
             <button id="export-analytics-btn" class="admin-btn secondary small" type="button">📥 Export CSV</button>
         </div>
+        
+        <!-- Device Error Events from field -->
+        ${deviceEvents.length > 0 ? `
+        <div class="analytics-section">
+            <h4>🔴 Device Events (Last 50)</h4>
+            <p class="admin-intro">Errors and warnings reported from staff devices.</p>
+            <div class="logs-table-wrapper">
+                <div class="logs-table" style="min-width:400px">
+                    <div class="logs-row logs-head" style="grid-template-columns:1fr 1fr 2fr">
+                        <span>Time</span><span>Type</span><span>Details</span>
+                    </div>
+                    ${deviceEvents.map(e => `
+                        <div class="logs-row" style="grid-template-columns:1fr 1fr 2fr">
+                            <span style="font-size:0.75rem">${escapeHtml(e.time || '')}</span>
+                            <span class="status-pill-small ${e.type.includes('error') ? 'late' : 'offline'}">${escapeHtml(e.type)}</span>
+                            <span style="font-size:0.75rem;word-break:break-all">${escapeHtml(e.details || '')}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>` : '<div class="analytics-section"><h4>🔴 Device Events</h4><div class="staff-list-state">No device errors reported.</div></div>'}
     `;
     
     document.getElementById('export-analytics-btn')?.addEventListener('click', () => {
@@ -775,23 +796,23 @@ async function loadAnalytics() {
     if (host) host.innerHTML = '<div class="staff-list-state">Loading analytics...</div>';
     
     try {
-        // Use cached week data first
+        // Use cached week data first for attendance analytics
         const allLogs = Object.values(cachedWeekData).flatMap(w => w.logs || []);
         const allSchedule = Object.values(cachedWeekData).reduce((acc, w) => ({ ...acc, ...(w.schedule || {}) }), {});
         
-        if (allLogs.length > 0) {
-            analyticsData = processAnalyticsData(allLogs, allSchedule);
-            renderAnalytics();
-        } else {
-            // Fetch broader range
-            const response = await fetchLogs({ limit: 1000 });
-            if (response.ok && Array.isArray(response.logs)) {
-                analyticsData = processAnalyticsData(response.logs, {});
-                renderAnalytics();
-            } else {
-                if (host) host.innerHTML = '<div class="staff-list-state">Could not load analytics.</div>';
-            }
-        }
+        // Fetch server-side analytics events in parallel
+        const [attendanceLogs, analyticsResponse] = await Promise.all([
+            allLogs.length > 0
+                ? Promise.resolve(allLogs)
+                : fetchLogs({ limit: 1000 }).then(r => (r.ok && Array.isArray(r.logs)) ? r.logs : []),
+            callBackend({ mode: 'list-analytics', limit: 50 }).catch(() => ({ ok: false, events: [] }))
+        ]);
+
+        analyticsData = processAnalyticsData(attendanceLogs, allSchedule);
+        const deviceEvents = (analyticsResponse.ok && Array.isArray(analyticsResponse.events))
+            ? analyticsResponse.events : [];
+
+        renderAnalytics(deviceEvents);
     } catch (error) {
         if (host) host.innerHTML = '<div class="staff-list-state">Failed to load analytics.</div>';
     }
@@ -919,11 +940,6 @@ function renderAdminPanel() {
                     <div class="config-info"><strong>Geofence Radius</strong><span class="config-value" id="config-radius-current">200m</span></div>
                     <button id="config-radius-btn" class="admin-btn secondary small" type="button">Edit</button>
                 </div>
-                <div class="config-card">
-                    <span class="config-icon">🕐</span>
-                    <div class="config-info"><strong>Timezone</strong><span class="config-value" id="config-tz-current">GMT+1</span></div>
-                    <button id="config-timezone-btn" class="admin-btn secondary small" type="button">Edit</button>
-                </div>
             </div>
         </div>
     `;
@@ -1014,11 +1030,6 @@ function renderAdminPanel() {
         const r = await showInlineDialog({ title: 'Geofence Radius (10-5000m)', fields: [{ placeholder: 'Meters' }], confirmLabel: 'Update' });
         if (!r) return;
         try { const res = await callBackend({ mode: 'update-config', key: 'RADIUS_METERS', value: r[0] }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-radius-current').textContent = r[0] + 'm'; } catch (e) { showToast('Server error.', 'error'); }
-    });
-    document.getElementById('config-timezone-btn').addEventListener('click', async () => {
-        const r = await showInlineDialog({ title: 'Timezone (e.g., GMT+1)', fields: [{ placeholder: 'Timezone' }], confirmLabel: 'Update' });
-        if (!r) return;
-        try { const res = await callBackend({ mode: 'update-config', key: 'TIMEZONE', value: r[0] }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-tz-current').textContent = r[0]; } catch (e) { showToast('Server error.', 'error'); }
     });
 
     // Start with dashboard

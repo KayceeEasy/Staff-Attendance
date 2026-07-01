@@ -1,4 +1,4 @@
-const CACHE_NAME = 'staff-attendance-v7';
+const CACHE_NAME = 'staff-attendance-v8';
 const APP_SHELL = [
   './',
   './index.html',

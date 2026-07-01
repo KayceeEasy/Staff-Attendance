@@ -14,9 +14,13 @@ const STORAGE_KEYS = {
 };
 
 /* ---------- Analytics/Monitoring ----------
-   Tracks errors and issues for admin review. */
+   logAnalyticsEvent stores events locally AND fires a non-blocking
+   POST to the server so the admin can see errors from staff devices
+   in the Analytics tab. The server call is fire-and-forget — a
+   failure to reach the server does not throw or affect the user. */
 
 function logAnalyticsEvent(type, details = {}) {
+    // Store locally (immediate, offline-safe)
     const analytics = readStoredJson(STORAGE_KEYS.analytics, []);
     const event = {
         type,
@@ -24,8 +28,16 @@ function logAnalyticsEvent(type, details = {}) {
         timestamp: new Date().toISOString()
     };
     analytics.unshift(event);
-    // Keep only last 100 events
     writeStoredJson(STORAGE_KEYS.analytics, analytics.slice(0, 100));
+
+    // Fire-and-forget to server (best-effort, non-blocking)
+    if (navigator.onLine) {
+        const deviceId = typeof window._deviceId !== 'undefined' ? window._deviceId : '';
+        const detailStr = typeof details === 'object' ? JSON.stringify(details) : String(details);
+        callBackend({ mode: 'log-analytics', eventType: type, details: detailStr, deviceId }).catch(() => {
+            // Silently ignore — analytics reporting must never break the main flow
+        });
+    }
 }
 
 function getAnalytics() {
@@ -121,7 +133,7 @@ async function callBackendDeduplicated(payload, timeoutMs = 12000) {
    already be hashed by the caller before calling this function -
    callBackend never receives raw passwords. */
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxw2NO8BwcVYdiHyZfzVFFkY_D8VTaBBuMayNcRWopDFAi0PKwiuOKXZxJXVyPZvEP0-w/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxw2NO8BwcVYdiHyZfzVFFkY_D8VTaBBuMayNcRWopDFAi0PKwiuOKXZxJXVyPZvEP0-w/dev';
 
 function injectBackendScript(url, timeoutMs = 12000) {
     return new Promise((resolve, reject) => {
