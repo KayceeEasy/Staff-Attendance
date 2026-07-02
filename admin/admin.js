@@ -71,9 +71,32 @@ async function fetchLogs(filters = {}) {
 async function fetchHybridSchedule(weekStart) {
     try {
         const response = await callBackend({ mode: 'get-hybrid-schedule', weekStart });
-        if (response.ok && response.schedule) {
+        console.debug('get-hybrid-schedule response:', response);
+        if (response && response.ok && response.schedule && Object.keys(response.schedule).length) {
             hybridScheduleCache[weekStart] = response.schedule;
             return response.schedule;
+        }
+
+        // Fallback: try to locate JSON blob in common properties and parse it
+        const possibleFields = ['schedule', 'result', 'data', 'raw', 'payload', 'scheduleJson'];
+        for (const f of possibleFields) {
+            const candidate = response && response[f];
+            if (!candidate) continue;
+            if (typeof candidate === 'object' && Object.keys(candidate).length) {
+                hybridScheduleCache[weekStart] = candidate;
+                return candidate;
+            }
+            if (typeof candidate === 'string') {
+                try {
+                    const parsed = JSON.parse(candidate);
+                    if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
+                        hybridScheduleCache[weekStart] = parsed;
+                        return parsed;
+                    }
+                } catch (e) {
+                    // ignore parse error
+                }
+            }
         }
     } catch (e) {
         console.warn('Could not fetch hybrid schedule:', e);
@@ -218,8 +241,42 @@ function navigateWeek(direction) {
 }
 
 function parseDmyDate(str) {
-    const parts = str.split('/');
+    const parts = String(str || '').split('/').map(p => p.trim());
     return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+}
+
+function normalizeDateKey(value) {
+    if (!value) return '';
+    if (value instanceof Date && !isNaN(value)) {
+        return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+    }
+    const trimmed = String(value).trim();
+    if (!trimmed) return '';
+    // Accept dd/mm/yyyy, yyyy-mm-dd, and Date.parse-compatible values.
+    const dmyMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (dmyMatch) {
+        return `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
+    }
+    const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (isoMatch) {
+        return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+    }
+    const parsed = new Date(trimmed);
+    if (!isNaN(parsed)) {
+        return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+    }
+    return '';
+}
+
+function buildScheduleNameIndex(schedule) {
+    // Build a mapping of normalized staff name -> original schedule key
+    const index = {};
+    if (!schedule || typeof schedule !== 'object') return index;
+    Object.keys(schedule).forEach((raw) => {
+        const key = String(raw || '').trim().toLowerCase();
+        if (key) index[key] = raw;
+    });
+    return index;
 }
 
 /* ---------- Tab Navigation ---------- */
@@ -350,8 +407,8 @@ function renderWeekOverview(logs, schedule, weekDays) {
     }
     
     // Stats
-    const signedIn = logs.filter(s => String(s.action || '').toUpperCase() === 'IN').length;
-    const lateCount = logs.filter(s => String(s.status || '').toUpperCase() === 'LATE').length;
+    const signedIn = logs.filter(s => String(s.action || '').trim().toUpperCase() === 'IN').length;
+    const lateCount = logs.filter(s => String(s.status || '').trim().toUpperCase() === 'LATE').length;
     
     host.innerHTML = `
         <div class="today-attendance-summary">
@@ -375,13 +432,6 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
     const host = document.getElementById('attendance-matrix');
     if (!host) return;
     
-    // DEBUG: Log sample data to understand structure
-    if (logs.length > 0) {
-        console.log('=== DEBUG: Sample log entry ===', JSON.stringify(logs[0], null, 2));
-        console.log('=== DEBUG: Total logs ===', logs.length);
-        console.log('=== DEBUG: Week days ===', weekDays);
-    }
-    
     // Build staff × day matrix
     const staffMap = {};
     const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -397,28 +447,39 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
     if (allStaffList.length) allStaffList.forEach(s => allStaff.add(s.name));
     
     const sortedStaff = Array.from(allStaff).sort((a, b) => a.localeCompare(b));
+    const scheduleNameIndex = buildScheduleNameIndex(schedule);
     
     // Build matrix
     const matrix = {};
     sortedStaff.forEach(name => {
         matrix[name] = {};
         weekDays.forEach((day, idx) => {
-            // Normalize dates for comparison (backend may use YYYY-MM-DD, weekDays is DD/MM/YYYY)
-            const dayNormalized = day.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1');
+            const dayKey = normalizeDateKey(day);
+            const normalizedStaffName = String(name || '').trim().toLowerCase();
+
             const dayLogs = logs.filter(l => {
-                const logDate = l.date || '';
-                const logDateNormalized = logDate.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1');
-                return l.name === name && (logDate === day || logDateNormalized === dayNormalized);
+                const logName = String(l.name || '').trim().toLowerCase();
+                const logDateKey = normalizeDateKey(l.date || l.timestamp || '');
+                return logName === normalizedStaffName && logDateKey === dayKey;
             });
-            const daySchedule = schedule[name]?.find(s => {
-                const schedDate = s.date || '';
-                const schedDateNormalized = schedDate.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1');
-                return schedDate === day || schedDateNormalized === dayNormalized;
-            });
+
+            // Find the schedule key for this staff (case/whitespace resilient)
+            let scheduleKey = scheduleNameIndex[normalizedStaffName] || null;
+            // Fallback: try to find a close match among schedule keys (contains/contained)
+            if (!scheduleKey) {
+                const candidate = Object.keys(schedule || {}).find(k => {
+                    const nk = String(k || '').trim().toLowerCase();
+                    return nk === normalizedStaffName || nk.includes(normalizedStaffName) || normalizedStaffName.includes(nk);
+                });
+                if (candidate) scheduleKey = candidate;
+            }
+            const staffSchedules = scheduleKey ? (schedule[scheduleKey] || []) : [];
+            const daySchedule = staffSchedules.find(s => normalizeDateKey(s.date) === dayKey);
+
             matrix[name][idx] = {
                 logs: dayLogs,
                 schedule: daySchedule || null,
-                isWfh: daySchedule?.location === 'home'
+                isWfh: String(daySchedule?.location || '').trim().toLowerCase() === 'home'
             };
         });
     });
@@ -456,8 +517,8 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
                                     statusClass = 'matrix-wfh';
                                 } else if (latest) {
                                     // Check for late status (case-insensitive)
-                                    const isLate = latest.status && String(latest.status).toUpperCase() === 'LATE';
-                                    const actionType = String(latest.action || '').toUpperCase();
+                                    const isLate = latest.status && String(latest.status).trim().toUpperCase() === 'LATE';
+                                    const actionType = String(latest.action || '').trim().toUpperCase();
                                     status = `${actionType === 'IN' ? '✓ In' : '✓ Out'}<br>${latest.time || ''}`;
                                     if (isLate && actionType === 'IN') status += '<br>⚠ Late';
                                     statusClass = actionType === 'IN' ? 'matrix-in' : 'matrix-out';
@@ -480,6 +541,26 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
             <span class="legend-item"><span class="legend-dot matrix-absent"></span> Absent</span>
         </div>
     `;
+
+    // Optional debug output: append schedule-name index and WFH counts when '#debug-schedule' present
+    if (window.location && window.location.hash === '#debug-schedule') {
+        try {
+            const debugRows = sortedStaff.map(name => {
+                const n = String(name || '').trim();
+                const key = scheduleNameIndex[n.toLowerCase()] || null;
+                const sched = key ? (schedule[key] || []) : [];
+                const wfhCount = sched.filter(s => String(s.location || '').toLowerCase() === 'home').length;
+                return { name: n, scheduleKey: key, wfhCount, sched };
+            });
+            const debugHtml = '<div class="analytics-section debug-schedule">' +
+                '<h4>🧪 Schedule Debug</h4>' +
+                '<pre style="max-height:240px;overflow:auto;white-space:pre-wrap">' + escapeHtml(JSON.stringify({ scheduleNameIndex, debugRows }, null, 2)) + '</pre>' +
+                '</div>';
+            host.innerHTML += debugHtml;
+        } catch (e) {
+            console.warn('Schedule debug render failed', e.message);
+        }
+    }
 }
 
 /* ============================================================
@@ -830,7 +911,7 @@ function renderAnalytics(deviceEvents = []) {
                             <span class="stat-in">${s.signIns} in</span>
                             <span class="stat-out">${s.signOuts} out</span>
                             <span class="stat-in">${s.attendanceRate}% office</span>
-                            ${s.wfhDays > 0 ? `<span class="stat-wfh">🏠 ${s.wfhDays} WFH</span>` : ''}
+                            ${s.wfhDays > 0 ? `<span class="stat-wfh">🏠 ${s.wfhDays}</span>` : ''}
                             ${s.lateCount > 0 ? `<span class="stat-late">⚠ ${s.lateCount}</span>` : ''}
                         </span>
                     </div>
@@ -855,7 +936,7 @@ function renderAnalytics(deviceEvents = []) {
                     ${deviceEvents.map(e => `
                         <div class="logs-row" style="grid-template-columns:1fr 1fr 2fr">
                             <span style="font-size:0.75rem">${escapeHtml(e.time || '')}</span>
-                            <span class="status-pill-small ${e.type.includes('error') ? 'late' : 'offline'}">${escapeHtml(e.type)}</span>
+                            <span class="status-pill-small ${e.type.includes('error') || e.type.includes('geofence') ? 'late' : 'offline'}">${escapeHtml(e.type)}</span>
                             <span style="font-size:0.75rem;word-break:break-all">${escapeHtml(e.details || '')}</span>
                         </div>
                     `).join('')}

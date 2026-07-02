@@ -520,9 +520,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .attendance-matrix .matrix-name { text-align: left; font-weight: 700; color: var(--text); white-space: nowrap; position: sticky; left: 0; background: var(--surface); padding-left: 10px; }
 .matrix-cell { font-size: 0.72rem; line-height: 1.4; }
 .matrix-in { background: var(--success-light); color: #065f46; }
-.matrix-out { background: var(--surface-3); color: var(--muted); }
-.matrix-wfh { background: rgba(217, 119, 6, 0.08); color: #92400e; }
-.matrix-absent { background: var(--error-light); color: var(--error); }
+.matrix-out { background: rgba(100, 116, 139, 0.12); color: #475569; }
+.matrix-wfh { background: rgba(217, 119, 6, 0.12); color: #92400e; }
+.matrix-absent { background: rgba(248, 113, 113, 0.12); color: var(--error); }
 :root[data-theme="dark"] .matrix-in { background: rgba(52, 211, 153, 0.12); color: var(--success); }
 :root[data-theme="dark"] .matrix-wfh { color: var(--warning); }
 :root[data-theme="dark"] .matrix-absent { background: rgba(248, 113, 113, 0.1); color: var(--error); }

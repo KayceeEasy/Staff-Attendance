@@ -385,9 +385,115 @@ function getHybridSchedule(weekStart) {
     if (data.length < 2) return { ok: true, schedule: {} };
 
     const schedule = {};
-    const headers = data[0];
     const friday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 4);
+    const weekDates = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map((dayName, index) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + index);
+      return { dayName, date: Utilities.formatDate(d, 'GMT+1', 'dd/MM/yyyy') };
+    });
 
+    // The scheduler sheet may store a human-readable week label in row 1,
+    // a timestamp in row 2, and a JSON blob in row 3 (first cell), or
+    // it may store the JSON in a different cell. Be permissive: search
+    // the sheet for a JSON blob near the matching week label.
+    const config = getConfig();
+
+    // Build human-friendly week label like "June 29 - July 3, 2026"
+    function formatWeekLabel(mondayDate, fridayDate) {
+      const tz = config.timezone || 'GMT+1';
+      const m1 = Utilities.formatDate(mondayDate, tz, 'MMMM d');
+      const m2 = Utilities.formatDate(fridayDate, tz, 'MMMM d');
+      const y1 = Utilities.formatDate(mondayDate, tz, 'yyyy');
+      // If years differ, include both years; otherwise include once
+      if (Utilities.formatDate(mondayDate, tz, 'yyyy') !== Utilities.formatDate(fridayDate, tz, 'yyyy')) {
+        return `${m1}, ${y1} - ${m2}, ${Utilities.formatDate(fridayDate, tz, 'yyyy')}`;
+      }
+      return `${m1} - ${m2}, ${y1}`;
+    }
+
+    const weekLabelHuman = formatWeekLabel(monday, friday);
+
+    // Try to find a row whose first cell matches the week label exactly.
+    let foundRow = -1;
+    for (let r = 0; r < data.length; r++) {
+      const cell = data[r][0] ? String(data[r][0]).trim() : '';
+      if (!cell) continue;
+      if (cell === weekLabelHuman) { foundRow = r; break; }
+      // Also accept the plain monday dd/MM/yyyy representation
+      if (cell === Utilities.formatDate(monday, 'GMT+1', 'dd/MM/yyyy')) { foundRow = r; break; }
+    }
+
+    // If we found the header row, look in the next couple rows for JSON
+    if (foundRow >= 0) {
+      const candidateCells = [];
+      // look at the same column in the next 1-3 rows and also the row itself columns
+      for (let c = 0; c < Math.min(6, data[foundRow].length); c++) {
+        if (data[foundRow][c]) candidateCells.push(String(data[foundRow][c]));
+      }
+      for (let rr = foundRow + 1; rr <= Math.min(foundRow + 3, data.length - 1); rr++) {
+        for (let c = 0; c < Math.min(6, data[rr].length); c++) {
+          if (data[rr][c]) candidateCells.push(String(data[rr][c]));
+        }
+      }
+
+      for (const cellStr of candidateCells) {
+        const trimmed = String(cellStr).trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+          try {
+            const jsonSchedule = JSON.parse(trimmed);
+            Object.entries(jsonSchedule).forEach(([rawName, weekMap]) => {
+              const staffName = String(rawName || '').trim();
+              if (!staffName || typeof weekMap !== 'object' || Array.isArray(weekMap)) return;
+              schedule[staffName] = [];
+              weekDates.forEach(({ dayName, date }) => {
+                const rawLocation = String(weekMap[dayName] || weekMap[dayName.toLowerCase()] || '').trim().toLowerCase();
+                if (!rawLocation) return;
+                schedule[staffName].push({
+                  date,
+                  location: (rawLocation === 'office' || rawLocation === 'on-site' || rawLocation === 'present') ? 'office' : 'home'
+                });
+              });
+            });
+            return { ok: true, schedule };
+          } catch (jsonErr) {
+            // continue searching
+          }
+        }
+      }
+    }
+
+    // Fallback: scan the whole sheet for any JSON blob and attempt to use it
+    for (let r = 0; r < data.length; r++) {
+      for (let c = 0; c < Math.min(10, data[r].length); c++) {
+        const cellVal = data[r][c];
+        if (!cellVal) continue;
+        const s = String(cellVal).trim();
+        if (s.startsWith('{') || s.startsWith('[')) {
+          try {
+            const jsonSchedule = JSON.parse(s);
+            Object.entries(jsonSchedule).forEach(([rawName, weekMap]) => {
+              const staffName = String(rawName || '').trim();
+              if (!staffName || typeof weekMap !== 'object' || Array.isArray(weekMap)) return;
+              schedule[staffName] = [];
+              weekDates.forEach(({ dayName, date }) => {
+                const rawLocation = String(weekMap[dayName] || weekMap[dayName.toLowerCase()] || '').trim().toLowerCase();
+                if (!rawLocation) return;
+                schedule[staffName].push({
+                  date,
+                  location: (rawLocation === 'office' || rawLocation === 'on-site' || rawLocation === 'present') ? 'office' : 'home'
+                });
+              });
+            });
+            return { ok: true, schedule };
+          } catch (e) {
+            // ignore and continue
+          }
+        }
+      }
+    }
+
+    const headers = data[0];
     for (let col = 1; col < headers.length; col++) {
       let headerDate = null;
       if (headers[col] instanceof Date) headerDate = Utilities.formatDate(headers[col], 'GMT+1', 'dd/MM/yyyy');
@@ -410,7 +516,7 @@ function getHybridSchedule(weekStart) {
         });
       }
     }
-    return { ok: true, schedule: schedule };
+    return { ok: true, schedule };
   } catch (err) {
     console.error('Could not fetch hybrid schedule: ' + err.message);
     return { ok: true, schedule: {} };

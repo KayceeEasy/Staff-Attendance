@@ -206,14 +206,47 @@ async function callBackend(payload, timeoutMs = 12000) {
         const data = await response.json();
         return normalizeBackendResponse(data);
     } catch (postError) {
-        console.warn('POST to backend failed, falling back to JSONP GET:', postError.message);
+        // Provide richer diagnostics to the console so admins can see what's happening
+        const preview = { ...payloadWithCsrf };
+        if (preview.password) preview.password = '***';
+        if (preview.newPasswordHash) preview.newPasswordHash = '***';
+        console.warn('POST to backend failed, falling back to JSONP GET:', postError && postError.message ? postError.message : postError);
+        console.debug('POST error details:', postError);
+        console.debug('Payload preview (sensitive fields redacted):', preview);
+
+        // If it was an AbortError (likely a timeout), retry once with a longer timeout
+        if (postError && postError.name === 'AbortError') {
+            try {
+                console.debug('Retrying POST with extended timeout...');
+                const controller2 = new AbortController();
+                const extended = Math.max(timeoutMs * 2, 30000);
+                const timer2 = setTimeout(() => controller2.abort(), extended);
+                const resp2 = await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payloadWithCsrf),
+                    signal: controller2.signal
+                });
+                clearTimeout(timer2);
+                if (resp2.ok) {
+                    const data2 = await resp2.json();
+                    return normalizeBackendResponse(data2);
+                }
+                console.warn('Retry POST failed with status', resp2.status);
+            } catch (retryErr) {
+                console.warn('Retry POST failed:', retryErr && retryErr.message ? retryErr.message : retryErr);
+            }
+        }
     }
 
     // Attempt 2: JSONP GET fallback.
     try {
         const params = new URLSearchParams();
         Object.entries(payloadWithCsrf).forEach(([key, value]) => {
-            if (value !== undefined && value !== null) params.set(key, value);
+            if (value === undefined || value === null) return;
+            // Ensure objects are serialized so JSONP receives them properly
+            if (typeof value === 'object') params.set(key, JSON.stringify(value));
+            else params.set(key, String(value));
         });
         const data = await injectBackendScript(`${SCRIPT_URL}?${params.toString()}`, timeoutMs);
         return normalizeBackendResponse(data);

@@ -63,10 +63,10 @@ A Progressive Web App for staff attendance tracking with GPS geofencing, device 
 ### 2. Configure Office Location
 
 Default configuration (can be changed via admin panel):
-- **Office Lat**: 6.4518631
-- **Office Lon**: 3.5277863
-- **Radius**: 200 meters
-- **Timezone**: GMT+1
+- **Office Lat**: Set yours
+- **Office Lon**: Set yours
+- **Radius**: Set yours
+- **Timezone**: Set yours
 
 To update via admin panel:
 1. Log into admin console

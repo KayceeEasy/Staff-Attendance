@@ -509,20 +509,31 @@ async function handleAttendanceResponse(data) {
         }
         activeSubmission = null;
     } else if (activeSubmission && activeSubmission.pendingId && status === 'BLOCK') {
-        // A queued item came back blocked (e.g. duplicate sign-in) - drop it
-        // rather than retrying forever.
+        // A queued item came back blocked (e.g. duplicate sign-in, geofence violation)
+        if (/too far from the office/i.test(text) || /Denied\./i.test(text)) {
+            logAnalyticsEvent('geofence_violation_attempt', {
+                name: activeSubmission.name,
+                action: activeSubmission.action,
+                lat: activeSubmission.lat,
+                lon: activeSubmission.lon,
+                deviceId: deviceId,
+                message: text || 'Location verification failed'
+            });
+        }
         removeQueuedSubmission(activeSubmission.pendingId);
         activeSubmission = null;
     } else if (activeSubmission && status === 'BLOCK') {
         // Log geofence violation attempt for admin monitoring
-        logAnalyticsEvent('geofence_violation_attempt', {
-            name: activeSubmission.name,
-            action: activeSubmission.action,
-            lat: activeSubmission.lat,
-            lon: activeSubmission.lon,
-            deviceId: deviceId,
-            message: text || 'Location verification failed'
-        });
+        if (/too far from the office/i.test(text) || /Denied\./i.test(text)) {
+            logAnalyticsEvent('geofence_violation_attempt', {
+                name: activeSubmission.name,
+                action: activeSubmission.action,
+                lat: activeSubmission.lat,
+                lon: activeSubmission.lon,
+                deviceId: deviceId,
+                message: text || 'Location verification failed'
+            });
+        }
         activeSubmission = null;
     }
 
