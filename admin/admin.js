@@ -350,8 +350,8 @@ function renderWeekOverview(logs, schedule, weekDays) {
     }
     
     // Stats
-    const signedIn = logs.filter(s => s.action === 'IN').length;
-    const lateCount = logs.filter(s => s.status === 'LATE').length;
+    const signedIn = logs.filter(s => String(s.action || '').toUpperCase() === 'IN').length;
+    const lateCount = logs.filter(s => String(s.status || '').toUpperCase() === 'LATE').length;
     
     host.innerHTML = `
         <div class="today-attendance-summary">
@@ -375,6 +375,13 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
     const host = document.getElementById('attendance-matrix');
     if (!host) return;
     
+    // DEBUG: Log sample data to understand structure
+    if (logs.length > 0) {
+        console.log('=== DEBUG: Sample log entry ===', JSON.stringify(logs[0], null, 2));
+        console.log('=== DEBUG: Total logs ===', logs.length);
+        console.log('=== DEBUG: Week days ===', weekDays);
+    }
+    
     // Build staff × day matrix
     const staffMap = {};
     const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -396,8 +403,18 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
     sortedStaff.forEach(name => {
         matrix[name] = {};
         weekDays.forEach((day, idx) => {
-            const dayLogs = logs.filter(l => l.name === name && l.date === day);
-            const daySchedule = schedule[name]?.find(s => s.date === day);
+            // Normalize dates for comparison (backend may use YYYY-MM-DD, weekDays is DD/MM/YYYY)
+            const dayNormalized = day.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1');
+            const dayLogs = logs.filter(l => {
+                const logDate = l.date || '';
+                const logDateNormalized = logDate.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1');
+                return l.name === name && (logDate === day || logDateNormalized === dayNormalized);
+            });
+            const daySchedule = schedule[name]?.find(s => {
+                const schedDate = s.date || '';
+                const schedDateNormalized = schedDate.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1');
+                return schedDate === day || schedDateNormalized === dayNormalized;
+            });
             matrix[name][idx] = {
                 logs: dayLogs,
                 schedule: daySchedule || null,
@@ -422,9 +439,15 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
                             <td class="matrix-name">${escapeHtml(name)}</td>
                             ${weekDays.map((_, i) => {
                                 const cell = row[i];
-                                const ins = cell.logs.filter(l => l.action === 'IN');
-                                const outs = cell.logs.filter(l => l.action === 'OUT');
-                                const latest = cell.logs[cell.logs.length - 1];
+                                
+                                // Sort logs by timestamp to get the actual latest action
+                                const sortedLogs = [...cell.logs].sort((a, b) => {
+                                    const timeA = a.timestamp || a.time || '';
+                                    const timeB = b.timestamp || b.time || '';
+                                    return timeB.localeCompare(timeA);
+                                });
+                                const latest = sortedLogs[0];
+                                
                                 let status = '';
                                 let statusClass = '';
                                 
@@ -432,10 +455,12 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
                                     status = '🏠 WFH';
                                     statusClass = 'matrix-wfh';
                                 } else if (latest) {
-                                    const isLate = latest.status === 'LATE';
-                                    status = `${latest.action === 'IN' ? '✓' : '✓'}<br>${latest.time}`;
-                                    if (isLate) status += '<br>⚠ Late';
-                                    statusClass = latest.action === 'IN' ? 'matrix-in' : 'matrix-out';
+                                    // Check for late status (case-insensitive)
+                                    const isLate = latest.status && String(latest.status).toUpperCase() === 'LATE';
+                                    const actionType = String(latest.action || '').toUpperCase();
+                                    status = `${actionType === 'IN' ? '✓ In' : '✓ Out'}<br>${latest.time || ''}`;
+                                    if (isLate && actionType === 'IN') status += '<br>⚠ Late';
+                                    statusClass = actionType === 'IN' ? 'matrix-in' : 'matrix-out';
                                 } else {
                                     status = '—';
                                     statusClass = 'matrix-absent';

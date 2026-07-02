@@ -408,6 +408,23 @@ async function submit(action) {
         return;
     }
 
+    // If offline, still validate location before queuing
+    // This prevents GPS spoofing attacks even in offline mode
+    if (!navigator.onLine) {
+        // Check if coords are available and within reasonable bounds
+        if (!coords || !coords.lat || !coords.lon) {
+            showToast('Location required. Cannot sign in without GPS.', 'error');
+            updateSignInButtonsState();
+            return;
+        }
+        
+        // Queue the submission - server will validate location when syncing
+        queuePendingSubmission(name, action, coords.lat, coords.lon);
+        rememberLastAction(action, name);
+        setMessage('Saved offline. Location will be verified when synced.', 'msg-late');
+        return;
+    }
+
     setMessage('Checking device authorization...', 'msg-welcome');
     let verified;
     try {
@@ -423,12 +440,6 @@ async function submit(action) {
 
     if (!verified) {
         updateSignInButtonsState();
-        return;
-    }
-
-    if (!navigator.onLine) {
-        queuePendingSubmission(name, action, coords.lat, coords.lon);
-        rememberLastAction(action, name);
         return;
     }
 
@@ -501,6 +512,17 @@ async function handleAttendanceResponse(data) {
         // A queued item came back blocked (e.g. duplicate sign-in) - drop it
         // rather than retrying forever.
         removeQueuedSubmission(activeSubmission.pendingId);
+        activeSubmission = null;
+    } else if (activeSubmission && status === 'BLOCK') {
+        // Log geofence violation attempt for admin monitoring
+        logAnalyticsEvent('geofence_violation_attempt', {
+            name: activeSubmission.name,
+            action: activeSubmission.action,
+            lat: activeSubmission.lat,
+            lon: activeSubmission.lon,
+            deviceId: deviceId,
+            message: text || 'Location verification failed'
+        });
         activeSubmission = null;
     }
 
@@ -667,3 +689,252 @@ setInterval(() => {
         flushPendingQueue();
     }
 }, 10000);
+
+/* ---------- FAQ Modal ---------- */
+
+function initFaqModal() {
+    const faqBtn = document.getElementById('faq-btn');
+    const faqModal = document.getElementById('faq-modal');
+    const faqCloseBtn = document.getElementById('faq-close-btn');
+    const faqSearch = document.getElementById('faq-search');
+    const faqContent = document.getElementById('faq-content');
+    const categoryBtns = document.querySelectorAll('.faq-category-btn');
+    const questionBtns = document.querySelectorAll('.faq-question');
+    
+    if (!faqBtn || !faqModal) return;
+    
+    let previousActiveElement = null;
+    let isSearching = false;
+    
+    // Open modal
+    faqBtn.addEventListener('click', () => {
+        previousActiveElement = document.activeElement;
+        openFaqModal();
+    });
+    
+    // Close modal
+    if (faqCloseBtn) {
+        faqCloseBtn.addEventListener('click', closeFaqModal);
+    }
+    
+    // Close on overlay click
+    faqModal.addEventListener('click', (e) => {
+        if (e.target === faqModal) {
+            closeFaqModal();
+        }
+    });
+    
+    // Close on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && faqModal.classList.contains('active')) {
+            closeFaqModal();
+        }
+    });
+    
+    // Category filtering
+    categoryBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const category = btn.closest('.faq-category').dataset.category;
+            filterByCategory(category);
+            
+            // Update active state
+            categoryBtns.forEach(b => {
+                b.classList.remove('active');
+                b.setAttribute('aria-pressed', 'false');
+            });
+            btn.classList.add('active');
+            btn.setAttribute('aria-pressed', 'true');
+            
+            // Clear search when switching categories
+            if (faqSearch) {
+                faqSearch.value = '';
+                isSearching = false;
+            }
+        });
+    });
+    
+    // Search functionality
+    if (faqSearch) {
+        faqSearch.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            isSearching = query.length > 0;
+            searchFaq(query);
+        });
+    }
+    
+    // Accordion functionality
+    questionBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const answer = btn.nextElementSibling;
+            const isExpanded = btn.getAttribute('aria-expanded') === 'true';
+            
+            // Close all other answers in the same section
+            const currentSection = btn.closest('.faq-section');
+            if (currentSection && !isSearching) {
+                const allQuestions = currentSection.querySelectorAll('.faq-question');
+                const allAnswers = currentSection.querySelectorAll('.faq-answer');
+                
+                allQuestions.forEach(q => {
+                    q.setAttribute('aria-expanded', 'false');
+                });
+                allAnswers.forEach(a => {
+                    a.classList.remove('open');
+                    a.setAttribute('aria-hidden', 'true');
+                });
+            }
+            
+            // Toggle current answer
+            if (!isExpanded) {
+                btn.setAttribute('aria-expanded', 'true');
+                answer.classList.add('open');
+                answer.setAttribute('aria-hidden', 'false');
+            } else {
+                btn.setAttribute('aria-expanded', 'false');
+                answer.classList.remove('open');
+                answer.setAttribute('aria-hidden', 'true');
+            }
+        });
+    });
+    
+    function openFaqModal() {
+        faqModal.classList.add('active');
+        faqModal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        
+        // Reinitialize Lucide icons for dynamically shown content
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons();
+        }
+        
+        // Focus the search input or close button
+        setTimeout(() => {
+            if (faqSearch) {
+                faqSearch.focus();
+            } else if (faqCloseBtn) {
+                faqCloseBtn.focus();
+            }
+        }, 100);
+    }
+    
+    function closeFaqModal() {
+        faqModal.classList.remove('active');
+        faqModal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        
+        // Clear search
+        if (faqSearch) {
+            faqSearch.value = '';
+            isSearching = false;
+        }
+        
+        // Reset to show all categories
+        showAllSections();
+        
+        // Reset category buttons
+        categoryBtns.forEach(btn => {
+            btn.classList.remove('active');
+            btn.setAttribute('aria-pressed', 'false');
+        });
+        const firstCategoryBtn = categoryBtns[0];
+        if (firstCategoryBtn) {
+            firstCategoryBtn.classList.add('active');
+            firstCategoryBtn.setAttribute('aria-pressed', 'true');
+        }
+        
+        // Close all accordions
+        questionBtns.forEach(btn => {
+            btn.setAttribute('aria-expanded', 'false');
+            const answer = btn.nextElementSibling;
+            if (answer) {
+                answer.classList.remove('open');
+                answer.setAttribute('aria-hidden', 'true');
+            }
+        });
+        
+        // Return focus to the FAQ button
+        if (previousActiveElement) {
+            previousActiveElement.focus();
+        }
+    }
+    
+    function filterByCategory(category) {
+        const sections = faqContent.querySelectorAll('.faq-section');
+        
+        sections.forEach(section => {
+            if (section.dataset.section === category) {
+                section.style.display = 'block';
+            } else {
+                section.style.display = 'none';
+            }
+        });
+    }
+    
+    function showAllSections() {
+        const sections = faqContent.querySelectorAll('.faq-section');
+        sections.forEach(section => {
+            section.style.display = 'block';
+        });
+    }
+    
+    function searchFaq(query) {
+        const sections = faqContent.querySelectorAll('.faq-section');
+        const allItems = faqContent.querySelectorAll('.faq-item');
+        
+        if (!query) {
+            // Show all sections and items
+            sections.forEach(section => {
+                section.style.display = 'block';
+            });
+            allItems.forEach(item => {
+                item.style.display = 'block';
+            });
+            return;
+        }
+        
+        // Show all sections first
+        sections.forEach(section => {
+            section.style.display = 'block';
+        });
+        
+        // Filter items based on search query
+        allItems.forEach(item => {
+            const question = item.querySelector('.faq-question span');
+            const answer = item.querySelector('.faq-answer');
+            
+            if (question && answer) {
+                const questionText = question.textContent.toLowerCase();
+                const answerText = answer.textContent.toLowerCase();
+                
+                if (questionText.includes(query) || answerText.includes(query)) {
+                    item.style.display = 'block';
+                    // Auto-expand matching items
+                    const questionBtn = item.querySelector('.faq-question');
+                    if (questionBtn) {
+                        questionBtn.setAttribute('aria-expanded', 'true');
+                        answer.classList.add('open');
+                        answer.setAttribute('aria-hidden', 'false');
+                    }
+                } else {
+                    item.style.display = 'none';
+                }
+            }
+        });
+        
+        // Show message if no results found
+        const visibleItems = faqContent.querySelectorAll('.faq-item[style="display: block;"]');
+        // Also count items without inline style (default display: block)
+        const allVisibleItems = Array.from(allItems).filter(item => {
+            return item.style.display !== 'none';
+        });
+        
+        if (allVisibleItems.length === 0) {
+            // Could add a "no results" message here if desired
+            console.log('No FAQ items found for query:', query);
+        }
+    }
+}
+
+// Initialize FAQ modal when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    initFaqModal();
+});

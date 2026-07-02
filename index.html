@@ -68,6 +68,453 @@
         <a id="admin-access-btn" class="admin-btn admin-link" href="./admin/" aria-label="Admin access">Admin access</a>
         <button id="install-btn" aria-label="Install app as PWA">⬇ Install App</button>
     </div>
+    
+    <button id="faq-btn" class="faq-trigger-btn" aria-label="Open FAQ" title="Frequently Asked Questions">
+        <i data-lucide="help-circle" size="20"></i>
+        <span>FAQ</span>
+    </button>
+    
+    <!-- FAQ Modal -->
+    <div id="faq-modal" class="faq-overlay" role="dialog" aria-modal="true" aria-labelledby="faq-title" aria-hidden="true">
+        <div class="faq-modal-content">
+            <div class="faq-header">
+                <h2 id="faq-title">Frequently Asked Questions</h2>
+                <button id="faq-close-btn" class="faq-close-btn" aria-label="Close FAQ">
+                    <i data-lucide="x" size="24"></i>
+                </button>
+            </div>
+            
+            <div class="faq-search-wrap">
+                <i data-lucide="search" size="18" class="faq-search-icon"></i>
+                <input 
+                    type="text" 
+                    id="faq-search" 
+                    class="faq-search-input" 
+                    placeholder="Search questions..." 
+                    aria-label="Search FAQ questions"
+                    autocomplete="off"
+                />
+            </div>
+            
+            <div class="faq-categories">
+                <div class="faq-category" data-category="location">
+                    <button class="faq-category-btn active" aria-pressed="true">
+                        <i data-lucide="map-pin" size="16"></i>
+                        <span>Location</span>
+                    </button>
+                </div>
+                <div class="faq-category" data-category="signing">
+                    <button class="faq-category-btn" aria-pressed="false">
+                        <i data-lucide="log-in" size="16"></i>
+                        <span>Sign In/Out</span>
+                    </button>
+                </div>
+                <div class="faq-category" data-category="offline">
+                    <button class="faq-category-btn" aria-pressed="false">
+                        <i data-lucide="wifi-off" size="16"></i>
+                        <span>Offline</span>
+                    </button>
+                </div>
+                <div class="faq-category" data-category="device">
+                    <button class="faq-category-btn" aria-pressed="false">
+                        <i data-lucide="smartphone" size="16"></i>
+                        <span>Device</span>
+                    </button>
+                </div>
+                <div class="faq-category" data-category="general">
+                    <button class="faq-category-btn" aria-pressed="false">
+                        <i data-lucide="help-circle" size="16"></i>
+                        <span>General</span>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="faq-content" id="faq-content">
+                <!-- Location Questions -->
+                <div class="faq-section" data-section="location">
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>Why does the app need my location?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>The app uses GPS location to verify you're at the office when signing in or out. This ensures attendance accuracy and prevents fraudulent entries from outside the workplace.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>Location access was denied. What should I do?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p><strong>For Chrome/Android:</strong> Tap the lock icon in the address bar → Site settings → Location → Allow.</p>
+                            <p><strong>For Safari/iOS:</strong> Go to Settings → Safari → Location → Ask or Allow. Then refresh this page.</p>
+                            <p><strong>For Firefox:</strong> Tap the shield icon → Permissions → Location → Allow.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>GPS is showing as "REQUIRED" and won't work</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>This usually means:</p>
+                            <ul>
+                                <li>Location services are turned off on your device - enable them in your phone settings</li>
+                                <li>You're in airplane mode - turn off airplane mode</li>
+                                <li>GPS signal is weak - try moving near a window or going outside</li>
+                                <li>Browser doesn't have permission - check browser settings and allow location access</li>
+                            </ul>
+                            <p>After fixing, refresh the page.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>Why does it say I'm too far from the office?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>The app uses geofencing to ensure you're within the office perimeter. If you're at the office but getting this message:</p>
+                            <ul>
+                                <li>Make sure you're inside the building, not in the parking lot</li>
+                                <li>Check that GPS accuracy is high (wait a few moments for GPS to stabilize)</li>
+                                <li>Try moving to a different spot with better GPS signal</li>
+                                <li>Contact your admin if the office location needs updating</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>Location is taking too long to verify</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>GPS can take 10-30 seconds to get an accurate fix, especially:</p>
+                            <ul>
+                                <li>Indoors or in basements</li>
+                                <li>On first load after turning on location</li>
+                                <li>In areas with poor satellite visibility</li>
+                            </ul>
+                            <p>Wait patiently - the status will update automatically once location is verified.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Sign In/Out Questions -->
+                <div class="faq-section" data-section="signing" style="display: none;">
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>Why are the Sign In/Out buttons disabled?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>Buttons are disabled until:</p>
+                            <ul>
+                                <li>You've selected your name from the dropdown</li>
+                                <li>GPS location has been verified</li>
+                                <li>You're within the office geofence</li>
+                            </ul>
+                            <p>Once both conditions are met, the buttons will activate automatically.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>I already signed in today. Can I sign in again?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>No, you can only sign in once per day. If you need to sign out and sign back in (e.g., for lunch), you must sign out first before signing in again.</p>
+                            <p>This prevents duplicate attendance entries and ensures accurate tracking.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>This device is not authorized. What does that mean?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>Each device must be registered to a staff member. This security measure prevents:</p>
+                            <ul>
+                                <li>Staff members sharing devices to fake attendance</li>
+                                <li>Unauthorized access to the attendance system</li>
+                            </ul>
+                            <p><strong>Solution:</strong> Use the device that was previously registered to you, or contact your admin to reassign this device to your name using a reset code.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>Can I sign in for another person?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>No. The system is designed to prevent buddy punching (signing in/out for colleagues). Each staff member must use their own registered device and select their own name.</p>
+                            <p>Attempting to sign in for someone else will be blocked by the system.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>What's the latest time I can sign in?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>You can sign in at any time during work hours. However, signing in after the official start time will be marked as "LATE" in the attendance records.</p>
+                            <p>Check with your admin for the specific start time policy at your organization.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Offline Mode Questions -->
+                <div class="faq-section" data-section="offline" style="display: none;">
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>Can I sign in/out without internet?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>Yes! The app works offline. If you have no internet connection:</p>
+                            <ul>
+                                <li>Your sign in/out will be saved locally on your device</li>
+                                <li>The entry will show as "Pending sync" in your recent attendance</li>
+                                <li>Once you regain internet, it will automatically sync to the server</li>
+                            </ul>
+                            <p>Your attendance is never lost, even without connection.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>How does offline sync work?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>The app automatically syncs your offline entries when:</p>
+                            <ul>
+                                <li>You regain internet connection</li>
+                                <li>You open the app again after being offline</li>
+                                <li>The app detects you're back online (every 10 seconds when app is open)</li>
+                            </ul>
+                            <p>You don't need to do anything - sync happens automatically in the background.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>What if sync fails repeatedly?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>The app uses exponential backoff retry (8s, 16s, 32s, up to 60s). If sync continues to fail:</p>
+                            <ul>
+                                <li>Check your internet connection</li>
+                                <li>Make sure the server is accessible</li>
+                                <li>Try refreshing the page</li>
+                                <li>Your data is still saved locally and will sync when possible</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>Will I lose my attendance if I clear browser data?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p><strong>Pending offline entries:</strong> These are stored in IndexedDB and localStorage. Clearing browser data will remove them, so sync before clearing if possible.</p>
+                            <p><strong>Synced entries:</strong> These are safely stored on the server and won't be affected by clearing browser data.</p>
+                            <p><strong>Recommendation:</strong> Make sure you're online and the app shows "Synced" before clearing any browser data.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Device Questions -->
+                <div class="faq-section" data-section="device" style="display: none;">
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>What is device ownership/registration?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>Device ownership links a specific phone/tablet to your staff account. This prevents:</p>
+                            <ul>
+                                <li>Employees sharing devices to fake attendance</li>
+                                <li>Unauthorized people signing in from any device</li>
+                            </ul>
+                            <p>When you first sign in on a device, it becomes registered to you automatically.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>How do I switch to a different device?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>To use a new device:</p>
+                            <ol>
+                                <li>Get a reset code from your admin</li>
+                                <li>On the new device, try to sign in with your name</li>
+                                <li>When prompted, enter the reset code</li>
+                                <li>The device will be reassigned to you</li>
+                            </ol>
+                            <p>The old device will no longer be linked to your account.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>What if I get a new phone?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>Contact your admin for a reset code, then:</p>
+                            <ol>
+                                <li>Install the app on your new phone</li>
+                                <li>Open the app and select your name</li>
+                                <li>Enter the reset code when prompted</li>
+                                <li>Your new device is now registered to you</li>
+                            </ol>
+                            <p>Your old phone will no longer be able to sign in as you.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>Can I use the app on multiple devices?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>No, each staff member can only be registered to one device at a time. This is a security measure to prevent attendance fraud.</p>
+                            <p>If you need to switch devices, you must get a reset code from your admin to deregister the old device and register the new one.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- General Questions -->
+                <div class="faq-section" data-section="general" style="display: none;">
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>Which browsers are supported?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p><strong>Fully supported:</strong></p>
+                            <ul>
+                                <li>Chrome/Edge (Android, Windows, Mac) - Recommended</li>
+                                <li>Safari (iOS 14.5+, iPadOS, MacOS)</li>
+                                <li>Firefox (Android, Windows, Mac)</li>
+                            </ul>
+                            <p><strong>Requirements:</strong></p>
+                            <ul>
+                                <li>JavaScript enabled</li>
+                                <li>Location services enabled</li>
+                                <li>Cookies/localStorage enabled</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>How do I install the app on my phone?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p><strong>Android (Chrome):</strong></p>
+                            <ol>
+                                <li>Open the app in Chrome</li>
+                                <li>Tap the menu (three dots)</li>
+                                <li>Select "Add to Home screen" or "Install app"</li>
+                            </ol>
+                            <p><strong>iOS (Safari):</strong></p>
+                            <ol>
+                                <li>Open the app in Safari</li>
+                                <li>Tap the Share button</li>
+                                <li>Select "Add to Home Screen"</li>
+                            </ol>
+                            <p>You can also tap the "Install App" button on the signin page if available.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>Is my location data private?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>Yes. Your location is only used at the moment of sign in/out to verify you're at the office. The app does not:</p>
+                            <ul>
+                                <li>Track your location continuously</li>
+                                <li>Store location history</li>
+                                <li>Share location with third parties</li>
+                            </ul>
+                            <p>Location data is processed in real-time and not retained beyond the attendance record.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>What should I do if I encounter an error?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>If you see an error message:</p>
+                            <ol>
+                                <li>Read the error message carefully - it usually explains the problem</li>
+                                <li>Check this FAQ for solutions to common issues</li>
+                                <li>Try refreshing the page</li>
+                                <li>Check your internet connection</li>
+                                <li>Make sure location services are enabled</li>
+                                <li>If the problem persists, contact your admin or IT support</li>
+                            </ol>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>How accurate is the attendance system?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>The system uses multiple layers of verification:</p>
+                            <ul>
+                                <li><strong>GPS geofencing:</strong> Ensures you're at the office location</li>
+                                <li><strong>Device registration:</strong> Prevents unauthorized sign-ins</li>
+                                <li><strong>Time stamps:</strong> Records exact sign in/out times</li>
+                                <li><strong>Server validation:</strong> All entries are verified server-side</li>
+                            </ul>
+                            <p>This multi-factor approach ensures high accuracy and prevents fraud.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <button class="faq-question" aria-expanded="false">
+                            <span>Can I view my attendance history?</span>
+                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
+                        </button>
+                        <div class="faq-answer" aria-hidden="true">
+                            <p>Yes! The main page shows your last 5 attendance entries in the "Recent attendance" section. For a complete history:</p>
+                            <ul>
+                                <li>Contact your admin for detailed reports</li>
+                                <li>Admins can view comprehensive attendance logs and analytics</li>
+                                <li>All records are stored securely on the server</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="faq-footer">
+                <p>Still need help? Contact your admin or IT support.</p>
+            </div>
+        </div>
+    </div>
     <script src="common.js"></script>
     <script src="script.js"></script>
     <script>
