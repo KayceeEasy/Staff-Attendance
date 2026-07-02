@@ -408,7 +408,8 @@ function renderWeekOverview(logs, schedule, weekDays) {
     
     // Stats
     const signedIn = logs.filter(s => String(s.action || '').trim().toUpperCase() === 'IN').length;
-    const lateCount = logs.filter(s => String(s.status || '').trim().toUpperCase() === 'LATE').length;
+    // Use normalized status detection so variations like "Late", "⚠ Late" or localized text still count
+    const lateCount = logs.filter(s => normalizeAttendanceStatus(s.status) === 'late' && String(s.action || '').trim().toUpperCase() === 'IN').length;
     
     host.innerHTML = `
         <div class="today-attendance-summary">
@@ -513,7 +514,8 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
                                 let statusClass = '';
                                 
                                 if (cell.isWfh) {
-                                    status = '🏠 WFH';
+                                    // Render only the home emoji for WFH days (no appended text)
+                                    status = '<span class="matrix-home-emoji" aria-label="Home">🏠</span>';
                                     statusClass = 'matrix-wfh';
                                 } else if (latest) {
                                     // Check for late status (case-insensitive)
@@ -872,7 +874,7 @@ function renderAnalytics(deviceEvents = []) {
                             <span class="stat-in">${s.signIns} in</span>
                             <span class="stat-out">${s.signOuts} out</span>
                             <span class="${s.attendanceRate < 60 ? 'stat-late' : 'stat-in'}">${s.attendanceRate}% rate</span>
-                            ${s.wfhDays > 0 ? `<span class="stat-wfh">🏠 ${s.wfhDays} WFH</span>` : ''}
+                            ${s.wfhDays > 0 ? `<span class="stat-wfh">🏠 ${s.wfhDays}</span>` : ''}
                             ${s.lateCount > 0 ? `<span class="stat-late">⚠ ${s.lateCount} late</span>` : ''}
                         </span>
                     </div>
@@ -1044,8 +1046,8 @@ function renderAdminPanel() {
             <div class="section-header"><h3>Attendance Records</h3></div>
             <div class="logs-filters">
                 <select id="logs-filter-name-select" aria-label="Filter by name"><option value="">All staff</option></select>
-                <input id="logs-filter-from" type="date" aria-label="From date" />
-                <input id="logs-filter-to" type="date" aria-label="To date" />
+                <input id="logs-filter-from" type="date" aria-label="From date" placeholder="From" />
+                <input id="logs-filter-to" type="date" aria-label="To date" placeholder="To" />
                 <div class="filter-actions">
                     <button id="logs-filter-btn" class="admin-btn secondary small" type="button">🔍 Filter</button>
                     <button id="logs-clear-btn" class="admin-btn secondary small" type="button">✕ Clear</button>
@@ -1303,4 +1305,14 @@ document.addEventListener('DOMContentLoaded', () => {
     
     document.getElementById('admin-login-form').addEventListener('submit', handleAdminLogin);
     document.getElementById('forgot-password-link').addEventListener('click', (e) => { e.preventDefault(); runForgotPasswordFlow(); });
+
+    // Safety: if page loads with a stray overlay or modal left open, ensure body can scroll when no overlays present
+    setTimeout(() => {
+        try {
+            const overlays = document.querySelectorAll('.dialog-overlay, .session-timeout-overlay, #faq-modal.active');
+            if (!overlays || overlays.length === 0) document.body.style.overflow = '';
+        } catch (e) {
+            // ignore
+        }
+    }, 120);
 });

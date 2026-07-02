@@ -621,6 +621,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     flushPendingQueue();
     loadStaffDropdown();
 
+    // Safety: if any modal overlay was left open previously, restore scrolling when none are present
+    setTimeout(() => {
+        try {
+            const overlays = document.querySelectorAll('.dialog-overlay, .session-timeout-overlay, #faq-modal.active');
+            if (!overlays || overlays.length === 0) document.body.style.overflow = '';
+        } catch (e) { /* ignore */ }
+    }, 120);
+
     const installBtn = document.getElementById('install-btn');
 
     if (installBtn) {

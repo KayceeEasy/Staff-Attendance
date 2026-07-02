@@ -70,7 +70,7 @@ html, body {
     padding: 0;
     overflow-x: hidden;
     overflow-y: auto;
-    overscroll-behavior-y: contain;
+    overscroll-behavior-y: auto;
     font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     color: var(--text);
     -webkit-font-smoothing: antialiased;
@@ -112,7 +112,7 @@ body::before {
 /* ─── CARD ─── */
 .card {
     position: relative;
-    overflow: hidden;
+    overflow: auto;
     background: linear-gradient(145deg, rgba(255,255,255,0.9), rgba(248,250,255,0.96));
     backdrop-filter: blur(32px) saturate(180%);
     -webkit-backdrop-filter: blur(32px) saturate(180%);
@@ -527,6 +527,16 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 :root[data-theme="dark"] .matrix-wfh { color: var(--warning); }
 :root[data-theme="dark"] .matrix-absent { background: rgba(248, 113, 113, 0.1); color: var(--error); }
 :root[data-theme="dark"] .attendance-matrix .matrix-name { background: var(--surface-2); }
+
+/* Ensure mobile scrolling works when content overflows */
+html, body {
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: auto;
+    touch-action: auto;
+}
+
+/* Styling for the home emoji in matrix cells */
+.matrix-home-emoji { font-size: 1.05rem; display: inline-block; line-height: 1; }
 
 .matrix-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.72rem; color: var(--muted); margin-top: 10px; }
 .legend-item { display: flex; align-items: center; gap: 4px; }

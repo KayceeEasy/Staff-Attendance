@@ -1,4 +1,3 @@
-/image/*.png
 node_modules/
 .vscode/
 apps-script.js
