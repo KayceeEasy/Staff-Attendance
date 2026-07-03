@@ -450,7 +450,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    margin-bottom: 16px; overflow-x: hidden; overflow-y: auto;
+    margin-bottom: 16px; overflow-x: auto; overflow-y: auto;
     -webkit-overflow-scrolling: touch; scrollbar-width: none;
 }
 .admin-tabs::-webkit-scrollbar { display: none; }
@@ -510,7 +510,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .stat-label { display: block; font-size: 0.68rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
 
 /* Matrix */
-.matrix-wrapper { overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 10px; border-radius: var(--radius); border: 1px solid var(--border); }
+.matrix-wrapper { overflow-x: auto; overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 10px; border-radius: var(--radius); border: 1px solid var(--border); }
 .attendance-matrix { width: 100%; border-collapse: collapse; font-size: 0.78rem; min-width: 500px; }
 .attendance-matrix th, .attendance-matrix td { padding: 8px 6px; text-align: center; border: 1px solid var(--border); }
 .attendance-matrix th { background: var(--surface-2); font-weight: 700; color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; }
