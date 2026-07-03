@@ -864,7 +864,7 @@ function renderAnalytics(deviceEvents = []) {
         <!-- Least Active Staff -->
         <div class="analytics-section">
             <h4>⚠ Least Active Staff</h4>
-            <p class="admin-intro">Staff with fewest sign-ins. WFH days are excluded from attendance requirements.</p>
+            <p class="admin-intro">Staff with fewest sign-ins. Hybrid days are excluded from attendance requirements.</p>
             <div class="analytics-breakdown">
                 ${data.leastActive.map(s => `
                     <div class="breakdown-row">
@@ -1058,7 +1058,7 @@ function renderAdminPanel() {
         
         <!-- Analytics Tab -->
         <div id="tab-analytics" class="tab-content">
-            <div class="section-header"><h3>Attendance Analytics</h3><p class="admin-intro">WFH days excluded from attendance rate calculations</p></div>
+            <div class="section-header"><h3>Attendance Analytics</h3><p class="admin-intro">Hybrid days excluded from attendance rate calculations</p></div>
             <div id="analytics-content"><div class="staff-list-state">Loading analytics...</div></div>
         </div>
         
