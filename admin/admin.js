@@ -824,8 +824,8 @@ function processAnalyticsData(logs, schedule) {
         lateCount,
         earlyOutCount,
         latePercentage: logs.length ? ((lateCount / logs.length) * 100).toFixed(1) : 0,
-        leastActive: staffBreakdown.slice(0, 5),
-        mostActive: [...staffBreakdown].reverse().slice(0, 5),
+        leastActive: staffBreakdown.slice(0, 3),
+        mostActive: [...staffBreakdown].reverse().slice(0, 3),
         staffBreakdown
     };
 }
