@@ -88,7 +88,7 @@ function routeRequest(params) {
    ADMIN AUTH
    ============================================================ */
 
-const DEVELOPER_USERNAME = 'kaycee-dev';
+const DEVELOPER_USERNAME = 'Kaycee';
 
 function getAdminAccounts() {
   const raw = PropertiesService.getScriptProperties().getProperty('adminAccounts');
@@ -347,16 +347,26 @@ function verifyOwner(payload) {
   const staff = findStaffRecord(payload.name);
   if (!staff) return { allowed: false, message: 'Staff not found.' };
   const storedDeviceId = staff.deviceId || '';
-  if (!storedDeviceId) return { allowed: true, message: 'No device lock yet. Registration allowed.' };
-  if (storedDeviceId === payload.deviceId) return { allowed: true, message: 'Device verified.' };
-  return { allowed: false, message: 'This device is locked to another staff account.' };
+  if (storedDeviceId) {
+    if (storedDeviceId === payload.deviceId) return { allowed: true, message: 'Device verified.' };
+    return { allowed: false, message: 'This device is locked to another staff account.' };
+  }
+
+  const existingOwner = findStaffByDeviceId(payload.deviceId);
+  if (existingOwner) return { allowed: false, message: 'This device is locked to another staff account.' };
+  return { allowed: true, message: 'No device lock yet. Registration allowed.' };
 }
 
 function registerOwner(payload) {
   const staff = findStaffRecord(payload.name);
   if (!staff) return { allowed: false, message: 'Staff not found.' };
   const storedDeviceId = staff.deviceId || '';
-  if (!storedDeviceId) { saveStaffDeviceId(payload.name, payload.deviceId); return { allowed: true, message: 'Device registered.' }; }
+  if (!storedDeviceId) {
+    const existingOwner = findStaffByDeviceId(payload.deviceId);
+    if (existingOwner) return { allowed: false, message: 'This device is locked to another staff account.' };
+    saveStaffDeviceId(payload.name, payload.deviceId);
+    return { allowed: true, message: 'Device registered.' };
+  }
   if (storedDeviceId === payload.deviceId) return { allowed: true, message: 'Device already registered.' };
   return { allowed: false, message: 'This device is locked to another staff account.' };
 }
@@ -542,34 +552,33 @@ function processAttendance(payload) {
   const hour = now.getHours();
 
   const staffData = staffSheet.getDataRange().getValues();
-  let staffExists = false, staffRow = -1;
-  const incomingParts = (payload.deviceId || '').split('-');
-  const incomingHW = incomingParts[1] || '', incomingSalt = incomingParts[2] || '';
+  let staffExists = false;
+  let staffRow = -1;
+  let currentStoredDeviceId = '';
+  const normalizedName = payload.name.trim().toLowerCase();
 
   for (let i = 1; i < staffData.length; i++) {
     const regName = staffData[i][0].toString().trim();
     if (!regName) continue;
     const regFullID = staffData[i][1] ? staffData[i][1].toString().trim() : '';
-    const regParts = regFullID.split('-');
-    const regHW = regParts[1] || '', regSalt = regParts[2] || '';
-    const isCurrentStaff = regName.toLowerCase() === payload.name.trim().toLowerCase();
-    if (isCurrentStaff) staffExists = true;
+    const isCurrentStaff = regName.toLowerCase() === normalizedName;
 
-    if (regFullID !== '') {
-      if (isCurrentStaff) {
-        staffRow = i + 1;
-        if (incomingHW !== regHW && incomingSalt !== regSalt) return 'BLOCK|Device mismatch. This account is locked to a different phone.';
-        if (regFullID !== payload.deviceId) staffSheet.getRange(staffRow, 2).setValue(payload.deviceId);
-      } else if (incomingHW === regHW || incomingSalt === regSalt) {
-        return 'BLOCK|This device is already registered to ' + regName + '. Device sharing is not allowed.';
-      }
-    } else if (isCurrentStaff) {
+    if (isCurrentStaff) {
+      staffExists = true;
       staffRow = i + 1;
-      staffSheet.getRange(staffRow, 2).setValue(payload.deviceId);
+      currentStoredDeviceId = regFullID;
+      if (regFullID && regFullID !== payload.deviceId) {
+        return 'BLOCK|Device mismatch. This account is locked to a different phone.';
+      }
+    } else if (regFullID && regFullID === payload.deviceId) {
+      return 'BLOCK|This device is already registered to ' + regName + '. Device sharing is not allowed.';
     }
   }
 
   if (!staffExists) return 'BLOCK|Staff member not recognized. Contact your administrator.';
+  if (!currentStoredDeviceId && staffRow > 0) {
+    staffSheet.getRange(staffRow, 2).setValue(payload.deviceId);
+  }
 
   const dist = getDistance(config.officeLat, config.officeLon, payload.lat, payload.lon);
   if (dist > config.radiusMeters) {
@@ -601,7 +610,7 @@ function processAttendance(payload) {
   }
 
   if (payload.action === 'IN' && hasSignedInToday) return 'BLOCK|You have already signed in for today.';
-  if (payload.action === 'OUT' && hasSignedOutToday) return 'BLOCK|Attendance is already closed for today.';
+  if (payload.action === 'OUT' && hasSignedOutToday) return 'BLOCK|You have already signed out for today.';
 
   let forgotMsg = '';
   if (payload.action === 'IN' && lastAction === 'IN' && lastDate !== todayStr) {
@@ -702,6 +711,16 @@ function findStaffRecord(name) {
   const match = rows.find(r => r[0].toString().trim().toLowerCase() === cleanName);
   if (!match) return null;
   return { name: match[0].toString().trim(), deviceId: match[1] ? match[1].toString().trim() : '' };
+}
+
+function findStaffByDeviceId(deviceId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const staffSheet = getOrCreateStaffSheet(ss);
+  const rows = staffSheet.getRange(2, 1, Math.max(staffSheet.getLastRow() - 1, 0), 2).getValues();
+  const cleanId = (deviceId || '').toString().trim();
+  if (!cleanId) return null;
+  const match = rows.find(r => (r[1] || '').toString().trim() === cleanId);
+  return match ? match[0].toString().trim() : null;
 }
 
 function saveStaffDeviceId(name, deviceId) {
