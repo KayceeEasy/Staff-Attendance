@@ -537,6 +537,39 @@ function getHybridSchedule(weekStart) {
    ATTENDANCE
    ============================================================ */
 
+// Randomized messages for sign-in / sign-out
+const WELCOME_MESSAGES = [
+  "Welcome back, {name}. Are you ready to accomplish great things today?",
+  "Good to see you, {name}. Let's make today count.",
+  "Welcome, {name}. Hope you're ready for a great day ahead!",
+  "Hi, {name}. Have a productive day ahead!"
+];
+
+const LATE_MESSAGES = [
+  "Welcome {name}. It looks like we’re running a bit behind schedule today.",
+  "Hi, {name}. We're behind schedule today. Let’s dive in.",
+  "Running a bit behind, {name}. Time to get to work.",
+  "Welcome, {name}. A slow start today. Let's get things moving."
+];
+
+const SIGNOUT_MESSAGES = [
+  "Safe trip, {name}! See you tomorrow.",
+  "Goodbye, {name}. Have a great evening.",
+  "See you later, {name}. Take care!",
+  "Thanks for today, {name}. Safe travels."
+];
+
+const EARLY_OUT_MESSAGES = [
+  "{name}, early sign-out recorded. Take care and see you soon.",
+  "Early sign-out noted, {name}. Hope the rest of your day goes well."
+];
+
+function pickMessage(arr, name) {
+  if (!Array.isArray(arr) || arr.length === 0) return '';
+  const msg = arr[Math.floor(Math.random() * arr.length)];
+  return String(msg).replace(/\{name\}/g, name || '').trim();
+}
+
 function processAttendance(payload) {
   if (!payload.name || !payload.action) return 'BLOCK|Missing required fields.';
   if (isNaN(payload.lat) || isNaN(payload.lon)) return 'BLOCK|Location data is missing or invalid.';
@@ -625,22 +658,22 @@ function processAttendance(payload) {
   if (payload.action === 'IN') {
     if (hour < 9) {
       responseStatus = 'WELCOME';
-      greeting = 'Welcome! Have a productive day' + forgotMsg;
+      greeting = pickMessage(WELCOME_MESSAGES, payload.name) + forgotMsg;
       logStatus = 'On Time';
     } else {
       responseStatus = 'LATE';
-      greeting = 'You are late' + forgotMsg;
+      greeting = pickMessage(LATE_MESSAGES, payload.name) + forgotMsg;
       logStatus = 'Late';
     }
   } else {
     if (!hasSignedInToday) return 'BLOCK|You cannot sign out without signing in first.';
     if (hour < 17) {
       responseStatus = 'LATE';
-      greeting = 'Early sign-out recorded. It is not yet 5:00 PM.';
+      greeting = pickMessage(EARLY_OUT_MESSAGES, payload.name) || 'Early sign-out recorded. It is not yet 5:00 PM.';
       logStatus = 'Early Out';
     } else {
       responseStatus = 'NORMAL';
-      greeting = 'Safe trip, ' + payload.name + '! See you tomorrow.';
+      greeting = pickMessage(SIGNOUT_MESSAGES, payload.name) || ('Safe trip, ' + payload.name + '! See you tomorrow.');
       logStatus = 'On Time';
     }
   }
