@@ -68,40 +68,67 @@ async function fetchLogs(filters = {}) {
     return callBackend({ mode: 'list-logs', ...filters });
 }
 
-async function fetchHybridSchedule(weekStart) {
+async function fetchHybridSchedule(weekStart, forceRefresh = false) {
+    // Return cached data immediately if available and not forcing refresh
+    if (!forceRefresh && hybridScheduleCache[weekStart] && Object.keys(hybridScheduleCache[weekStart]).length) {
+        console.debug('Returning cached hybrid schedule for', weekStart);
+        return hybridScheduleCache[weekStart];
+    }
+
     try {
+        console.debug('Fetching hybrid schedule from server for', weekStart);
         const response = await callBackend({ mode: 'get-hybrid-schedule', weekStart });
         console.debug('get-hybrid-schedule response:', response);
+        
+        let schedule = null;
+        
+        // Primary: check standard response format
         if (response && response.ok && response.schedule && Object.keys(response.schedule).length) {
-            hybridScheduleCache[weekStart] = response.schedule;
-            return response.schedule;
-        }
-
-        // Fallback: try to locate JSON blob in common properties and parse it
-        const possibleFields = ['schedule', 'result', 'data', 'raw', 'payload', 'scheduleJson'];
-        for (const f of possibleFields) {
-            const candidate = response && response[f];
-            if (!candidate) continue;
-            if (typeof candidate === 'object' && Object.keys(candidate).length) {
-                hybridScheduleCache[weekStart] = candidate;
-                return candidate;
-            }
-            if (typeof candidate === 'string') {
-                try {
-                    const parsed = JSON.parse(candidate);
-                    if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
-                        hybridScheduleCache[weekStart] = parsed;
-                        return parsed;
+            schedule = response.schedule;
+        } else {
+            // Fallback: try to locate JSON blob in common properties and parse it
+            const possibleFields = ['schedule', 'result', 'data', 'raw', 'payload', 'scheduleJson'];
+            for (const f of possibleFields) {
+                const candidate = response && response[f];
+                if (!candidate) continue;
+                if (typeof candidate === 'object' && Object.keys(candidate).length) {
+                    schedule = candidate;
+                    break;
+                }
+                if (typeof candidate === 'string') {
+                    try {
+                        const parsed = JSON.parse(candidate);
+                        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
+                            schedule = parsed;
+                            break;
+                        }
+                    } catch (e) {
+                        // ignore parse error
                     }
-                } catch (e) {
-                    // ignore parse error
                 }
             }
         }
+        
+        // Cache the schedule if we got valid data
+        if (schedule && Object.keys(schedule).length) {
+            hybridScheduleCache[weekStart] = schedule;
+            console.debug('Cached hybrid schedule for', weekStart, 'with', Object.keys(schedule).length, 'staff members');
+        } else if (hybridScheduleCache[weekStart]) {
+            // If server returned empty but we have cache, keep using cache
+            console.debug('Server returned empty schedule, using cached data for', weekStart);
+            schedule = hybridScheduleCache[weekStart];
+        }
+        
+        return schedule || {};
     } catch (e) {
         console.warn('Could not fetch hybrid schedule:', e);
+        // Return cached data on error if available
+        if (hybridScheduleCache[weekStart] && Object.keys(hybridScheduleCache[weekStart]).length) {
+            console.debug('Network error, using cached hybrid schedule for', weekStart);
+            return hybridScheduleCache[weekStart];
+        }
+        return {};
     }
-    return {};
 }
 
 /* ---------- Session Timeout ---------- */
@@ -179,6 +206,7 @@ function handleLogout(isTimeout = false) {
     isAdminLoggedIn = false;
     currentAdminUsername = '';
     cachedWeekData = {};
+    hybridScheduleCache = {}; // Clear hybrid schedule cache on logout
     clearAdminLoginForm();
     
     // Remove session timeout dialog if present
@@ -305,7 +333,10 @@ function clearAutoRefresh() {
 function startAutoRefresh(intervalMs = 300000) {
     if (autoRefreshTimer) clearAutoRefresh();
     autoRefreshTimer = setInterval(() => {
-        if (currentTab === 'dashboard') loadWeekData(true);
+        if (currentTab === 'dashboard') {
+            // Force refresh to check for updates
+            loadWeekData(true);
+        }
     }, intervalMs);
 }
 
@@ -370,8 +401,8 @@ async function loadWeekData(isSilent = false) {
         const response = await fetchLogs({ weekStart: currentWeekStart, limit: 500 });
         let logs = response.ok && Array.isArray(response.logs) ? response.logs : [];
         
-        // Fetch hybrid schedule for this week
-        const schedule = await fetchHybridSchedule(currentWeekStart);
+        // Fetch hybrid schedule for this week (use cache if available for instant display)
+        const schedule = await fetchHybridSchedule(currentWeekStart, false);
         
         // Cache
         cachedWeekData[currentWeekStart] = { logs, schedule };
@@ -384,13 +415,33 @@ async function loadWeekData(isSilent = false) {
             weekDays.push(formatDateDMY(day));
         }
         
+        // Render immediately with cached data
         renderWeekOverview(logs, schedule, weekDays);
         renderAttendanceMatrix(logs, schedule, weekDays);
         
         // Update refresh label (no timezone suffix)
         const refreshLabel = document.getElementById('refresh-label');
         if (refreshLabel) refreshLabel.textContent = `Updated: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        
+        // Background refresh: fetch fresh schedule data and update if changed
+        if (!isSilent && currentTab === 'dashboard') {
+            fetchHybridSchedule(currentWeekStart, true).then(freshSchedule => {
+                if (freshSchedule && Object.keys(freshSchedule).length) {
+                    // Check if schedule actually changed
+                    const oldSchedule = hybridScheduleCache[currentWeekStart];
+                    if (JSON.stringify(oldSchedule) !== JSON.stringify(freshSchedule)) {
+                        console.debug('Schedule updated, re-rendering matrix');
+                        hybridScheduleCache[currentWeekStart] = freshSchedule;
+                        cachedWeekData[currentWeekStart].schedule = freshSchedule;
+                        renderAttendanceMatrix(logs, freshSchedule, weekDays);
+                        const refreshLabel = document.getElementById('refresh-label');
+                        if (refreshLabel) refreshLabel.textContent = `Updated: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (refreshed)`;
+                    }
+                }
+            }).catch(err => console.warn('Background schedule refresh failed:', err));
+        }
     } catch (error) {
+        console.error('Error loading week data:', error);
         if (!isSilent) {
             document.getElementById('today-attendance-list').innerHTML = '<div class="staff-list-state">Failed to load data. Check connection.</div>';
         }
