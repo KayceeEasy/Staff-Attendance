@@ -385,21 +385,35 @@ function reassignOwner(payload) {
    ============================================================ */
 
 // The Hybrid Scheduler app (script.js's getWeekRange()) stores weekKey as
-// a human-readable, locale-formatted range label -- e.g. "July 6 - 10,
-// 2026" for a week within one month/year, "June 29 - July 3" for a week
-// spanning two months in the same year (note: NO year at all in this
-// case), or "December 29 - January 2, 2027" spanning a year boundary.
-// This is NOT a parseable date string, and trying to parse it back into a
-// date is fundamentally unreliable -- the cross-month-same-year case omits
-// the year entirely, so a label like "June 29 - July 3" is genuinely
-// ambiguous about which year it belongs to on its own.
+// a human-readable, locale-formatted range label. As of the current
+// version of script.js this is ALWAYS the fully-qualified
+// "Month d - Month d, yyyy" format (both month names spelled out, year
+// always present), regardless of month/year crossover -- e.g.
+// "July 6 - July 10, 2026" or "June 29 - July 3, 2026".
 //
-// Instead of parsing, we FORWARD-GENERATE the exact same label for the
-// week we're looking for (using the identical algorithm getWeekRange()
-// uses) and match by plain string equality. This is guaranteed correct
-// as long as both sides use the same month-name locale and timezone,
-// which they do (English month names, GMT+1).
+// This is NOT a parseable date string, so instead of parsing it we
+// FORWARD-GENERATE the exact same label for the week we're looking for
+// (using the identical algorithm getWeekRange() uses) and match by plain
+// string equality. This is guaranteed correct as long as both sides use
+// the same month-name locale and timezone, which they do (English month
+// names, GMT+1).
 function buildWeekRangeLabel(monday, friday) {
+  const tz = 'GMT+1';
+  const startText = Utilities.formatDate(monday, tz, 'MMMM d');
+  const endText = Utilities.formatDate(friday, tz, 'MMMM d, yyyy');
+  return startText + ' - ' + endText;
+}
+
+// LEGACY FALLBACK ONLY: script.js used to generate a shorter, ambiguous
+// label for some weeks -- e.g. "July 6 - 10, 2026" for a same-month week,
+// or "June 29 - July 3" WITH NO YEAR AT ALL for a same-year, cross-month
+// week. That inconsistency (the year-less case in particular) was the
+// actual cause of month-crossover weeks not showing hybrid data, so the
+// format was standardized above. Rows already saved under the old format
+// still have that exact string sitting in column A of the sheet, so this
+// function exists purely to keep matching those PRE-EXISTING rows without
+// requiring a manual edit. New saves never produce this format.
+function buildLegacyWeekRangeLabel(monday, friday) {
   const tz = 'GMT+1';
   const sameMonth = monday.getMonth() === friday.getMonth();
   const sameYear = monday.getFullYear() === friday.getFullYear();
@@ -420,6 +434,7 @@ function getHybridSchedule(weekStart) {
   const fridayRequested = new Date(mondayRequested.getFullYear(), mondayRequested.getMonth(), mondayRequested.getDate() + 4);
 
   const expectedLabel = buildWeekRangeLabel(mondayRequested, fridayRequested);
+  const legacyLabel = buildLegacyWeekRangeLabel(mondayRequested, fridayRequested);
 
   try {
     const scheduleSS = SpreadsheetApp.openById(HYBRID_SCHEDULE_SHEET_ID);
@@ -428,13 +443,15 @@ function getHybridSchedule(weekStart) {
 
     let matchedJson = null;
 
-    // Search for the matching week by exact label. If a week was
-    // accidentally saved more than once (e.g. a duplicate row from the
-    // scheduler), the LAST match wins so the admin sees the most recently
-    // saved version, not whichever happened to be appended first.
+    // Search for the matching week by exact label -- current format first,
+    // legacy format as a fallback for rows saved before the format was
+    // standardized. If a week was accidentally saved more than once (e.g.
+    // a duplicate row from the scheduler), the LAST match wins so the admin
+    // sees the most recently saved version, not whichever happened to be
+    // appended first.
     for (let r = 0; r < data.length; r++) {
       const rowKey = data[r][0] ? String(data[r][0]).trim() : '';
-      if (rowKey && rowKey === expectedLabel) {
+      if (rowKey && (rowKey === expectedLabel || rowKey === legacyLabel)) {
         // The JSON blob is written to column C (index 2) by doPost in HS.js.
         // Fall back to scanning the row for a JSON-looking cell just in case
         // the column layout ever shifts.
