@@ -382,8 +382,19 @@ async function loadWeekData(isSilent = false) {
         const today = new Date();
         currentWeekStart = formatDateDMY(getMondayFromDate(today));
     }
-    
-    const { monday, friday } = getWeekRange(parseDmyDate(currentWeekStart));
+
+    // Capture which week THIS call is actually for, right now. currentWeekStart
+    // is a mutable global that can change (e.g. the admin clicks Prev/Next
+    // again) before this function's async work finishes -- especially the
+    // delayed background refresh below. Reading the global again later, once
+    // more navigation may have happened, was the actual cause of weeks
+    // occasionally showing the wrong/mismatched hybrid data: a background
+    // refresh queued for one week could resolve after the admin had already
+    // navigated elsewhere, and would then write into -- and re-render --
+    // whatever week happened to be current AT THAT LATER MOMENT.
+    const weekBeingLoaded = currentWeekStart;
+
+    const { monday, friday } = getWeekRange(parseDmyDate(weekBeingLoaded));
     const mondayStr = formatDateDMY(monday);
     const fridayStr = formatDateDMY(friday);
     
@@ -398,14 +409,14 @@ async function loadWeekData(isSilent = false) {
     
     try {
         // Fetch logs for this week
-        const response = await fetchLogs({ weekStart: currentWeekStart, limit: 500 });
+        const response = await fetchLogs({ weekStart: weekBeingLoaded, limit: 500 });
         let logs = response.ok && Array.isArray(response.logs) ? response.logs : [];
         
         // Fetch hybrid schedule for this week (use cache if available for instant display)
-        const schedule = await fetchHybridSchedule(currentWeekStart, false);
+        const schedule = await fetchHybridSchedule(weekBeingLoaded, false);
         
         // Cache
-        cachedWeekData[currentWeekStart] = { logs, schedule };
+        cachedWeekData[weekBeingLoaded] = { logs, schedule };
         
         // Build week day labels (Mon-Fri)
         const weekDays = [];
@@ -415,34 +426,42 @@ async function loadWeekData(isSilent = false) {
             weekDays.push(formatDateDMY(day));
         }
         
-        // Render immediately with cached data
-        renderWeekOverview(logs, schedule, weekDays);
-        renderAttendanceMatrix(logs, schedule, weekDays);
-        
-        // Update refresh label (no timezone suffix)
-        const refreshLabel = document.getElementById('refresh-label');
-        if (refreshLabel) refreshLabel.textContent = `Updated: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        // Only touch the visible DOM if the admin is still looking at the
+        // week this call was for -- if they've since navigated elsewhere,
+        // a newer loadWeekData() call already owns the screen.
+        if (currentWeekStart === weekBeingLoaded) {
+            renderWeekOverview(logs, schedule, weekDays);
+            renderAttendanceMatrix(logs, schedule, weekDays);
+
+            const refreshLabel = document.getElementById('refresh-label');
+            if (refreshLabel) refreshLabel.textContent = `Updated: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        }
         
         // Background refresh: fetch fresh schedule data and update if changed
         if (!isSilent && currentTab === 'dashboard') {
-            fetchHybridSchedule(currentWeekStart, true).then(freshSchedule => {
+            fetchHybridSchedule(weekBeingLoaded, true).then(freshSchedule => {
                 if (freshSchedule && Object.keys(freshSchedule).length) {
                     // Check if schedule actually changed
-                    const oldSchedule = hybridScheduleCache[currentWeekStart];
+                    const oldSchedule = hybridScheduleCache[weekBeingLoaded];
                     if (JSON.stringify(oldSchedule) !== JSON.stringify(freshSchedule)) {
                         console.debug('Schedule updated, re-rendering matrix');
-                        hybridScheduleCache[currentWeekStart] = freshSchedule;
-                        cachedWeekData[currentWeekStart].schedule = freshSchedule;
-                        renderAttendanceMatrix(logs, freshSchedule, weekDays);
-                        const refreshLabel = document.getElementById('refresh-label');
-                        if (refreshLabel) refreshLabel.textContent = `Updated: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (refreshed)`;
+                        hybridScheduleCache[weekBeingLoaded] = freshSchedule;
+                        if (cachedWeekData[weekBeingLoaded]) cachedWeekData[weekBeingLoaded].schedule = freshSchedule;
+
+                        // Same guard as above: only re-render if this is still
+                        // the week actually on screen.
+                        if (currentWeekStart === weekBeingLoaded) {
+                            renderAttendanceMatrix(logs, freshSchedule, weekDays);
+                            const refreshLabel = document.getElementById('refresh-label');
+                            if (refreshLabel) refreshLabel.textContent = `Updated: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (refreshed)`;
+                        }
                     }
                 }
             }).catch(err => console.warn('Background schedule refresh failed:', err));
         }
     } catch (error) {
         console.error('Error loading week data:', error);
-        if (!isSilent) {
+        if (!isSilent && currentWeekStart === weekBeingLoaded) {
             document.getElementById('today-attendance-list').innerHTML = '<div class="staff-list-state">Failed to load data. Check connection.</div>';
         }
     }
@@ -552,34 +571,34 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
                             <td class="matrix-name">${escapeHtml(name)}</td>
                             ${weekDays.map((_, i) => {
                                 const cell = row[i];
-                                
-                                // Sort logs by timestamp to get the actual latest action
-                                const sortedLogs = [...cell.logs].sort((a, b) => {
-                                    const timeA = a.timestamp || a.time || '';
-                                    const timeB = b.timestamp || b.time || '';
-                                    return timeB.localeCompare(timeA);
-                                });
-                                const latest = sortedLogs[0];
-                                
+
+                                // Only the day's SIGN-IN record is shown here (sign-out
+                                // time and any "missed" sign-out indicator are still
+                                // recorded normally in the Google Sheets backend/Logs
+                                // tab -- this view just doesn't surface them, since a
+                                // sign-in + lateness is what's actually useful at a
+                                // glance here). Previously this picked whichever action
+                                // (IN or OUT) was most recent that day, so a completed
+                                // day would flip to showing the OUT time instead.
+                                const inLog = cell.logs.find(l => String(l.action || '').trim().toUpperCase() === 'IN');
+
                                 let status = '';
                                 let statusClass = '';
-                                
+
                                 if (cell.isWfh) {
                                     // Render only the home emoji for WFH days (no appended text)
                                     status = '<span class="matrix-home-emoji" aria-label="Home">🏠</span>';
                                     statusClass = 'matrix-wfh';
-                                } else if (latest) {
-                                    // Check for late status (case-insensitive)
-                                    const isLate = latest.status && String(latest.status).trim().toUpperCase() === 'LATE';
-                                    const actionType = String(latest.action || '').trim().toUpperCase();
-                                    status = `${actionType === 'IN' ? '✓ In' : '✓ Out'}<br>${latest.time || ''}`;
-                                    if (isLate && actionType === 'IN') status += '<br>⚠ Late';
-                                    statusClass = actionType === 'IN' ? 'matrix-in' : 'matrix-out';
+                                } else if (inLog) {
+                                    const isLate = inLog.status && String(inLog.status).trim().toUpperCase() === 'LATE';
+                                    status = `✓ In<br>${inLog.time || ''}`;
+                                    if (isLate) status += '<br>⚠ Late';
+                                    statusClass = 'matrix-in';
                                 } else {
                                     status = '—';
                                     statusClass = 'matrix-absent';
                                 }
-                                
+
                                 return `<td class="matrix-cell ${statusClass}">${status}</td>`;
                             }).join('')}
                         </tr>`;
@@ -589,7 +608,6 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
         </div>
         <div class="matrix-legend">
             <span class="legend-item"><span class="legend-dot matrix-in"></span> Signed In</span>
-            <span class="legend-item"><span class="legend-dot matrix-out"></span> Signed Out</span>
             <span class="legend-item"><span class="legend-dot matrix-wfh"></span> Home</span>
             <span class="legend-item"><span class="legend-dot matrix-absent"></span> Absent</span>
         </div>
