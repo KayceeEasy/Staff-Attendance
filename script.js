@@ -158,8 +158,13 @@ function renderRecentLog() {
         return;
     }
     logList.innerHTML = entries.slice(0, MAX_HISTORY_ITEMS).map((entry) => {
-        const statusText = entry.status === 'pending' ? 'Pending sync' : entry.status === 'synced' ? 'Synced' : 'Saved offline';
-        const statusClass = entry.status === 'pending' ? 'pending' : entry.status === 'synced' ? 'synced' : 'offline';
+        const statusText = entry.status === 'pending' ? 'Pending sync'
+            : entry.status === 'synced' ? 'Synced'
+            : entry.status === 'failed' ? 'Not synced'
+            : 'Saved offline';
+        const statusClass = entry.status === 'pending' ? 'pending'
+            : entry.status === 'synced' ? 'synced'
+            : 'offline';
         return `<li><div><strong>${entry.name}</strong><div class="meta">${entry.action} - ${statusText}</div><span class="status-pill ${statusClass}">${statusText}</span></div><div class="meta">${formatTimestamp(entry.timestamp)}</div></li>`;
     }).join('');
 }
@@ -237,6 +242,22 @@ function saveRecentEntry(entry) {
     renderRecentLog();
 }
 
+// Updates an EXISTING recent-log entry in place by id, instead of adding a
+// new one. This is what was missing before: once a queued offline entry
+// was created with status 'pending', nothing ever went back and changed
+// that SAME entry to 'synced' -- a brand new entry was added on success
+// instead, leaving the original sitting there still labeled "Pending sync"
+// indefinitely, even though the sign-in had actually gone through.
+function updateRecentEntryStatus(id, status) {
+    const entries = readStoredJson(STORAGE_KEYS.recentLog, []);
+    const idx = entries.findIndex((e) => e.id === id);
+    if (idx === -1) return false;
+    entries[idx] = { ...entries[idx], status };
+    writeStoredJson(STORAGE_KEYS.recentLog, entries);
+    renderRecentLog();
+    return true;
+}
+
 function scheduleSyncRetry(baseDelay = 8000) {
     clearTimeout(syncRetryTimer);
     if (!navigator.onLine || syncInProgress) return;
@@ -258,20 +279,61 @@ function resetSyncRetryCount() {
 }
 
 function preventDuplicateSubmission(action, name) {
+    const todayKey = getTodayKey();
+
+    // A CONFIRMED action for today (the server has actually recorded it)
+    // blocks the SAME action from being repeated.
     const lastAction = readStoredJson(STORAGE_KEYS.lastAction, null);
-    if (!lastAction) return false;
-    if (lastAction.date === getTodayKey() && lastAction.name === name) {
-        if (lastAction.action === action) {
-            showToast(`You already ${action === 'IN' ? 'signed in' : 'signed out'} today. Please ${action === 'IN' ? 'sign out' : 'sign in'} first.`, 'error');
-            return true;
-        }
+    if (lastAction && lastAction.date === todayKey && lastAction.name === name && lastAction.action === action) {
+        showToast(`You already ${action === 'IN' ? 'signed in' : 'signed out'} today. Please ${action === 'IN' ? 'sign out' : 'sign in'} first.`, 'error');
+        return true;
     }
+
+    // A PENDING (queued, not yet confirmed) action for today also blocks
+    // the SAME action from being queued a second time -- this stops
+    // duplicate offline queuing without permanently locking the user out
+    // if the pending submission later fails or gets rejected, since
+    // pendingAction gets cleared on failure too (unlike lastAction).
+    const pendingAction = getPendingAction();
+    if (pendingAction && pendingAction.date === todayKey && pendingAction.name === name && pendingAction.action === action) {
+        showToast(`Your ${action === 'IN' ? 'sign-in' : 'sign-out'} is still syncing. Please wait a moment and try again.`, 'error');
+        return true;
+    }
+
     return false;
 }
 
 function rememberLastAction(action, name) {
     writeStoredJson(STORAGE_KEYS.lastAction, { date: getTodayKey(), action, name, timestamp: new Date().toISOString() });
     updateLastActionLabel();
+}
+
+// PENDING vs CONFIRMED: lastAction (above) represents an action the
+// server has actually confirmed. pendingAction represents one that's been
+// queued/submitted but we don't yet know the real outcome of. Keeping
+// these separate means a queued action that ultimately fails or gets
+// rejected server-side never permanently poisons lastAction -- previously
+// lastAction was written optimistically the moment something was queued,
+// so a rejected/failed sync left the device stuck believing an action had
+// succeeded when the server had no record of it at all (blocking a real
+// retry, and causing the opposite action to be rejected server-side since
+// there was nothing to match against).
+function getPendingAction() {
+    return readStoredJson(STORAGE_KEYS.pendingAction, null);
+}
+
+function setPendingAction(action, name) {
+    writeStoredJson(STORAGE_KEYS.pendingAction, { date: getTodayKey(), action, name });
+}
+
+function clearPendingAction(action, name) {
+    // Only clear if it still matches what we expect, so this can't
+    // accidentally wipe out a DIFFERENT pending action queued in between
+    // (e.g. a quick IN then OUT attempted back-to-back while offline).
+    const current = getPendingAction();
+    if (current && current.date === getTodayKey() && current.action === action && current.name === name) {
+        localStorage.removeItem(STORAGE_KEYS.pendingAction);
+    }
 }
 
 function queuePendingSubmission(name, action, lat, lon) {
@@ -418,9 +480,14 @@ async function submit(action) {
             return;
         }
         
-        // Queue the submission - server will validate location when syncing
+        // Queue the submission - server will validate location when syncing.
+        // Mark this as PENDING, not confirmed -- rememberLastAction() only
+        // happens once handleAttendanceResponse() sees a real server
+        // confirmation. Marking it confirmed here (the old behavior) meant
+        // a submission that later failed or got rejected left the device
+        // permanently stuck believing it had succeeded.
         queuePendingSubmission(name, action, coords.lat, coords.lon);
-        rememberLastAction(action, name);
+        setPendingAction(action, name);
         setMessage('Saved offline. Location will be verified when synced.', 'msg-late');
         return;
     }
@@ -484,14 +551,44 @@ async function handleAttendanceResponse(data) {
     updateDistanceLabel(distanceStr);
 
     if (activeSubmission && status !== 'BLOCK') {
+        // Real, server-confirmed success -- this is the only place an
+        // action gets promoted from pending to confirmed.
         rememberLastAction(activeSubmission.action, activeSubmission.name);
-        saveRecentEntry({
-            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            name: activeSubmission.name,
-            action: activeSubmission.action,
-            timestamp: new Date().toISOString(),
-            status: 'synced'
-        });
+        clearPendingAction(activeSubmission.action, activeSubmission.name);
+
+        if (activeSubmission.pendingId) {
+            // This started as a queued offline entry. Update that SAME
+            // recentLog entry to 'synced' instead of adding a duplicate --
+            // previously a brand new entry was created here while the
+            // original 'pending' entry was left untouched forever, which
+            // is why the recent-attendance list could keep showing
+            // "Pending sync" even after the sign-in had actually gone
+            // through.
+            const updated = updateRecentEntryStatus(activeSubmission.pendingId, 'synced');
+            if (!updated) {
+                // Entry somehow missing (e.g. storage was cleared meanwhile) --
+                // fall back to adding a fresh one so the action is still shown.
+                saveRecentEntry({
+                    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                    name: activeSubmission.name,
+                    action: activeSubmission.action,
+                    timestamp: new Date().toISOString(),
+                    status: 'synced'
+                });
+            }
+            removeQueuedSubmission(activeSubmission.pendingId);
+        } else {
+            // Immediate (online) submission -- no pre-existing entry for
+            // this one, so add it fresh as before.
+            saveRecentEntry({
+                id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                name: activeSubmission.name,
+                action: activeSubmission.action,
+                timestamp: new Date().toISOString(),
+                status: 'synced'
+            });
+        }
+
         localStorage.setItem(STORAGE_KEYS.lastSynced, formatDateDisplay(new Date().toISOString()));
         updateLastSyncedLabel();
 
@@ -504,12 +601,17 @@ async function handleAttendanceResponse(data) {
             console.warn('Could not register device ownership:', error.message);
         }
 
-        if (activeSubmission.pendingId) {
-            removeQueuedSubmission(activeSubmission.pendingId);
-        }
         activeSubmission = null;
     } else if (activeSubmission && activeSubmission.pendingId && status === 'BLOCK') {
-        // A queued item came back blocked (e.g. duplicate sign-in, geofence violation)
+        // A queued item came back blocked (e.g. duplicate sign-in, geofence
+        // violation, or the situation changed by the time it finally synced).
+        // Clear the PENDING marker -- not lastAction, which was never set
+        // for this action in the first place -- so the user isn't locked
+        // out of a real retry. Also mark the stuck recentLog entry as
+        // failed instead of leaving it showing "Pending sync" forever.
+        clearPendingAction(activeSubmission.action, activeSubmission.name);
+        updateRecentEntryStatus(activeSubmission.pendingId, 'failed');
+
         if (/too far from the office/i.test(text) || /Denied\./i.test(text)) {
             logAnalyticsEvent('geofence_violation_attempt', {
                 name: activeSubmission.name,
@@ -523,7 +625,9 @@ async function handleAttendanceResponse(data) {
         removeQueuedSubmission(activeSubmission.pendingId);
         activeSubmission = null;
     } else if (activeSubmission && status === 'BLOCK') {
-        // Log geofence violation attempt for admin monitoring
+        // Immediate (online) submission blocked -- nothing was ever marked
+        // pending or queued for this one, so there's nothing to reconcile,
+        // just log it if relevant.
         if (/too far from the office/i.test(text) || /Denied\./i.test(text)) {
             logAnalyticsEvent('geofence_violation_attempt', {
                 name: activeSubmission.name,

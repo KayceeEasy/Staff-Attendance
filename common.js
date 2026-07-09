@@ -8,6 +8,7 @@ const STORAGE_KEYS = {
     recentLog: 'attendance_recent_log',
     lastSynced: 'attendance_last_synced',
     lastAction: 'attendance_last_action',
+    pendingAction: 'attendance_pending_action',
     theme: 'attendance_theme',
     deviceLock: 'attendance_device_lock',
     analytics: 'attendance_analytics'
