@@ -343,40 +343,97 @@ function resetStaffLock(name) {
    DEVICE OWNERSHIP
    ============================================================ */
 
-function verifyOwner(payload) {
-  const staff = findStaffRecord(payload.name);
-  if (!staff) return { allowed: false, message: 'Staff not found.' };
-  const storedDeviceId = staff.deviceId || '';
-  if (storedDeviceId) {
-    if (storedDeviceId === payload.deviceId) return { allowed: true, message: 'Device verified.' };
-    return { allowed: false, message: 'This device is locked to another staff account.' };
+/**
+ * Basic sanity check on an incoming deviceId before it's trusted enough
+ * to store or compare. Deliberately loose (just sane length bounds, not a
+ * strict format match) since a future native app will likely generate
+ * device identifiers with a different shape than this web client's
+ * "ID-{hw}-{uuid}" scheme -- this just filters out empty/garbage values,
+ * not anything that doesn't match today's exact web format.
+ */
+function validateDeviceId(deviceId) {
+  const cleaned = (deviceId || '').toString().trim();
+  if (!cleaned) return null;
+  if (cleaned.length < 8 || cleaned.length > 200) return null;
+  return cleaned;
+}
+
+/**
+ * Single source of truth for a staff member's registration status and
+ * any cross-account device conflict. Used by verifyOwner, registerOwner,
+ * and processAttendance so all three agree on exactly the same rules --
+ * these used to be implemented independently (processAttendance had its
+ * own inline copy of this logic), which meant a future change to one
+ * could silently drift from the other.
+ */
+function resolveDeviceStatus(name, deviceId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const staffSheet = getOrCreateStaffSheet(ss);
+  const rows = staffSheet.getRange(2, 1, Math.max(staffSheet.getLastRow() - 1, 0), 2).getValues();
+  const cleanName = (name || '').toString().trim().toLowerCase();
+  const cleanDeviceId = (deviceId || '').toString().trim();
+
+  let staffExists = false;
+  let staffRow = -1;
+  let currentStoredDeviceId = '';
+  let conflictOwner = null;
+
+  for (let i = 0; i < rows.length; i++) {
+    const regName = (rows[i][0] || '').toString().trim();
+    if (!regName) continue;
+    const regDeviceId = rows[i][1] ? rows[i][1].toString().trim() : '';
+    const isCurrentStaff = regName.toLowerCase() === cleanName;
+
+    if (isCurrentStaff) {
+      staffExists = true;
+      staffRow = i + 2; // sheet row number: rows[] is 0-indexed starting at sheet row 2
+      currentStoredDeviceId = regDeviceId;
+    } else if (cleanDeviceId && regDeviceId && regDeviceId === cleanDeviceId) {
+      conflictOwner = regName;
+    }
   }
 
-  const existingOwner = findStaffByDeviceId(payload.deviceId);
-  if (existingOwner) return { allowed: false, message: 'This device is locked to another staff account.' };
+  return { staffExists, staffRow, currentStoredDeviceId, conflictOwner };
+}
+
+function verifyOwner(payload) {
+  const cleanDeviceId = validateDeviceId(payload.deviceId);
+  if (!cleanDeviceId) return { allowed: false, message: 'Missing or invalid device identifier. Please refresh the app and try again.' };
+
+  const status = resolveDeviceStatus(payload.name, cleanDeviceId);
+  if (!status.staffExists) return { allowed: false, message: 'Staff not found.' };
+  if (status.currentStoredDeviceId) {
+    if (status.currentStoredDeviceId === cleanDeviceId) return { allowed: true, message: 'Device verified.' };
+    return { allowed: false, message: 'This device is locked to another staff account.' };
+  }
+  if (status.conflictOwner) return { allowed: false, message: 'This device is locked to another staff account.' };
   return { allowed: true, message: 'No device lock yet. Registration allowed.' };
 }
 
 function registerOwner(payload) {
-  const staff = findStaffRecord(payload.name);
-  if (!staff) return { allowed: false, message: 'Staff not found.' };
-  const storedDeviceId = staff.deviceId || '';
-  if (!storedDeviceId) {
-    const existingOwner = findStaffByDeviceId(payload.deviceId);
-    if (existingOwner) return { allowed: false, message: 'This device is locked to another staff account.' };
-    saveStaffDeviceId(payload.name, payload.deviceId);
+  const cleanDeviceId = validateDeviceId(payload.deviceId);
+  if (!cleanDeviceId) return { allowed: false, message: 'Missing or invalid device identifier. Please refresh the app and try again.' };
+
+  const status = resolveDeviceStatus(payload.name, cleanDeviceId);
+  if (!status.staffExists) return { allowed: false, message: 'Staff not found.' };
+  if (!status.currentStoredDeviceId) {
+    if (status.conflictOwner) return { allowed: false, message: 'This device is locked to another staff account.' };
+    saveStaffDeviceId(payload.name, cleanDeviceId);
     return { allowed: true, message: 'Device registered.' };
   }
-  if (storedDeviceId === payload.deviceId) return { allowed: true, message: 'Device already registered.' };
+  if (status.currentStoredDeviceId === cleanDeviceId) return { allowed: true, message: 'Device already registered.' };
   return { allowed: false, message: 'This device is locked to another staff account.' };
 }
 
 function reassignOwner(payload) {
+  const cleanDeviceId = validateDeviceId(payload.deviceId);
+  if (!cleanDeviceId) return { allowed: false, message: 'Missing or invalid device identifier. Please refresh the app and try again.' };
+
   const props = PropertiesService.getScriptProperties();
   const storedResetHash = props.getProperty('adminResetCodeHash');
   if (!storedResetHash) return { allowed: false, message: 'No reset code has been configured by the admin yet.' };
   if (payload.resetCodeHash !== storedResetHash) return { allowed: false, message: 'Invalid reset code.' };
-  saveStaffDeviceId(payload.name, payload.deviceId);
+  saveStaffDeviceId(payload.name, cleanDeviceId);
   return { allowed: true, message: 'Device reassigned.' };
 }
 
@@ -540,9 +597,11 @@ function processAttendance(payload) {
   if (!payload.name || !payload.action) return 'BLOCK|Missing required fields.';
   if (isNaN(payload.lat) || isNaN(payload.lon)) return 'BLOCK|Location data is missing or invalid.';
 
+  const cleanDeviceId = validateDeviceId(payload.deviceId);
+  if (!cleanDeviceId) return 'BLOCK|Missing or invalid device identifier. Please refresh the app and try again.';
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const logsSheet = ss.getSheetByName('Logs') || ss.insertSheet('Logs');
-  const staffSheet = getOrCreateStaffSheet(ss);
   const config = getConfig();
 
   const now = new Date();
@@ -550,33 +609,16 @@ function processAttendance(payload) {
   const timeStr = Utilities.formatDate(now, config.timezone, 'hh:mm a');
   const hour = now.getHours();
 
-  const staffData = staffSheet.getDataRange().getValues();
-  let staffExists = false;
-  let staffRow = -1;
-  let currentStoredDeviceId = '';
-  const normalizedName = payload.name.trim().toLowerCase();
-
-  for (let i = 1; i < staffData.length; i++) {
-    const regName = staffData[i][0].toString().trim();
-    if (!regName) continue;
-    const regFullID = staffData[i][1] ? staffData[i][1].toString().trim() : '';
-    const isCurrentStaff = regName.toLowerCase() === normalizedName;
-
-    if (isCurrentStaff) {
-      staffExists = true;
-      staffRow = i + 1;
-      currentStoredDeviceId = regFullID;
-      if (regFullID && regFullID !== payload.deviceId) {
-        return 'BLOCK|Device mismatch. This account is locked to a different phone.';
-      }
-    } else if (regFullID && regFullID === payload.deviceId) {
-      return 'BLOCK|This device is already registered to ' + regName + '. Device sharing is not allowed.';
-    }
+  // Same resolver used by verifyOwner/registerOwner -- see comment there.
+  const status = resolveDeviceStatus(payload.name, cleanDeviceId);
+  if (!status.staffExists) return 'BLOCK|Staff member not recognized. Contact your administrator.';
+  if (status.conflictOwner) return 'BLOCK|This device is already registered to ' + status.conflictOwner + '. Device sharing is not allowed.';
+  if (status.currentStoredDeviceId && status.currentStoredDeviceId !== cleanDeviceId) {
+    return 'BLOCK|Device mismatch. This account is locked to a different phone.';
   }
-
-  if (!staffExists) return 'BLOCK|Staff member not recognized. Contact your administrator.';
-  if (!currentStoredDeviceId && staffRow > 0) {
-    staffSheet.getRange(staffRow, 2).setValue(payload.deviceId);
+  if (!status.currentStoredDeviceId && status.staffRow > 0) {
+    const staffSheet = getOrCreateStaffSheet(ss);
+    staffSheet.getRange(status.staffRow, 2).setValue(cleanDeviceId);
   }
 
   const dist = getDistance(config.officeLat, config.officeLon, payload.lat, payload.lon);
@@ -702,26 +744,6 @@ function logDistanceAlert(name, action, dist, lat, lon) {
   alertsSheet.appendRow([todayStr, timeStr, name, action, dist.toFixed(0), lat, lon]);
 }
 
-function findStaffRecord(name) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const staffSheet = getOrCreateStaffSheet(ss);
-  const rows = staffSheet.getRange(2, 1, Math.max(staffSheet.getLastRow() - 1, 0), 2).getValues();
-  const cleanName = (name || '').toString().trim().toLowerCase();
-  const match = rows.find(r => r[0].toString().trim().toLowerCase() === cleanName);
-  if (!match) return null;
-  return { name: match[0].toString().trim(), deviceId: match[1] ? match[1].toString().trim() : '' };
-}
-
-function findStaffByDeviceId(deviceId) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const staffSheet = getOrCreateStaffSheet(ss);
-  const rows = staffSheet.getRange(2, 1, Math.max(staffSheet.getLastRow() - 1, 0), 2).getValues();
-  const cleanId = (deviceId || '').toString().trim();
-  if (!cleanId) return null;
-  const match = rows.find(r => (r[1] || '').toString().trim() === cleanId);
-  return match ? match[0].toString().trim() : null;
-}
-
 function saveStaffDeviceId(name, deviceId) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const staffSheet = getOrCreateStaffSheet(ss);
@@ -803,12 +825,12 @@ function logAnalyticsEvent(eventType, details, deviceId) {
     deviceId: deviceId || '',
     time: Utilities.formatDate(now, config.timezone, 'dd/MM/yyyy HH:mm:ss')
   });
-  if (events.length > 100) events = events.slice(0, 100);
+  if (events.length > 10) events = events.slice(0, 10);
   try {
     props.setProperty('analyticsEvents', JSON.stringify(events));
   } catch (e) {
     // Script Properties has a 9KB-per-property limit; if it overflows, trim aggressively
-    events = events.slice(0, 20);
+    events = events.slice(0, 5);
     props.setProperty('analyticsEvents', JSON.stringify(events));
   }
   return { ok: true };
@@ -818,6 +840,6 @@ function listAnalyticsEvents(limit) {
   const props = PropertiesService.getScriptProperties();
   let events = [];
   try { events = JSON.parse(props.getProperty('analyticsEvents') || '[]'); } catch (e) { events = []; }
-  const cap = limit ? parseInt(limit, 10) : 50;
+  const cap = limit ? parseInt(limit, 10) : 10;
   return { ok: true, events: events.slice(0, cap) };
 }

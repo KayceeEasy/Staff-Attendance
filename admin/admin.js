@@ -364,13 +364,90 @@ function exportToCSV(data, filename) {
         headers.join(','),
         ...data.map(row => headers.map(h => `"${String(row[h] || '').replace(/"/g, '""')}"`).join(','))
     ];
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    // Prefix with a UTF-8 BOM so Excel correctly renders non-ASCII
+    // characters (e.g. the 🏠 emoji in the matrix export) instead of
+    // showing mojibake. Other apps (Google Sheets, Numbers) handle the BOM
+    // fine too, so this is safe to apply to every export, not just this one.
+    const blob = new Blob(['\uFEFF' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `${filename}_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
     showToast(`Exported ${data.length} records.`, 'success');
+}
+
+/**
+ * Builds one row per staff member with one column per weekday (matrix
+ * shape, matching the on-screen Weekly Attendance Matrix) instead of one
+ * row per individual sign-in/out action. Reuses the exact same per-cell
+ * resolution logic as renderAttendanceMatrix so the export always matches
+ * what's shown on screen -- including the 🏠 home emoji for WFH days.
+ */
+function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
+    const monday = parseDmyDate(weekStartStr);
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+    const weekDays = [];
+    for (let i = 0; i < 5; i++) {
+        const day = new Date(monday);
+        day.setDate(monday.getDate() + i);
+        weekDays.push(formatDateDMY(day));
+    }
+
+    const allStaff = new Set();
+    Object.keys(schedule || {}).forEach(name => allStaff.add(name));
+    (logs || []).forEach(entry => allStaff.add(entry.name));
+    if (allStaffList.length) allStaffList.forEach(s => allStaff.add(s.name));
+    const sortedStaff = Array.from(allStaff).sort((a, b) => a.localeCompare(b));
+
+    if (!sortedStaff.length) { showToast('No staff data to export for this week.', 'error'); return; }
+
+    const scheduleNameIndex = buildScheduleNameIndex(schedule);
+
+    const rows = sortedStaff.map(name => {
+        const normalizedStaffName = String(name || '').trim().toLowerCase();
+        const row = { Staff: name };
+
+        weekDays.forEach((day, idx) => {
+            const columnLabel = `${dayNames[idx]} ${day}`;
+            const dayKey = normalizeDateKey(day);
+
+            const dayLogs = (logs || []).filter(l => {
+                const logName = String(l.name || '').trim().toLowerCase();
+                const logDateKey = normalizeDateKey(l.date || l.timestamp || '');
+                return logName === normalizedStaffName && logDateKey === dayKey;
+            });
+
+            let scheduleKey = scheduleNameIndex[normalizedStaffName] || null;
+            if (!scheduleKey) {
+                const candidate = Object.keys(schedule || {}).find(k => {
+                    const nk = String(k || '').trim().toLowerCase();
+                    return nk === normalizedStaffName || nk.includes(normalizedStaffName) || normalizedStaffName.includes(nk);
+                });
+                if (candidate) scheduleKey = candidate;
+            }
+            const staffSchedules = scheduleKey ? (schedule[scheduleKey] || []) : [];
+            const daySchedule = staffSchedules.find(s => normalizeDateKey(s.date) === dayKey);
+            const isWfh = String(daySchedule?.location || '').trim().toLowerCase() === 'home';
+
+            const inLog = dayLogs.find(l => String(l.action || '').trim().toUpperCase() === 'IN');
+
+            let cellText = '\u2014'; // em dash, matches the on-screen "absent" marker
+            if (isWfh) {
+                cellText = '\ud83c\udfe0 Home';
+            } else if (inLog) {
+                const isLate = inLog.status && String(inLog.status).trim().toUpperCase() === 'LATE';
+                cellText = `\u2713 ${inLog.time || ''}`.trim();
+                if (isLate) cellText += ' (Late)';
+            }
+
+            row[columnLabel] = cellText;
+        });
+
+        return row;
+    });
+
+    exportToCSV(rows, 'attendance_matrix_week');
 }
 
 /* ============================================================
@@ -731,6 +808,10 @@ async function handleResetStaffLock(name) {
    LOGS TAB
    ============================================================ */
 
+let logsAllRecords = [];
+let logsCurrentPage = 1;
+let logsPageSize = 20;
+
 async function loadLogsViewer() {
     const host = document.getElementById('logs-list');
     if (host) host.innerHTML = '<div class="staff-list-state">Loading records...</div>';
@@ -747,11 +828,15 @@ async function loadLogsViewer() {
             limit: 200
         });
         if (response.ok && Array.isArray(response.logs)) {
-            renderLogsTable(response.logs);
+            logsAllRecords = response.logs;
+            logsCurrentPage = 1; // reset to page 1 whenever the filter/query changes
+            renderLogsTable();
         } else {
+            logsAllRecords = [];
             if (host) host.innerHTML = `<div class="staff-list-state">${escapeHtml(response.message || 'No records found.')}</div>`;
         }
     } catch (error) {
+        logsAllRecords = [];
         if (host) host.innerHTML = '<div class="staff-list-state">Failed to reach the server.</div>';
     }
 }
@@ -793,18 +878,24 @@ function getStatusLabel(status = '') {
     }
 }
 
-function renderLogsTable(logs) {
+function renderLogsTable() {
     const host = document.getElementById('logs-list');
     if (!host) return;
+    const logs = logsAllRecords;
     if (!logs.length) { host.innerHTML = '<div class="staff-list-state">No records match this filter.</div>'; return; }
-    
+
+    const totalPages = Math.max(1, Math.ceil(logs.length / logsPageSize));
+    if (logsCurrentPage > totalPages) logsCurrentPage = totalPages;
+    const startIdx = (logsCurrentPage - 1) * logsPageSize;
+    const pageLogs = logs.slice(startIdx, startIdx + logsPageSize);
+
     host.innerHTML = `
         <div class="logs-table-wrapper">
             <div class="logs-table">
                 <div class="logs-row logs-head">
                     <span>Date</span><span>Name</span><span>Action</span><span>Time</span><span>Status</span><span>Dist</span>
                 </div>
-                ${logs.map(entry => `
+                ${pageLogs.map(entry => `
                     <div class="logs-row">
                         <span>${escapeHtml(entry.date)}</span>
                         <span>${escapeHtml(entry.name)}</span>
@@ -817,10 +908,33 @@ function renderLogsTable(logs) {
             </div>
         </div>
         <div class="logs-footer">
-            <span>${logs.length} records</span>
+            <span>${logs.length} records — page ${logsCurrentPage} of ${totalPages}</span>
+            <div class="logs-pagination" style="display:flex;align-items:center;gap:8px;">
+                <label for="logs-page-size">Show:</label>
+                <select id="logs-page-size" aria-label="Records per page">
+                    <option value="20" ${logsPageSize === 20 ? 'selected' : ''}>20</option>
+                    <option value="50" ${logsPageSize === 50 ? 'selected' : ''}>50</option>
+                </select>
+                <button id="logs-prev-page-btn" class="admin-btn secondary small" type="button" ${logsCurrentPage <= 1 ? 'disabled' : ''}>‹ Prev</button>
+                <button id="logs-next-page-btn" class="admin-btn secondary small" type="button" ${logsCurrentPage >= totalPages ? 'disabled' : ''}>Next ›</button>
+            </div>
             <button id="export-logs-btn" class="admin-btn secondary small" type="button">📥 Export CSV</button>
         </div>
     `;
+
+    document.getElementById('logs-page-size')?.addEventListener('change', (e) => {
+        logsPageSize = parseInt(e.target.value, 10) || 20;
+        logsCurrentPage = 1;
+        renderLogsTable();
+    });
+    document.getElementById('logs-prev-page-btn')?.addEventListener('click', () => {
+        if (logsCurrentPage > 1) { logsCurrentPage--; renderLogsTable(); }
+    });
+    document.getElementById('logs-next-page-btn')?.addEventListener('click', () => {
+        if (logsCurrentPage < totalPages) { logsCurrentPage++; renderLogsTable(); }
+    });
+    // Export always exports ALL currently-filtered records, not just the
+    // page currently visible on screen.
     document.getElementById('export-logs-btn')?.addEventListener('click', () => exportToCSV(logs, 'attendance_logs'));
 }
 
@@ -1186,8 +1300,8 @@ function renderAdminPanel() {
     document.getElementById('week-next-btn').addEventListener('click', () => navigateWeek('next'));
     document.getElementById('dashboard-export-btn').addEventListener('click', () => {
         const weekData = cachedWeekData[currentWeekStart];
-        if (weekData?.logs?.length) exportToCSV(weekData.logs, 'attendance_week');
-        else showToast('No week data to export.', 'error');
+        if (!weekData) { showToast('No week data to export.', 'error'); return; }
+        exportWeekMatrixToCSV(weekData.logs || [], weekData.schedule || {}, currentWeekStart);
     });
 
     // Staff events
