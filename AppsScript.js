@@ -75,6 +75,7 @@ function routeRequest(params) {
     case 'list-logs': return listLogs({ name: params.name, fromDate: params.fromDate, toDate: params.toDate, limit: params.limit, weekStart: params.weekStart });
     case 'log-analytics': return logAnalyticsEvent(params.eventType, params.details, params.deviceId);
     case 'list-analytics': return listAnalyticsEvents(params.limit);
+    case 'list-distance-alerts': return listDistanceAlerts(params.limit);
     case 'get-hybrid-schedule': return getHybridSchedule(params.weekStart);
     case 'verify-owner': return verifyOwner({ name: params.name, deviceId: params.deviceId });
     case 'register-owner': return registerOwner({ name: params.name, deviceId: params.deviceId });
@@ -825,12 +826,12 @@ function logAnalyticsEvent(eventType, details, deviceId) {
     deviceId: deviceId || '',
     time: Utilities.formatDate(now, config.timezone, 'dd/MM/yyyy HH:mm:ss')
   });
-  if (events.length > 10) events = events.slice(0, 10);
+  if (events.length > 100) events = events.slice(0, 100);
   try {
     props.setProperty('analyticsEvents', JSON.stringify(events));
   } catch (e) {
     // Script Properties has a 9KB-per-property limit; if it overflows, trim aggressively
-    events = events.slice(0, 5);
+    events = events.slice(0, 20);
     props.setProperty('analyticsEvents', JSON.stringify(events));
   }
   return { ok: true };
@@ -840,6 +841,42 @@ function listAnalyticsEvents(limit) {
   const props = PropertiesService.getScriptProperties();
   let events = [];
   try { events = JSON.parse(props.getProperty('analyticsEvents') || '[]'); } catch (e) { events = []; }
-  const cap = limit ? parseInt(limit, 10) : 10;
+  const cap = limit ? parseInt(limit, 10) : 50;
   return { ok: true, events: events.slice(0, cap) };
+}
+
+/**
+ * Reads geofence-blocked sign-in attempts directly from the "Distance
+ * Alerts" sheet -- the authoritative record, written unconditionally by
+ * processAttendance() every time a submission is rejected for being
+ * outside the office radius, regardless of whether the client's device
+ * is online or successfully completes any follow-up reporting. This is
+ * what the admin's Device Events view reads for geofence blocks, rather
+ * than depending on the client to separately report the same event a
+ * second time over a flakier path.
+ */
+function listDistanceAlerts(limit) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const alertsSheet = ss.getSheetByName('Distance Alerts');
+  if (!alertsSheet || alertsSheet.getLastRow() < 2) return { ok: true, alerts: [] };
+
+  const lastRow = alertsSheet.getLastRow();
+  const cap = limit ? parseInt(limit, 10) : 100;
+  const rowsToRead = Math.min(lastRow - 1, Math.max(cap, 100));
+  const startRow = lastRow - rowsToRead + 1;
+  const rows = alertsSheet.getRange(startRow, 1, rowsToRead, 7).getValues();
+
+  const alerts = rows.map(function (row) {
+    return {
+      date: row[0] ? row[0].toString().trim() : '',
+      time: row[1] ? row[1].toString().trim() : '',
+      name: row[2] ? row[2].toString().trim() : '',
+      action: row[3] ? row[3].toString().trim() : '',
+      distance: row[4] !== undefined && row[4] !== '' ? row[4].toString() : '',
+      lat: row[5] !== undefined ? row[5].toString() : '',
+      lon: row[6] !== undefined ? row[6].toString() : ''
+    };
+  }).reverse(); // most recent first
+
+  return { ok: true, alerts: alerts.slice(0, cap) };
 }

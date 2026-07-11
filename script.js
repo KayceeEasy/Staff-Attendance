@@ -634,35 +634,23 @@ async function handleAttendanceResponse(data) {
         // for this action in the first place -- so the user isn't locked
         // out of a real retry. Also mark the stuck recentLog entry as
         // failed instead of leaving it showing "Pending sync" forever.
+        //
+        // Note: geofence blocks are NOT separately reported to the analytics
+        // endpoint here anymore. processAttendance() on the server already
+        // writes every such block unconditionally to the "Distance Alerts"
+        // sheet -- that's the authoritative record the admin's Device Events
+        // view reads from. Reporting it again here was redundant (and less
+        // reliable, since it depended on this exact code path running
+        // successfully) and would have shown up as a duplicate entry.
         clearPendingAction(activeSubmission.action, activeSubmission.name);
         updateRecentEntryStatus(activeSubmission.pendingId, 'failed');
-
-        if (/too far from the office/i.test(text) || /Denied\./i.test(text)) {
-            logAnalyticsEvent('geofence_violation_attempt', {
-                name: activeSubmission.name,
-                action: activeSubmission.action,
-                lat: activeSubmission.lat,
-                lon: activeSubmission.lon,
-                deviceId: deviceId,
-                message: text || 'Location verification failed'
-            });
-        }
         removeQueuedSubmission(activeSubmission.pendingId);
         activeSubmission = null;
     } else if (activeSubmission && status === 'BLOCK') {
         // Immediate (online) submission blocked -- nothing was ever marked
-        // pending or queued for this one, so there's nothing to reconcile,
-        // just log it if relevant.
-        if (/too far from the office/i.test(text) || /Denied\./i.test(text)) {
-            logAnalyticsEvent('geofence_violation_attempt', {
-                name: activeSubmission.name,
-                action: activeSubmission.action,
-                lat: activeSubmission.lat,
-                lon: activeSubmission.lon,
-                deviceId: deviceId,
-                message: text || 'Location verification failed'
-            });
-        }
+        // pending or queued for this one, so there's nothing to reconcile.
+        // See note above: geofence blocks are already captured server-side
+        // in the Distance Alerts sheet, so no separate client report here.
         activeSubmission = null;
     }
 

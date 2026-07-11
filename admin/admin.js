@@ -1013,7 +1013,7 @@ function processAnalyticsData(logs, schedule) {
     };
 }
 
-function renderAnalytics(deviceEvents = []) {
+function renderAnalytics() {
     const host = document.getElementById('analytics-content');
     if (!host) return;
     
@@ -1023,6 +1023,11 @@ function renderAnalytics(deviceEvents = []) {
     }
     
     const data = analyticsData;
+    const deviceEvents = deviceEventsAll;
+    const totalEventPages = Math.max(1, Math.ceil(deviceEvents.length / DEVICE_EVENTS_PAGE_SIZE));
+    if (deviceEventsPage > totalEventPages) deviceEventsPage = totalEventPages;
+    const eventsStart = (deviceEventsPage - 1) * DEVICE_EVENTS_PAGE_SIZE;
+    const pageEvents = deviceEvents.slice(eventsStart, eventsStart + DEVICE_EVENTS_PAGE_SIZE);
     
     host.innerHTML = `
         <div class="analytics-grid">
@@ -1108,17 +1113,19 @@ function renderAnalytics(deviceEvents = []) {
             <button id="export-analytics-btn" class="admin-btn secondary small" type="button">📥 Export CSV</button>
         </div>
         
-        <!-- Device Error Events from field -->
-        ${deviceEvents.length > 0 ? `
+        <!-- Device Events: geofence-blocked sign-in attempts (from the Distance
+             Alerts sheet, the authoritative record) merged with client-reported
+             app errors (from Script Properties, which have no sheet equivalent). -->
         <div class="analytics-section">
-            <h4>🔴 Device Events (Last 50)</h4>
-            <p class="admin-intro">Errors and warnings reported from staff devices.</p>
+            <h4>🔴 Device Events</h4>
+            <p class="admin-intro">Geofence-blocked sign-in attempts and client-side app errors reported from staff devices.</p>
+            ${deviceEvents.length > 0 ? `
             <div class="logs-table-wrapper">
                 <div class="logs-table" style="min-width:400px">
                     <div class="logs-row logs-head" style="grid-template-columns:1fr 1fr 2fr">
                         <span>Time</span><span>Type</span><span>Details</span>
                     </div>
-                    ${deviceEvents.map(e => `
+                    ${pageEvents.map(e => `
                         <div class="logs-row" style="grid-template-columns:1fr 1fr 2fr">
                             <span style="font-size:0.75rem">${escapeHtml(e.time || '')}</span>
                             <span class="status-pill-small ${e.type.includes('error') || e.type.includes('geofence') ? 'late' : 'offline'}">${escapeHtml(e.type)}</span>
@@ -1127,7 +1134,15 @@ function renderAnalytics(deviceEvents = []) {
                     `).join('')}
                 </div>
             </div>
-        </div>` : '<div class="analytics-section"><h4>🔴 Device Events</h4><div class="staff-list-state">No device errors reported.</div></div>'}
+            <div class="logs-footer">
+                <span>${deviceEvents.length} events — page ${deviceEventsPage} of ${totalEventPages}</span>
+                <div style="display:flex;gap:8px;">
+                    <button id="device-events-prev-btn" class="admin-btn secondary small" type="button" ${deviceEventsPage <= 1 ? 'disabled' : ''}>‹ Prev</button>
+                    <button id="device-events-next-btn" class="admin-btn secondary small" type="button" ${deviceEventsPage >= totalEventPages ? 'disabled' : ''}>Next ›</button>
+                </div>
+            </div>
+            ` : '<div class="staff-list-state">No device errors or geofence violations reported.</div>'}
+        </div>
     `;
     
     document.getElementById('export-analytics-btn')?.addEventListener('click', () => {
@@ -1137,9 +1152,46 @@ function renderAnalytics(deviceEvents = []) {
         }));
         exportToCSV(exportData, 'attendance_analytics');
     });
+
+    document.getElementById('device-events-prev-btn')?.addEventListener('click', () => {
+        if (deviceEventsPage > 1) { deviceEventsPage--; renderAnalytics(); }
+    });
+    document.getElementById('device-events-next-btn')?.addEventListener('click', () => {
+        if (deviceEventsPage < totalEventPages) { deviceEventsPage++; renderAnalytics(); }
+    });
 }
 
 let analyticsData = null;
+let deviceEventsAll = [];
+let deviceEventsPage = 1;
+const DEVICE_EVENTS_PAGE_SIZE = 10;
+
+async function fetchDistanceAlerts(limit = 100) {
+    return callBackend({ mode: 'list-distance-alerts', limit });
+}
+
+// Parses a date/time pair from either source into a comparable timestamp,
+// so geofence alerts (date "dd/MM/yyyy" + time "hh:mm a") and client error
+// events (single "dd/MM/yyyy HH:mm:ss" string) can be merged into one
+// consistently-sorted, most-recent-first list.
+function parseEventTimestamp(dateStr, timeStr) {
+    const dateParts = String(dateStr || '').split('/');
+    if (dateParts.length !== 3) return 0;
+    const day = parseInt(dateParts[0], 10), month = parseInt(dateParts[1], 10) - 1, year = parseInt(dateParts[2], 10);
+    if (!timeStr) return new Date(year, month, day).getTime();
+
+    const ampmMatch = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (ampmMatch) {
+        let hour = parseInt(ampmMatch[1], 10) % 12;
+        if (/pm/i.test(ampmMatch[3])) hour += 12;
+        return new Date(year, month, day, hour, parseInt(ampmMatch[2], 10)).getTime();
+    }
+    const hmsMatch = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (hmsMatch) {
+        return new Date(year, month, day, parseInt(hmsMatch[1], 10), parseInt(hmsMatch[2], 10), parseInt(hmsMatch[3] || '0', 10)).getTime();
+    }
+    return new Date(year, month, day).getTime();
+}
 
 async function loadAnalytics() {
     const host = document.getElementById('analytics-content');
@@ -1150,19 +1202,50 @@ async function loadAnalytics() {
         const allLogs = Object.values(cachedWeekData).flatMap(w => w.logs || []);
         const allSchedule = Object.values(cachedWeekData).reduce((acc, w) => ({ ...acc, ...(w.schedule || {}) }), {});
         
-        // Fetch server-side analytics events in parallel
-        const [attendanceLogs, analyticsResponse] = await Promise.all([
+        // Fetch server-side analytics events AND geofence alerts in parallel
+        const [attendanceLogs, analyticsResponse, alertsResponse] = await Promise.all([
             allLogs.length > 0
                 ? Promise.resolve(allLogs)
                 : fetchLogs({ limit: 1000 }).then(r => (r.ok && Array.isArray(r.logs)) ? r.logs : []),
-            callBackend({ mode: 'list-analytics', limit: 50 }).catch(() => ({ ok: false, events: [] }))
+            callBackend({ mode: 'list-analytics', limit: 50 }).catch(() => ({ ok: false, events: [] })),
+            fetchDistanceAlerts(100).catch(() => ({ ok: false, alerts: [] }))
         ]);
 
         analyticsData = processAnalyticsData(attendanceLogs, allSchedule);
-        const deviceEvents = (analyticsResponse.ok && Array.isArray(analyticsResponse.events))
-            ? analyticsResponse.events : [];
 
-        renderAnalytics(deviceEvents);
+        // Client-reported errors (global_error, unhandled_rejection) -- these
+        // have no server-side equivalent, so this Script Properties feed is
+        // still the only source for them.
+        const clientEvents = (analyticsResponse.ok && Array.isArray(analyticsResponse.events))
+            ? analyticsResponse.events.map(e => {
+                const [datePart, timePart] = String(e.time || '').split(' ');
+                return {
+                    type: e.type,
+                    details: typeof e.details === 'string' ? e.details : JSON.stringify(e.details || {}),
+                    time: e.time || '',
+                    sortValue: parseEventTimestamp(datePart, timePart)
+                };
+            })
+            : [];
+
+        // Geofence blocks -- read directly from the Distance Alerts sheet
+        // (the authoritative record processAttendance always writes to,
+        // regardless of the client's connectivity), rather than relying on
+        // the client's separate, less reliable follow-up report of the same
+        // event.
+        const geofenceEvents = (alertsResponse.ok && Array.isArray(alertsResponse.alerts))
+            ? alertsResponse.alerts.map(a => ({
+                type: 'geofence_violation',
+                details: `${a.name} attempted ${a.action} from ~${a.distance}m away`,
+                time: `${a.date} ${a.time}`,
+                sortValue: parseEventTimestamp(a.date, a.time)
+            }))
+            : [];
+
+        deviceEventsAll = [...clientEvents, ...geofenceEvents].sort((a, b) => b.sortValue - a.sortValue);
+        deviceEventsPage = 1;
+
+        renderAnalytics();
     } catch (error) {
         if (host) host.innerHTML = '<div class="staff-list-state">Failed to load analytics.</div>';
     }
