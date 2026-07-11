@@ -892,6 +892,51 @@ window.addEventListener('visibilitychange', () => {
     }
 });
 
+/* ---------- Service worker update handling ----------
+   sw.js uses skipWaiting()/clients.claim(), so once a deploy bumps
+   CACHE_NAME, the new worker takes control almost immediately -- but an
+   already-open tab keeps running the OLD page script/DOM until it
+   actually reloads. This listens for that handover and reloads
+   automatically, but only once the person is genuinely idle (no recent
+   taps/clicks/keys, no sync in flight, no dialog open), so a background
+   update can never yank the page out from under someone mid sign-in. */
+if ('serviceWorker' in navigator) {
+    let swRefreshPending = false;
+    // Distinguishes "a new version just took over from an older one"
+    // (genuine update -- worth reloading for) from "this tab just got its
+    // very first controller" (a brand-new visitor's first load also fires
+    // controllerchange once, harmlessly, but there's no stale page to
+    // replace yet, so reloading for it would just be an unwanted flicker).
+    let hadControllerAtLoad = !!navigator.serviceWorker.controller;
+    let lastActivityAt = Date.now();
+    const IDLE_THRESHOLD_MS = 4000;
+    const IDLE_CHECK_INTERVAL_MS = 2000;
+
+    ['click', 'touchstart', 'keydown', 'pointerdown'].forEach((evt) => {
+        document.addEventListener(evt, () => { lastActivityAt = Date.now(); }, { passive: true });
+    });
+
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (swRefreshPending) return;
+        if (!hadControllerAtLoad) {
+            hadControllerAtLoad = true;
+            return;
+        }
+        swRefreshPending = true;
+
+        const tryReload = () => {
+            const idleFor = Date.now() - lastActivityAt;
+            const safeToReload = idleFor >= IDLE_THRESHOLD_MS && !syncInProgress && !document.querySelector('.dialog-overlay');
+            if (safeToReload) {
+                window.location.reload();
+                return;
+            }
+            setTimeout(tryReload, IDLE_CHECK_INTERVAL_MS);
+        };
+        setTimeout(tryReload, IDLE_CHECK_INTERVAL_MS);
+    });
+}
+
 setInterval(() => {
     if (readStoredJson(STORAGE_KEYS.pendingQueue, []).length) {
         flushPendingQueue();
