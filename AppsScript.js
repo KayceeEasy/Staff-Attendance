@@ -70,6 +70,8 @@ function routeRequest(params) {
     case 'add-staff': return addStaff(params.name);
     case 'remove-staff': return removeStaff(params.name);
     case 'reset-staff-lock': return resetStaffLock(params.name);
+    case 'reset-all-locks': return resetAllDeviceLocks();
+    case 'get-sheet-url': return { ok: true, url: SpreadsheetApp.getActiveSpreadsheet().getUrl() };
     case 'get-config': return { ok: true, config: getConfig() };
     case 'update-config': return updateConfig(params);
     case 'list-logs': return listLogs({ name: params.name, fromDate: params.fromDate, toDate: params.toDate, limit: params.limit, weekStart: params.weekStart });
@@ -338,6 +340,22 @@ function resetStaffLock(name) {
     }
   }
   return { ok: false, message: 'Staff not found.' };
+}
+
+/**
+ * Clears the device lock (column B) for EVERY staff member in one batch
+ * write, rather than looping resetStaffLock() per person. Used by the
+ * admin's bulk "Reset All Locks" action.
+ */
+function resetAllDeviceLocks() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const staffSheet = getOrCreateStaffSheet(ss);
+  const lastRow = staffSheet.getLastRow();
+  if (lastRow < 2) return { ok: true, message: 'No staff to reset.', staff: [] };
+  const numRows = lastRow - 1;
+  const clearedValues = Array(numRows).fill(['']);
+  staffSheet.getRange(2, 2, numRows, 1).setValues(clearedValues);
+  return { ok: true, message: 'All device locks cleared.', staff: listStaff().staff };
 }
 
 /* ============================================================

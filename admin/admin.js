@@ -64,6 +64,10 @@ async function resetStaffLock(name) {
     return callBackend({ mode: 'reset-staff-lock', name });
 }
 
+async function resetAllLocks() {
+    return callBackend({ mode: 'reset-all-locks' });
+}
+
 async function fetchLogs(filters = {}) {
     return callBackend({ mode: 'list-logs', ...filters });
 }
@@ -804,6 +808,16 @@ async function handleResetStaffLock(name) {
     } catch (error) { showToast('Could not reach the server.', 'error'); }
 }
 
+async function handleResetAllLocks() {
+    const confirmed = await confirmDialog('Clear device locks for ALL staff? Everyone will need to register a new device on their next sign-in. This cannot be undone.', { danger: true, confirmLabel: 'Reset All' });
+    if (!confirmed) return;
+    try {
+        const response = await resetAllLocks();
+        showToast(response.message || 'All locks cleared.', response.ok ? 'success' : 'error');
+        if (response.ok) await loadStaffList();
+    } catch (error) { showToast('Could not reach the server.', 'error'); }
+}
+
 /* ============================================================
    LOGS TAB
    ============================================================ */
@@ -909,12 +923,14 @@ function renderLogsTable() {
         </div>
         <div class="logs-footer">
             <span>${logs.length} records — page ${logsCurrentPage} of ${totalPages}</span>
-            <div class="logs-pagination" style="display:flex;align-items:center;gap:8px;">
-                <label for="logs-page-size">Show:</label>
-                <select id="logs-page-size" aria-label="Records per page">
-                    <option value="20" ${logsPageSize === 20 ? 'selected' : ''}>20</option>
-                    <option value="50" ${logsPageSize === 50 ? 'selected' : ''}>50</option>
-                </select>
+            <div class="pagination-controls">
+                <div class="page-size-select">
+                    <label for="logs-page-size">Show</label>
+                    <select id="logs-page-size" aria-label="Records per page">
+                        <option value="20" ${logsPageSize === 20 ? 'selected' : ''}>20</option>
+                        <option value="50" ${logsPageSize === 50 ? 'selected' : ''}>50</option>
+                    </select>
+                </div>
                 <button id="logs-prev-page-btn" class="admin-btn secondary small" type="button" ${logsCurrentPage <= 1 ? 'disabled' : ''}>‹ Prev</button>
                 <button id="logs-next-page-btn" class="admin-btn secondary small" type="button" ${logsCurrentPage >= totalPages ? 'disabled' : ''}>Next ›</button>
             </div>
@@ -1136,7 +1152,7 @@ function renderAnalytics() {
             </div>
             <div class="logs-footer">
                 <span>${deviceEvents.length} events — page ${deviceEventsPage} of ${totalEventPages}</span>
-                <div style="display:flex;gap:8px;">
+                <div class="pagination-controls">
                     <button id="device-events-prev-btn" class="admin-btn secondary small" type="button" ${deviceEventsPage <= 1 ? 'disabled' : ''}>‹ Prev</button>
                     <button id="device-events-next-btn" class="admin-btn secondary small" type="button" ${deviceEventsPage >= totalEventPages ? 'disabled' : ''}>Next ›</button>
                 </div>
@@ -1207,8 +1223,8 @@ async function loadAnalytics() {
             allLogs.length > 0
                 ? Promise.resolve(allLogs)
                 : fetchLogs({ limit: 1000 }).then(r => (r.ok && Array.isArray(r.logs)) ? r.logs : []),
-            callBackend({ mode: 'list-analytics', limit: 50 }).catch(() => ({ ok: false, events: [] })),
-            fetchDistanceAlerts(100).catch(() => ({ ok: false, alerts: [] }))
+            callBackend({ mode: 'list-analytics', limit: 50 }).catch((err) => { console.warn('list-analytics fetch failed:', err); return { ok: false, events: [] }; }),
+            fetchDistanceAlerts(100).catch((err) => { console.warn('list-distance-alerts fetch failed:', err); return { ok: false, alerts: [] }; })
         ]);
 
         analyticsData = processAnalyticsData(attendanceLogs, allSchedule);
@@ -1279,6 +1295,7 @@ function renderAdminPanel() {
                 <div class="dashboard-actions">
                     <span id="refresh-label" class="refresh-label"></span>
                     <button id="refresh-today-btn" class="admin-btn secondary small" type="button">🔄</button>
+                    <a id="sheets-link-btn" class="icon-btn" href="#" target="_blank" rel="noopener" title="Open Google Sheets backend" aria-label="Open Google Sheets backend">📗</a>
                 </div>
             </div>
             <div id="today-attendance-list"><div class="staff-list-state">Loading this week...</div></div>
@@ -1301,6 +1318,7 @@ function renderAdminPanel() {
                     <input id="new-staff-name" type="text" placeholder="Enter staff name to add" />
                     <div class="admin-actions compact">
                         <button id="add-staff-btn" class="admin-btn" type="button">➕ Add Staff</button>
+                        <button id="reset-all-locks-btn" class="admin-btn danger" type="button">🔓 Reset All Locks</button>
                     </div>
                 </div>
             </div>
@@ -1390,6 +1408,17 @@ function renderAdminPanel() {
     // Staff events
     document.getElementById('add-staff-btn').addEventListener('click', handleAddStaff);
     document.getElementById('new-staff-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') handleAddStaff(); });
+    document.getElementById('reset-all-locks-btn').addEventListener('click', handleResetAllLocks);
+
+    // Quick-access link to the Google Sheets backend. Fetched dynamically
+    // (rather than hardcoded) so it stays correct even if the underlying
+    // sheet is ever recreated/moved. Visible to any admin, but only
+    // actually useful to whoever has edit access to the Sheet itself --
+    // Google's own permissions gate real access, this is just a shortcut.
+    callBackend({ mode: 'get-sheet-url' }).then((res) => {
+        const btn = document.getElementById('sheets-link-btn');
+        if (btn && res && res.ok && res.url) btn.href = res.url;
+    }).catch(() => { /* link just stays inert if this fails */ });
 
     // Logs events
     document.getElementById('logs-filter-btn').addEventListener('click', loadLogsViewer);

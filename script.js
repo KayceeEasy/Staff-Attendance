@@ -489,9 +489,23 @@ async function submit(action) {
     if (preventDuplicateSubmission(action, name)) {
         return;
     }
+
+    // Force a fresh GPS reading right now, before doing anything else with
+    // `coords`. This is what actually fixes location staying stuck on an
+    // old off-site reading after walking into the office: previously
+    // `coords` was only ever set once at page load (or on whatever cadence
+    // the location watcher happened to fire), and clicking Sign In/Out just
+    // reused that value as-is with no re-check at the moment of the actual
+    // attempt.
+    if (navigator.geolocation) {
+        setMessage('Checking your current location...', 'msg-welcome');
+        await getFreshCoordsForSubmit();
+    }
+
     if (!coords) {
         requestLocation();
         updateSignInButtonsState();
+        showToast('Could not get your current location. Please try again.', 'error');
         return;
     }
 
@@ -659,7 +673,21 @@ async function handleAttendanceResponse(data) {
     flushPendingQueue();
 }
 
-/* ---------- Geolocation ---------- */
+/* ---------- Geolocation ----------
+   IMPORTANT: this uses watchPosition (continuous), not a single
+   getCurrentPosition() call. The old one-shot approach captured `coords`
+   ONCE at page load and then reused that same reading for every sign-in/
+   out attempt for the rest of the session -- so if the page was open
+   while off-site, coords stayed stale even after physically walking into
+   the office, since nothing ever re-fetched it. watchPosition keeps
+   coords updated automatically as the device moves. submit() ALSO forces
+   one fresh getCurrentPosition() read at the exact moment of the actual
+   attempt (see getFreshCoordsForSubmit), as a belt-and-braces guarantee
+   against watchPosition's update cadence being too slow/throttled right
+   when it matters most. */
+
+let locationWatchId = null;
+let locationWatchErrorShown = false;
 
 function requestLocation() {
     if (!navigator.geolocation) {
@@ -667,11 +695,17 @@ function requestLocation() {
         showToast('This browser does not support location services.', 'error');
         return;
     }
-    navigator.geolocation.getCurrentPosition(
+
+    if (locationWatchId !== null) {
+        navigator.geolocation.clearWatch(locationWatchId);
+    }
+
+    locationWatchId = navigator.geolocation.watchPosition(
         (pos) => {
             coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
             document.getElementById('loc-status').innerText = 'Location Verified';
             document.getElementById('loc-status').className = 'status ready';
+            locationWatchErrorShown = false; // a later error (e.g. permission revoked) should alert again
             updateSignInButtonsState();
             flushPendingQueue();
         },
@@ -685,10 +719,42 @@ function requestLocation() {
             document.getElementById('loc-status').innerText = 'GPS REQUIRED';
             document.getElementById('loc-status').className = 'status waiting';
             updateSignInButtonsState();
-            showToast(userMsg, 'error', 5000);
+            // watchPosition can fire its error callback repeatedly while the
+            // underlying condition persists (e.g. permission still denied) --
+            // only toast once per failure streak, not on every retick.
+            if (!locationWatchErrorShown) {
+                locationWatchErrorShown = true;
+                showToast(userMsg, 'error', 5000);
+            }
         },
-        { enableHighAccuracy: true }
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
     );
+}
+
+// Forces a genuinely fresh GPS reading right now, rather than trusting
+// whatever watchPosition last happened to capture. Used at the exact
+// moment Sign In/Out is pressed, since that's when accuracy actually
+// matters -- not whenever the ambient watcher's last tick happened to be.
+// Falls back to the current `coords` (from the watcher) if this specific
+// read times out or fails, rather than blocking sign-in entirely on a
+// slow/unavailable GPS fix.
+function getFreshCoordsForSubmit() {
+    return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+            resolve(coords);
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+                resolve(coords);
+            },
+            () => {
+                resolve(coords);
+            },
+            { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
+        );
+    });
 }
 
 /* ---------- Global error handling ---------- */
@@ -815,6 +881,12 @@ window.addEventListener('online', () => {
 
 window.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
+        // Restart the location watch too, in case the OS/browser paused or
+        // throttled watchPosition while the tab was backgrounded (some
+        // mobile browsers do this) -- ensures location resumes updating
+        // promptly once the page is visible again, rather than silently
+        // sitting stale until the next natural watchPosition tick.
+        requestLocation();
         flushPendingQueue();
         loadStaffDropdown();
     }

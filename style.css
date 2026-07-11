@@ -570,7 +570,41 @@ html, body {
 .status-pill-small.synced { background: var(--success); }
 .status-pill-small.late { background: var(--warning); }
 .status-pill-small.offline { background: var(--muted); }
-.logs-footer { display: flex; justify-content: space-between; align-items: center; padding: 8px 4px; font-size: 0.8rem; color: var(--muted); margin-top: 8px; }
+
+/* Pagination bar: shared by the Logs tab and Analytics → Device Events.
+   Given plenty of open space, this is deliberately roomy rather than the
+   cramped inline-styled version it replaced -- larger touch targets,
+   pill-shaped controls consistent with the tab bar / status pills used
+   elsewhere, matching the rest of the premium design instead of looking
+   like an afterthought bolted onto the bottom of a table. */
+.logs-footer {
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+    gap: 14px; padding: 16px 6px 4px; font-size: 0.82rem; color: var(--muted); margin-top: 10px;
+}
+.pagination-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pagination-controls .admin-btn.small {
+    padding: 9px 18px; font-size: 0.82rem; border-radius: var(--radius-pill);
+}
+.page-size-select {
+    display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--muted); font-weight: 600;
+}
+.page-size-select select {
+    width: auto; margin-bottom: 0; padding: 9px 14px; font-size: 0.82rem;
+    border-radius: var(--radius-pill); background: var(--surface-2);
+}
+
+/* ─── ROUND ICON BUTTON ───
+   Small, borderless-until-hover circular button for a single emoji/icon,
+   no text -- same visual language as .faq-close-btn so it reads as part
+   of the existing design rather than a bolted-on addition. */
+.icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--muted); font-size: 1rem; text-decoration: none;
+    cursor: pointer; transition: all 0.2s ease;
+}
+.icon-btn:hover { background: var(--surface); border-color: var(--border-strong); color: var(--text); transform: translateY(-1px); }
 
 /* ─── ANALYTICS ─── */
 .analytics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
