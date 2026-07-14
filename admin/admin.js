@@ -359,6 +359,17 @@ function isoDateToDdMmYyyy(isoDate) {
     return `${dd}/${mm}/${yyyy}`;
 }
 
+// Converts total minutes-since-midnight (what the backend stores/expects
+// for LATE_CUTOFF_MINUTES) into a human-readable "8:30 AM" label for the
+// Config tab's display.
+function formatMinutesAsTime(totalMinutes) {
+    const hh = Math.floor(totalMinutes / 60);
+    const mm = totalMinutes % 60;
+    const period = hh >= 12 ? 'PM' : 'AM';
+    const displayHour = hh % 12 === 0 ? 12 : hh % 12;
+    return `${displayHour}:${String(mm).padStart(2, '0')} ${period}`;
+}
+
 /* ---------- Export Functions ---------- */
 
 function exportToCSV(data, filename) {
@@ -1386,6 +1397,11 @@ function renderAdminPanel() {
                     <div class="config-info"><strong>Geofence Radius</strong><span class="config-value" id="config-radius-current">200m</span></div>
                     <button id="config-radius-btn" class="admin-btn secondary small" type="button">Edit</button>
                 </div>
+                <div class="config-card">
+                    <span class="config-icon">⏰</span>
+                    <div class="config-info"><strong>Late Cutoff Time</strong><span class="config-value" id="config-late-cutoff-current">8:30 AM</span></div>
+                    <button id="config-late-cutoff-btn" class="admin-btn secondary small" type="button">Edit</button>
+                </div>
             </div>
         </div>
     `;
@@ -1487,6 +1503,18 @@ function renderAdminPanel() {
         const r = await showInlineDialog({ title: 'Geofence Radius (10-5000m)', fields: [{ placeholder: 'Meters' }], confirmLabel: 'Update' });
         if (!r) return;
         try { const res = await callBackend({ mode: 'update-config', key: 'RADIUS_METERS', value: r[0] }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-radius-current').textContent = r[0] + 'm'; } catch (e) { showToast('Server error.', 'error'); }
+    });
+    document.getElementById('config-late-cutoff-btn').addEventListener('click', async () => {
+        const r = await showInlineDialog({ title: 'Late Cutoff Time', message: 'Sign-ins at or after this time are marked Late.', fields: [{ placeholder: 'Time', type: 'time' }], confirmLabel: 'Update' });
+        if (!r || !r[0]) return;
+        const [hh, mm] = r[0].split(':').map(Number);
+        if (isNaN(hh) || isNaN(mm)) { showToast('Invalid time.', 'error'); return; }
+        const totalMinutes = hh * 60 + mm;
+        try {
+            const res = await callBackend({ mode: 'update-config', key: 'LATE_CUTOFF_MINUTES', value: totalMinutes });
+            showToast(res.message, res.ok ? 'success' : 'error');
+            if (res.ok) document.getElementById('config-late-cutoff-current').textContent = formatMinutesAsTime(totalMinutes);
+        } catch (e) { showToast('Server error.', 'error'); }
     });
 
     // Start with dashboard
