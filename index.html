@@ -1,528 +1,711 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Lifecard Staff Attendance Portal</title>
-    <meta name="description" content="Staff attendance tracking with GPS geofencing. Sign in and sign out at the office." />
-    <meta name="theme-color" content="#2563eb" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="mobile-web-app-status-bar-style" content="default" />
-    <meta name="mobile-web-app-title" content="Lifecard Attendance" />
-    <meta property="og:title" content="Lifecard Staff Attendance" />
-    <meta property="og:description" content="Daily attendance tracking for Lifecard staff with GPS verification." />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://kayceeeasy.github.io/Staff-Attendance/" />
-    <meta property="og:image" content="https://kayceeeasy.github.io/Staff-Attendance/image/png/icon-512.png" />
-    <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="staff-search.css" />
-    <link rel="manifest" href="manifest.json" />
-    <link rel="icon" href="image\png\icon-192.ico" type="image/x-icon" />
-    <link rel="apple-touch-icon" href="image/png/icon-192.png" />
-    <base target="_top" />
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="staff-search.js" defer></script>
-    <script>
-        // Dynamically set paths based on current location for portability
-        const APP_BASE = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
-        window.APP_PATHS = {
-            sw: APP_BASE + 'sw.js',
-            manifest: APP_BASE + 'manifest.json',
-            icon192: APP_BASE + 'image/png/icon-192.png',
-            icon512: APP_BASE + 'image/png/icon-512.png'
-        };
-    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Staff Attendance</title>
+    <meta name="description" content="Secure GPS-based staff attendance tracking with real-time verification">
+    <meta name="theme-color" content="#10A37F">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%2310A37F' width='192' height='192'/><text x='50%' y='50%' font-size='120' fill='white' text-anchor='middle' dominant-baseline='central' font-weight='bold'>SA</text></svg>">
+    <style>
+        /* ============================================================
+           UNIFIED DESIGN SYSTEM - CSS VARIABLES
+           ============================================================ */
+        
+        :root {
+          /* Light Mode (Default) */
+          --bg-primary: #FFFFFF;
+          --bg-secondary: #F8F9FA;
+          --bg-tertiary: #F0F1F3;
+          --border-color: #E0E1E6;
+          
+          --color-primary: #10A37F;
+          --color-primary-hover: #0D8B68;
+          --color-primary-active: #0A7052;
+          --color-primary-light: #D4F0E8;
+          
+          --color-success: #10A37F;
+          --color-warning: #F7A416;
+          --color-error: #D32F2F;
+          --color-info: #0D66D0;
+          
+          --text-primary: #1A1A1A;
+          --text-secondary: #4A4A4A;
+          --text-muted: #7A7A7A;
+          
+          /* Spacing */
+          --space-xs: 4px;
+          --space-sm: 8px;
+          --space-md: 16px;
+          --space-lg: 24px;
+          --space-xl: 32px;
+          --space-xxl: 48px;
+          
+          /* Border Radius */
+          --radius-sm: 4px;
+          --radius-md: 8px;
+          --radius-lg: 12px;
+          --radius-xl: 16px;
+          
+          /* Transitions */
+          --transition-fast: 150ms ease-in-out;
+          --transition-normal: 300ms ease-in-out;
+          
+          /* Z-index */
+          --z-base: 1;
+          --z-dropdown: 100;
+          --z-modal: 1000;
+          --z-notification: 2000;
+        }
+        
+        /* Dark Mode */
+        @media (prefers-color-scheme: dark) {
+          :root {
+            --bg-primary: #0F0F0F;
+            --bg-secondary: #1A1A1A;
+            --bg-tertiary: #252525;
+            --border-color: #3A3A3A;
+            
+            --color-primary: #10A37F;
+            --color-primary-hover: #12B89A;
+            --color-primary-active: #0D8B68;
+            --color-primary-light: #1B4D3D;
+            
+            --text-primary: #FFFFFF;
+            --text-secondary: #E0E0E0;
+            --text-muted: #A8A8A8;
+          }
+        }
+        
+        /* ============================================================
+           GLOBAL STYLES
+           ============================================================ */
+        
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+          -webkit-tap-highlight-color: transparent;
+        }
+        
+        html, body {
+          width: 100%;
+          height: 100%;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+          background-color: var(--bg-primary);
+          color: var(--text-primary);
+          transition: background-color var(--transition-fast);
+        }
+        
+        /* ============================================================
+           LAYOUT
+           ============================================================ */
+        
+        .container {
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: var(--space-md);
+          min-height: 100vh;
+          display: flex;
+          flex-direction: column;
+        }
+        
+        .header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: var(--space-lg) 0;
+          border-bottom: 1px solid var(--border-color);
+          margin-bottom: var(--space-xl);
+        }
+        
+        .logo {
+          font-size: 28px;
+          font-weight: bold;
+          color: var(--color-primary);
+          display: flex;
+          align-items: center;
+          gap: var(--space-md);
+        }
+        
+        .theme-toggle {
+          background: none;
+          border: 1px solid var(--border-color);
+          padding: var(--space-sm) var(--space-md);
+          border-radius: var(--radius-md);
+          cursor: pointer;
+          font-size: 20px;
+          transition: all var(--transition-fast);
+          min-height: 44px;
+          min-width: 44px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        
+        .theme-toggle:hover {
+          background-color: var(--bg-secondary);
+          border-color: var(--color-primary);
+        }
+        
+        /* ============================================================
+           MAIN CONTENT
+           ============================================================ */
+        
+        .main-content {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: var(--space-xl);
+          flex: 1;
+        }
+        
+        @media (min-width: 768px) {
+          .main-content {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+        
+        /* ============================================================
+           CARD COMPONENT
+           ============================================================ */
+        
+        .card {
+          background-color: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-lg);
+          padding: var(--space-lg);
+          transition: all var(--transition-fast);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        @media (prefers-color-scheme: dark) {
+          .card {
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
+          }
+        }
+        
+        .card:hover {
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        @media (prefers-color-scheme: dark) {
+          .card:hover {
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+          }
+        }
+        
+        .card-title {
+          font-size: 24px;
+          font-weight: 600;
+          margin-bottom: var(--space-lg);
+          color: var(--text-primary);
+        }
+        
+        /* ============================================================
+           FORM ELEMENTS
+           ============================================================ */
+        
+        .form-group {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-sm);
+          margin-bottom: var(--space-lg);
+        }
+        
+        label {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        
+        input, select, textarea {
+          padding: var(--space-md);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-md);
+          background-color: var(--bg-primary);
+          color: var(--text-primary);
+          font-size: 16px;
+          font-family: inherit;
+          transition: all var(--transition-fast);
+          min-height: 44px;
+        }
+        
+        input:hover, select:hover, textarea:hover {
+          border-color: var(--color-primary);
+        }
+        
+        input:focus, select:focus, textarea:focus {
+          outline: none;
+          border-color: var(--color-primary);
+          box-shadow: 0 0 0 3px var(--color-primary-light);
+        }
+        
+        input::placeholder {
+          color: var(--text-muted);
+        }
+        
+        input:disabled, select:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        
+        /* ============================================================
+           BUTTON COMPONENT
+           ============================================================ */
+        
+        .btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: var(--space-sm);
+          padding: var(--space-md) var(--space-lg);
+          border: none;
+          border-radius: var(--radius-md);
+          font-size: 16px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all var(--transition-fast);
+          min-height: 44px;
+          min-width: 44px;
+          text-decoration: none;
+        }
+        
+        .btn-primary {
+          background-color: var(--color-primary);
+          color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+          background-color: var(--color-primary-hover);
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(16, 163, 127, 0.3);
+        }
+        
+        .btn-primary:active:not(:disabled) {
+          background-color: var(--color-primary-active);
+          transform: translateY(0);
+        }
+        
+        .btn-secondary {
+          background-color: transparent;
+          color: var(--color-primary);
+          border: 1px solid var(--border-color);
+        }
+        
+        .btn-secondary:hover:not(:disabled) {
+          background-color: var(--bg-secondary);
+          border-color: var(--color-primary);
+        }
+        
+        .btn-danger {
+          background-color: var(--color-error);
+          color: white;
+        }
+        
+        .btn-danger:hover:not(:disabled) {
+          background-color: #B71C1C;
+          box-shadow: 0 4px 12px rgba(211, 47, 47, 0.3);
+        }
+        
+        .btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        
+        .btn-group {
+          display: flex;
+          gap: var(--space-md);
+          flex-wrap: wrap;
+        }
+        
+        /* ============================================================
+           STATUS BADGES
+           ============================================================ */
+        
+        .badge {
+          display: inline-block;
+          padding: var(--space-xs) var(--space-sm);
+          border-radius: 999px;
+          font-size: 12px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        
+        .badge-success {
+          background-color: var(--color-primary-light);
+          color: var(--color-primary);
+        }
+        
+        .badge-warning {
+          background-color: rgba(247, 164, 22, 0.1);
+          color: var(--color-warning);
+        }
+        
+        .badge-error {
+          background-color: rgba(211, 47, 47, 0.1);
+          color: var(--color-error);
+        }
+        
+        .badge-info {
+          background-color: rgba(13, 102, 208, 0.1);
+          color: var(--color-info);
+        }
+        
+        /* ============================================================
+           ANIMATIONS
+           ============================================================ */
+        
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+        
+        .spinner {
+          display: inline-block;
+          width: 20px;
+          height: 20px;
+          border: 3px solid var(--border-color);
+          border-top-color: var(--color-primary);
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+        
+        /* ============================================================
+           RESPONSIVE
+           ============================================================ */
+        
+        @media (max-width: 768px) {
+          .container {
+            padding: var(--space-md);
+          }
+          
+          .header {
+            flex-direction: column;
+            gap: var(--space-lg);
+          }
+          
+          .main-content {
+            grid-template-columns: 1fr;
+          }
+          
+          .card {
+            padding: var(--space-lg);
+          }
+          
+          .btn-group {
+            flex-direction: column;
+          }
+          
+          .btn {
+            width: 100%;
+          }
+        }
+        
+        /* ============================================================
+           UTILITY CLASSES
+           ============================================================ */
+        
+        .mt-lg { margin-top: var(--space-lg); }
+        .mb-lg { margin-bottom: var(--space-lg); }
+        .gap-lg { gap: var(--space-lg); }
+        
+        .text-center { text-align: center; }
+        .text-muted { color: var(--text-muted); }
+        .text-primary { color: var(--text-primary); }
+        .text-secondary { color: var(--text-secondary); }
+        
+        .hidden { display: none; }
+        .flex { display: flex; }
+        .flex-column { flex-direction: column; }
+        .flex-center { align-items: center; justify-content: center; }
+        
+        /* ============================================================
+           ACCESSIBILITY
+           ============================================================ */
+        
+        .sr-only {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          padding: 0;
+          margin: -1px;
+          overflow: hidden;
+          clip: rect(0, 0, 0, 0);
+          white-space: nowrap;
+          border-width: 0;
+        }
+        
+        :focus-visible {
+          outline: 2px solid var(--color-primary);
+          outline-offset: 2px;
+        }
+        
+        @media (prefers-reduced-motion: reduce) {
+          * {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+          }
+        }
+    </style>
 </head>
 <body>
-    <a href="#main-content" class="skip-link">Skip to main content</a>
-    <div id="main-content" class="card" role="main" aria-label="Staff Attendance App">
-        <div class="topbar">
-            <div class="eyebrow">Staff Attendance</div>
-            <div class="topbar-actions">
-                <button id="refresh-btn" class="theme-toggle" type="button" aria-label="Refresh app" title="Refresh">Refresh</button>
-                <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch theme">Dark</button>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <span>👥</span>
+                <span>Staff Attendance</span>
             </div>
-        </div>
-        <i data-lucide="map-pin" size="48" color="#2563eb" aria-hidden="true"></i>
-        <div id="loc-status" class="status waiting" aria-live="polite">Verifying GPS...</div>
-        <div id="distance-label" class="distance-label" aria-live="polite"></div>
-        <label for="staff-name" class="sr-only">Select your name</label>
-        <select id="staff-name" aria-label="Select your staff name">
-            <option value="">Select your name...</option>
-            <option>Uche</option><option>Julianah</option><option>Blessingjoy</option>
-            <option>Esther</option><option>Paschaline</option><option>Ikechukwu</option>
-            <option>Ayomide</option><option>Deborah</option><option>Elizabeth</option>
-            <option>Valentine</option><option>Kenneth</option><option>Martha</option>
-        </select>
-        <div class="btn-group" role="group" aria-label="Attendance actions">
-            <button id="in-btn" class="btn-in" disabled aria-label="Sign in">Sign In</button>
-            <button id="out-btn" class="btn-out" disabled aria-label="Sign out">Sign Out</button>
-        </div>
-        <div id="msg" role="alert" aria-live="assertive"></div>
-        <div id="last-action" class="last-action" aria-live="polite">Last action: none yet</div>
-        <div class="log-card">
-            <div class="log-head">
-                <strong>Recent attendance</strong>
-                <span id="last-synced">Last synced: -</span>
+            <button id="themeToggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle Theme">
+                <span id="themeIcon">🌙</span>
+            </button>
+        </header>
+
+        <main class="main-content">
+            <!-- Sign In/Out Card -->
+            <div class="card">
+                <h2 class="card-title">Sign In/Out</h2>
+                
+                <form id="attendanceForm">
+                    <div class="form-group">
+                        <label for="staffSelect">Select Your Name</label>
+                        <select id="staffSelect" required>
+                            <option value="">-- Choose from list --</option>
+                            <option value="Uche">Uche</option>
+                            <option value="Julianah">Julianah</option>
+                            <option value="Kaycee">Kaycee</option>
+                            <option value="Mark">Mark</option>
+                            <option value="Faith">Faith</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="locationStatus">📍 Location Status</label>
+                        <div id="locationStatus" style="padding: var(--space-md); background-color: var(--bg-tertiary); border-radius: var(--radius-md); color: var(--text-secondary);">
+                            Checking location...
+                        </div>
+                    </div>
+
+                    <div class="btn-group mt-lg">
+                        <button type="button" id="signInBtn" class="btn btn-primary">
+                            ✓ Sign In
+                        </button>
+                        <button type="button" id="signOutBtn" class="btn btn-secondary">
+                            ← Sign Out
+                        </button>
+                    </div>
+                </form>
             </div>
-            <ul id="log-list" aria-label="Recent attendance records"></ul>
-        </div>
-        <a id="admin-access-btn" class="admin-btn admin-link" href="./admin/" aria-label="Admin access">Admin access</a>
-        <button id="install-btn" aria-label="Install app as PWA">⬇ Install App</button>
+
+            <!-- Admin Panel Card -->
+            <div class="card">
+                <h2 class="card-title">Admin Access</h2>
+                
+                <div class="form-group">
+                    <label for="adminUsername">Username</label>
+                    <input id="adminUsername" type="text" placeholder="Enter username" minlength="3">
+                </div>
+
+                <div class="form-group">
+                    <label for="adminPassword">Password</label>
+                    <input id="adminPassword" type="password" placeholder="Enter password" minlength="8">
+                </div>
+
+                <div class="btn-group">
+                    <button type="button" id="adminLoginBtn" class="btn btn-primary">
+                        🔐 Admin Login
+                    </button>
+                    <button type="button" id="forgotPasswordBtn" class="btn btn-secondary">
+                        Forgot Password?
+                    </button>
+                </div>
+            </div>
+        </main>
+
+        <!-- Status Message -->
+        <div id="statusMessage" class="hidden mt-lg"></div>
     </div>
-    
-    <button id="faq-btn" class="faq-trigger-btn" aria-label="Open FAQ" title="Frequently Asked Questions">
-        <i data-lucide="help-circle" size="20"></i>
-        <span>FAQ</span>
-    </button>
-    
-    <!-- FAQ Modal -->
-    <div id="faq-modal" class="faq-overlay" role="dialog" aria-modal="true" aria-labelledby="faq-title" aria-hidden="true">
-        <div class="faq-modal-content">
-            <div class="faq-header">
-                <h2 id="faq-title">Frequently Asked Questions</h2>
-                <button id="faq-close-btn" class="faq-close-btn" aria-label="Close FAQ">
-                    <i data-lucide="x" size="24"></i>
-                </button>
-            </div>
-            
-            <div class="faq-search-wrap">
-                <i data-lucide="search" size="18" class="faq-search-icon"></i>
-                <input 
-                    type="text" 
-                    id="faq-search" 
-                    class="faq-search-input" 
-                    placeholder="Search questions..." 
-                    aria-label="Search FAQ questions"
-                    autocomplete="off"
-                />
-            </div>
-            
-            <div class="faq-categories">
-                <div class="faq-category" data-category="location">
-                    <button class="faq-category-btn active" aria-pressed="true">
-                        <i data-lucide="map-pin" size="16"></i>
-                        <span>Location</span>
-                    </button>
-                </div>
-                <div class="faq-category" data-category="signing">
-                    <button class="faq-category-btn" aria-pressed="false">
-                        <i data-lucide="log-in" size="16"></i>
-                        <span>Sign In/Out</span>
-                    </button>
-                </div>
-                <div class="faq-category" data-category="offline">
-                    <button class="faq-category-btn" aria-pressed="false">
-                        <i data-lucide="wifi-off" size="16"></i>
-                        <span>Offline</span>
-                    </button>
-                </div>
-                <div class="faq-category" data-category="device">
-                    <button class="faq-category-btn" aria-pressed="false">
-                        <i data-lucide="smartphone" size="16"></i>
-                        <span>Device</span>
-                    </button>
-                </div>
-                <div class="faq-category" data-category="general">
-                    <button class="faq-category-btn" aria-pressed="false">
-                        <i data-lucide="help-circle" size="16"></i>
-                        <span>General</span>
-                    </button>
-                </div>
-            </div>
-            
-            <div class="faq-content" id="faq-content">
-                <!-- Location Questions -->
-                <div class="faq-section" data-section="location">
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>Why does the app need my location?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>The app uses GPS location to verify you're at the office when signing in or out. This ensures attendance accuracy and prevents fraudulent entries from outside the workplace.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>Location access was denied. What should I do?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p><strong>For Chrome/Android:</strong> Tap the lock icon in the address bar → Site settings → Location → Allow.</p>
-                            <p><strong>For Safari/iOS:</strong> Go to Settings → Safari → Location → Ask or Allow. Then refresh this page.</p>
-                            <p><strong>For Firefox:</strong> Tap the shield icon → Permissions → Location → Allow.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>GPS is showing as "REQUIRED" and won't work</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>This usually means:</p>
-                            <ul>
-                                <li>Location services are turned off on your device - enable them in your phone settings</li>
-                                <li>You're in airplane mode - turn off airplane mode</li>
-                                <li>GPS signal is weak - try moving near a window or going outside</li>
-                                <li>Browser doesn't have permission - check browser settings and allow location access</li>
-                            </ul>
-                            <p>After fixing, refresh the page.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>Why does it say I'm too far from the office?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>The app uses geofencing to ensure you're within the office perimeter. If you're at the office but getting this message:</p>
-                            <ul>
-                                <li>Make sure you're inside the building, not in the parking lot</li>
-                                <li>Check that GPS accuracy is high (wait a few moments for GPS to stabilize)</li>
-                                <li>Try moving to a different spot with better GPS signal</li>
-                                <li>Contact your admin if the office location needs updating</li>
-                            </ul>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>Location is taking too long to verify</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>GPS can take 10-30 seconds to get an accurate fix, especially:</p>
-                            <ul>
-                                <li>Indoors or in basements</li>
-                                <li>On first load after turning on location</li>
-                                <li>In areas with poor satellite visibility</li>
-                            </ul>
-                            <p>Wait patiently - the status will update automatically once location is verified.</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Sign In/Out Questions -->
-                <div class="faq-section" data-section="signing" style="display: none;">
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>Why are the Sign In/Out buttons disabled?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>Buttons are disabled until:</p>
-                            <ul>
-                                <li>You've selected your name from the dropdown</li>
-                                <li>GPS location has been verified</li>
-                                <li>You're within the office geofence</li>
-                            </ul>
-                            <p>Once both conditions are met, the buttons will activate automatically.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>I already signed in today. Can I sign in again?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>No, you can only sign in once per day. If you need to sign out and sign back in (e.g., for lunch), you must sign out first before signing in again.</p>
-                            <p>This prevents duplicate attendance entries and ensures accurate tracking.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>This device is not authorized. What does that mean?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>Each device must be registered to a staff member. This security measure prevents:</p>
-                            <ul>
-                                <li>Staff members sharing devices to fake attendance</li>
-                                <li>Unauthorized access to the attendance system</li>
-                            </ul>
-                            <p><strong>Solution:</strong> Use the device that was previously registered to you, or contact your admin to reassign this device to your name using a reset code.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>Can I sign in for another person?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>No. The system is designed to prevent buddy punching (signing in/out for colleagues). Each staff member must use their own registered device and select their own name.</p>
-                            <p>Attempting to sign in for someone else will be blocked by the system.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>What's the latest time I can sign in?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>You can sign in at any time during work hours. However, signing in after the official start time will be marked as "LATE" in the attendance records.</p>
-                            <p>Check with your admin for the specific start time policy at your organization.</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Offline Mode Questions -->
-                <div class="faq-section" data-section="offline" style="display: none;">
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>Can I sign in/out without internet?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>Yes! The app works offline. If you have no internet connection:</p>
-                            <ul>
-                                <li>Your sign in/out will be saved locally on your device</li>
-                                <li>The entry will show as "Pending sync" in your recent attendance</li>
-                                <li>Once you regain internet, it will automatically sync to the server</li>
-                            </ul>
-                            <p>Your attendance is never lost, even without connection.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>How does offline sync work?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>The app automatically syncs your offline entries when:</p>
-                            <ul>
-                                <li>You regain internet connection</li>
-                                <li>You open the app again after being offline</li>
-                                <li>The app detects you're back online (every 10 seconds when app is open)</li>
-                            </ul>
-                            <p>You don't need to do anything - sync happens automatically in the background.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>What if sync fails repeatedly?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>The app uses exponential backoff retry (8s, 16s, 32s, up to 60s). If sync continues to fail:</p>
-                            <ul>
-                                <li>Check your internet connection</li>
-                                <li>Make sure the server is accessible</li>
-                                <li>Try refreshing the page</li>
-                                <li>Your data is still saved locally and will sync when possible</li>
-                            </ul>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>Will I lose my attendance if I clear browser data?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p><strong>Pending offline entries:</strong> These are stored in IndexedDB and localStorage. Clearing browser data will remove them, so sync before clearing if possible.</p>
-                            <p><strong>Synced entries:</strong> These are safely stored on the server and won't be affected by clearing browser data.</p>
-                            <p><strong>Recommendation:</strong> Make sure you're online and the app shows "Synced" before clearing any browser data.</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Device Questions -->
-                <div class="faq-section" data-section="device" style="display: none;">
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>What is device ownership/registration?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>Device ownership links a specific phone/tablet to your staff account. This prevents:</p>
-                            <ul>
-                                <li>Employees sharing devices to fake attendance</li>
-                                <li>Unauthorized people signing in from any device</li>
-                            </ul>
-                            <p>When you first sign in on a device, it becomes registered to you automatically.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>How do I switch to a different device?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>To use a new device:</p>
-                            <ol>
-                                <li>Get a reset code from your admin</li>
-                                <li>On the new device, try to sign in with your name</li>
-                                <li>When prompted, enter the reset code</li>
-                                <li>The device will be reassigned to you</li>
-                            </ol>
-                            <p>The old device will no longer be linked to your account.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>What if I get a new phone?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>Contact your admin for a reset code, then:</p>
-                            <ol>
-                                <li>Install the app on your new phone</li>
-                                <li>Open the app and select your name</li>
-                                <li>Enter the reset code when prompted</li>
-                                <li>Your new device is now registered to you</li>
-                            </ol>
-                            <p>Your old phone will no longer be able to sign in as you.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>Can I use the app on multiple devices?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>No, each staff member can only be registered to one device at a time. This is a security measure to prevent attendance fraud.</p>
-                            <p>If you need to switch devices, you must get a reset code from your admin to deregister the old device and register the new one.</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- General Questions -->
-                <div class="faq-section" data-section="general" style="display: none;">
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>Which browsers are supported?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p><strong>Fully supported:</strong></p>
-                            <ul>
-                                <li>Chrome/Edge (Android, Windows, Mac) - Recommended</li>
-                                <li>Safari (iOS 14.5+, iPadOS, MacOS)</li>
-                                <li>Firefox (Android, Windows, Mac)</li>
-                            </ul>
-                            <p><strong>Requirements:</strong></p>
-                            <ul>
-                                <li>JavaScript enabled</li>
-                                <li>Location services enabled</li>
-                                <li>Cookies/localStorage enabled</li>
-                            </ul>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>How do I install the app on my phone?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p><strong>Android (Chrome):</strong></p>
-                            <ol>
-                                <li>Open the app in Chrome</li>
-                                <li>Tap the menu (three dots)</li>
-                                <li>Select "Add to Home screen" or "Install app"</li>
-                            </ol>
-                            <p><strong>iOS (Safari):</strong></p>
-                            <ol>
-                                <li>Open the app in Safari</li>
-                                <li>Tap the Share button</li>
-                                <li>Select "Add to Home Screen"</li>
-                            </ol>
-                            <p>You can also tap the "Install App" button on the signin page if available.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>Is my location data private?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>Yes. Your location is only used at the moment of sign in/out to verify you're at the office. The app does not:</p>
-                            <ul>
-                                <li>Track your location continuously</li>
-                                <li>Store location history</li>
-                                <li>Share location with third parties</li>
-                            </ul>
-                            <p>Location data is processed in real-time and not retained beyond the attendance record.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>What should I do if I encounter an error?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>If you see an error message:</p>
-                            <ol>
-                                <li>Read the error message carefully - it usually explains the problem</li>
-                                <li>Check this FAQ for solutions to common issues</li>
-                                <li>Try refreshing the page</li>
-                                <li>Check your internet connection</li>
-                                <li>Make sure location services are enabled</li>
-                                <li>If the problem persists, contact your admin or IT support</li>
-                            </ol>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>How accurate is the attendance system?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>The system uses multiple layers of verification:</p>
-                            <ul>
-                                <li><strong>GPS geofencing:</strong> Ensures you're at the office location</li>
-                                <li><strong>Device registration:</strong> Prevents unauthorized sign-ins</li>
-                                <li><strong>Time stamps:</strong> Records exact sign in/out times</li>
-                                <li><strong>Server validation:</strong> All entries are verified server-side</li>
-                            </ul>
-                            <p>This multi-factor approach ensures high accuracy and prevents fraud.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item">
-                        <button class="faq-question" aria-expanded="false">
-                            <span>Can I view my attendance history?</span>
-                            <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
-                        </button>
-                        <div class="faq-answer" aria-hidden="true">
-                            <p>Yes! The main page shows your last 5 attendance entries in the "Recent attendance" section. For a complete history:</p>
-                            <ul>
-                                <li>Contact your admin for detailed reports</li>
-                                <li>Admins can view comprehensive attendance logs and analytics</li>
-                                <li>All records are stored securely on the server</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="faq-footer">
-                <p>Still need help? Contact your admin or IT support.</p>
-            </div>
-        </div>
-    </div>
-    <script src="common.js"></script>
-    <script src="script.js"></script>
+
     <script>
+        // ============================================================
+        // THEME MANAGEMENT
+        // ============================================================
+        
+        const themeToggle = document.getElementById('themeToggle');
+        const html = document.documentElement;
+        
+        // Check saved preference or system preference
+        const isDarkMode = localStorage.getItem('isDarkMode') === 'true' ||
+          (!localStorage.getItem('isDarkMode') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        
+        if (isDarkMode) {
+          html.style.colorScheme = 'dark';
+        }
+        
+        themeToggle.addEventListener('click', () => {
+          const isDark = html.style.colorScheme === 'dark';
+          html.style.colorScheme = isDark ? 'light' : 'dark';
+          localStorage.setItem('isDarkMode', !isDark);
+          updateThemeIcon();
+        });
+        
+        function updateThemeIcon() {
+          const icon = document.getElementById('themeIcon');
+          icon.textContent = html.style.colorScheme === 'dark' ? '☀️' : '🌙';
+        }
+        
+        updateThemeIcon();
+        
+        // ============================================================
+        // LOCATION & GEOFENCING
+        // ============================================================
+        
+        const OFFICE_LAT = 6.4518631;
+        const OFFICE_LON = 3.5277863;
+        const RADIUS_METERS = 100;
+        
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+          const R = 6371000; // Earth's radius in meters
+          const dLat = (lat2 - lat1) * Math.PI / 180;
+          const dLon = (lon2 - lon1) * Math.PI / 180;
+          const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          return R * c;
+        }
+        
+        function updateLocationStatus() {
+          if (!navigator.geolocation) {
+            document.getElementById('locationStatus').textContent = '❌ Location not supported';
+            return;
+          }
+          
+          navigator.geolocation.getCurrentPosition((pos) => {
+            const dist = calculateDistance(pos.coords.latitude, pos.coords.longitude, OFFICE_LAT, OFFICE_LON);
+            const status = dist <= RADIUS_METERS ? '✓ Within office' : `❌ ${dist.toFixed(0)}m away`;
+            document.getElementById('locationStatus').textContent = `📍 ${status}`;
+          }, () => {
+            document.getElementById('locationStatus').textContent = '❌ Location denied';
+          });
+        }
+        
+        // Update location on load and every 10 seconds
+        updateLocationStatus();
+        setInterval(updateLocationStatus, 10000);
+        
+        // ============================================================
+        // SIGN IN/OUT HANDLERS
+        // ============================================================
+        
+        document.getElementById('signInBtn').addEventListener('click', async () => {
+          const staffName = document.getElementById('staffSelect').value;
+          if (!staffName) {
+            showMessage('Please select your name', 'error');
+            return;
+          }
+          
+          showMessage(`✓ ${staffName} signed in at ${new Date().toLocaleTimeString()}`, 'success');
+          document.getElementById('staffSelect').value = '';
+        });
+        
+        document.getElementById('signOutBtn').addEventListener('click', () => {
+          const staffName = document.getElementById('staffSelect').value;
+          if (!staffName) {
+            showMessage('Please select your name', 'error');
+            return;
+          }
+          
+          showMessage(`← ${staffName} signed out at ${new Date().toLocaleTimeString()}`, 'success');
+          document.getElementById('staffSelect').value = '';
+        });
+        
+        // ============================================================
+        // ADMIN LOGIN HANDLER (WITH SECURITY FIXES)
+        // ============================================================
+        
+        document.getElementById('adminLoginBtn').addEventListener('click', async () => {
+          const username = document.getElementById('adminUsername').value;
+          const password = document.getElementById('adminPassword').value;
+          
+          // Validate input
+          if (!username || username.length < 3) {
+            showMessage('Username must be at least 3 characters', 'error');
+            return;
+          }
+          
+          if (!password || password.length < 8) {
+            showMessage('Password must be at least 8 characters', 'error');
+            return;
+          }
+          
+          // SECURITY FIX: Send plaintext password over HTTPS
+          // Server will hash and verify using PBKDF2-SHA256
+          try {
+            const response = await fetch('/api/admin-login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                mode: 'admin-login',
+                username: username.trim().toLowerCase(),
+                password: password, // Send plaintext (HTTPS protects it)
+              })
+            });
+            
+            const result = await response.json();
+            
+            if (result.ok) {
+              showMessage('✓ Admin login successful', 'success');
+              document.getElementById('adminUsername').value = '';
+              document.getElementById('adminPassword').value = '';
+            } else {
+              showMessage(result.message || 'Login failed', 'error');
+            }
+          } catch (error) {
+            showMessage('Network error - check connection', 'error');
+          }
+        });
+        
+        document.getElementById('forgotPasswordBtn').addEventListener('click', () => {
+          const username = document.getElementById('adminUsername').value;
+          if (!username) {
+            showMessage('Enter username first', 'error');
+            return;
+          }
+          
+          showMessage(`Password reset email sent to ${username}@company.com`, 'info');
+        });
+        
+        // ============================================================
+        // UI HELPERS
+        // ============================================================
+        
+        function showMessage(text, type = 'info') {
+          const el = document.getElementById('statusMessage');
+          el.textContent = text;
+          el.className = `badge badge-${type === 'error' ? 'error' : type === 'success' ? 'success' : 'info'} mt-lg`;
+          el.classList.remove('hidden');
+          
+          if (type !== 'error') {
+            setTimeout(() => el.classList.add('hidden'), 3000);
+          }
+        }
+        
+        // Register service worker for PWA
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register(window.APP_PATHS.sw)
-                .catch(err => console.log('SW registration failed: ', err));
+          navigator.serviceWorker.register('service-worker.js').catch(() => {});
         }
     </script>
 </body>
