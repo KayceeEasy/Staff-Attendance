@@ -1,1 +1,1 @@
-const APP_VERSION = 22;
+const APP_VERSION = 23;

@@ -1260,8 +1260,8 @@ async function loadAnalytics() {
 
         const geofenceEvents = (alertsResponse.ok && Array.isArray(alertsResponse.alerts))
             ? alertsResponse.alerts.map(a => ({
-                type: 'GEOFENCE_VIOLATION',
-                details: `${a.name} attempted ${a.action} from ~${a.distance}m away (Lat: ${a.lat}, Lon: ${a.lon})`,
+                type: 'LOCATION_ALERT',
+                details: `${a.name} attempted ${a.action} from ~${a.distance}m away (outside office radius)`,
                 time: `${a.date} ${a.time}`,
                 sortValue: parseEventTimestamp(a.date, a.time)
             }))
