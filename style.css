@@ -68,9 +68,10 @@ html, body {
     height: 100%;
     margin: 0;
     padding: 0;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     touch-action: pan-y;
-    overscroll-behavior: none;
+    overscroll-behavior-y: auto;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     color: var(--text);
     -webkit-font-smoothing: antialiased;
@@ -80,8 +81,7 @@ html, body {
 
 body {
     position: relative;
-    height: 100dvh;
-    max-height: 100dvh;
+    min-height: 100dvh;
     background-color: var(--bg);
     background-image:
         radial-gradient(ellipse 80% 50% at 20% -10%, rgba(96, 165, 250, 0.16) 0%, transparent 60%),
@@ -89,8 +89,8 @@ body {
         radial-gradient(ellipse 100% 80% at 50% 50%, var(--bg-2) 0%, var(--bg) 100%);
     display: flex;
     justify-content: center;
-    align-items: center;
-    padding: 12px;
+    align-items: flex-start;
+    padding: 24px 16px;
     box-sizing: border-box;
 }
 
@@ -115,19 +115,14 @@ body::before {
     background: linear-gradient(145deg, rgba(255,255,255,0.92), rgba(248,250,255,0.96));
     backdrop-filter: blur(32px) saturate(180%);
     -webkit-backdrop-filter: blur(32px) saturate(180%);
-    padding: 1.1rem 1.2rem;
+    padding: 1.5rem;
     border-radius: var(--radius-xl);
     box-shadow: var(--shadow), inset 0 1px 0 var(--glass-stroke);
-    width: min(100%, 450px);
-    max-height: calc(100dvh - 24px);
+    width: min(100%, 460px);
     margin: 0 auto;
     border: 1px solid var(--border);
     text-align: center;
     box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    overflow: hidden;
 }
 
 .card::before {
@@ -360,7 +355,7 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
 .admin-btn.danger { color: var(--error); border-color: var(--error-light); }
 .admin-btn.danger:hover { background: var(--error-light); }
 
-.admin-card { width: min(100%, 1100px); max-height: calc(100dvh - 24px); overflow-y: auto; text-align: left; padding: 1.5rem; border-radius: var(--radius-xl); margin: 0 auto; display: block; }
+.admin-card { width: min(100%, 1100px); max-width: 100%; text-align: left; padding: 1.5rem; border-radius: var(--radius-xl); margin: 0 auto; display: block; }
 :root[data-theme="dark"] .admin-card { background: linear-gradient(145deg, rgba(8, 16, 36, 0.96), rgba(5, 10, 25, 0.98)); border-color: var(--border-strong); }
 .admin-hero { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
 .admin-badge { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; font-size: 1.3rem; box-shadow: 0 8px 24px var(--primary-glow); flex-shrink: 0; }
@@ -421,9 +416,9 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
 
 @media (max-width: 600px) {
-    body { padding: 6px; align-items: center; height: 100dvh; max-height: 100dvh; }
-    .card { width: 100%; max-width: 100%; max-height: calc(100dvh - 12px); border-radius: var(--radius-lg); padding: 0.95rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom)); margin: 0 auto; }
-    .admin-card { width: 100%; max-width: 100%; max-height: calc(100dvh - 12px); border-radius: var(--radius-lg); padding: 1rem; margin: 0 auto; }
+    body { padding: 12px 10px; align-items: flex-start; min-height: 100dvh; }
+    .card { width: 100%; max-width: 100%; border-radius: var(--radius-lg); padding: 1.2rem 1rem calc(1rem + env(safe-area-inset-bottom)); margin: 0 auto; }
+    .admin-card { width: 100%; max-width: 100%; border-radius: var(--radius-lg); padding: 1rem; margin: 0 auto; }
     .dialog-overlay { align-items: flex-end; padding: 0; }
     .dialog-box { border-radius: var(--radius-xl) var(--radius-xl) 0 0; width: 100%; max-width: 100%; margin: 0; }
 }
