@@ -919,6 +919,11 @@ function renderLogsTable() {
    ANALYTICS TAB
    ============================================================ */
 
+function isExemptFromAnalytics(name) {
+    const lower = String(name || '').toLowerCase();
+    return lower.includes('kenneth') || lower.includes('valentine');
+}
+
 function processAnalyticsData(logs, schedule) {
     if (!logs || !logs.length) return null;
     
@@ -928,6 +933,7 @@ function processAnalyticsData(logs, schedule) {
     
     logs.forEach(entry => {
         const name = entry.name;
+        if (isExemptFromAnalytics(name)) return;
         if (!staffCounts[name]) staffCounts[name] = { in: 0, out: 0, late: 0, earlyOut: 0, wfhDays: 0, daysPresent: new Set() };
         if (entry.action === 'IN') staffCounts[name].in++;
         if (entry.action === 'OUT') staffCounts[name].out++;
@@ -947,6 +953,7 @@ function processAnalyticsData(logs, schedule) {
     });
     
     Object.entries(schedule).forEach(([name, days]) => {
+        if (isExemptFromAnalytics(name)) return;
         if (!staffCounts[name]) {
             staffCounts[name] = { in: 0, out: 0, late: 0, earlyOut: 0, wfhDays: 0, daysPresent: new Set() };
         }
@@ -1025,12 +1032,12 @@ function renderAnalytics() {
         
         <div class="analytics-section">
             <h4>⚠ Least Active Staff</h4>
-            <p class="admin-intro">Staff with lowest office attendance rate. Scheduled WFH days are excluded from requirements.</p>
+            <p class="admin-intro">Staff with lowest office attendance rate. Scheduled WFH days are excluded from requirements. (Kenneth & Valentine exempted)</p>
             <div class="analytics-table-wrapper">
                 <div class="analytics-table">
                     <div class="breakdown-row breakdown-head">
                         <span>Staff Name</span>
-                        <span>Attendance Progress</span>
+                        <span>Progress</span>
                         <span class="col-center">Sign In</span>
                         <span class="col-center">Sign Out</span>
                         <span class="col-center">Rate</span>
@@ -1060,7 +1067,7 @@ function renderAnalytics() {
                 <div class="analytics-table">
                     <div class="breakdown-row breakdown-head">
                         <span>Staff Name</span>
-                        <span>Attendance Progress</span>
+                        <span>Progress</span>
                         <span class="col-center">Sign In</span>
                         <span class="col-center">Sign Out</span>
                         <span class="col-center">Rate</span>
@@ -1090,7 +1097,7 @@ function renderAnalytics() {
                 <div class="analytics-table">
                     <div class="breakdown-row breakdown-head">
                         <span>Staff Name</span>
-                        <span>Attendance Progress</span>
+                        <span>Progress</span>
                         <span class="col-center">Sign In</span>
                         <span class="col-center">Sign Out</span>
                         <span class="col-center">Rate</span>

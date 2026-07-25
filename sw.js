@@ -8,6 +8,8 @@ const APP_SHELL = [
   './common.js',
   './manifest.json',
   './version.js',
+  './admin/index.html',
+  './admin/admin.js',
   './image/png/icon-192.png',
   './image/png/icon-512.png'
 ];
