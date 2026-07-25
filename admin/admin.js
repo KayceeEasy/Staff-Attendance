@@ -124,7 +124,6 @@ async function fetchHybridSchedule(weekStart, forceRefresh = false) {
     }
 }
 
-let autoRefreshTimer = null;
 const AUTO_REFRESH_MS = 30000;
 
 function startAutoRefresh() {
@@ -366,20 +365,6 @@ async function loadConfigValues() {
     } catch (e) {
         console.warn('Could not fetch backend config:', e);
     }
-}
-
-function clearAutoRefresh() {
-    clearInterval(autoRefreshTimer);
-    autoRefreshTimer = null;
-}
-
-function startAutoRefresh(intervalMs = 300000) {
-    if (autoRefreshTimer) clearAutoRefresh();
-    autoRefreshTimer = setInterval(() => {
-        if (currentTab === 'dashboard') {
-            loadWeekData(true);
-        }
-    }, intervalMs);
 }
 
 /* ---------- Helper Functions ---------- */
