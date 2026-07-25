@@ -1,5 +1,5 @@
 importScripts('./version.js');
-const CACHE_NAME = 'staff-attendance-v' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '12');
+const CACHE_NAME = 'staff-attendance-v' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '20');
 const APP_SHELL = [
   './',
   './index.html',
@@ -8,8 +8,6 @@ const APP_SHELL = [
   './common.js',
   './manifest.json',
   './version.js',
-  './admin/index.html',
-  './admin/admin.js',
   './image/png/icon-192.png',
   './image/png/icon-512.png'
 ];
@@ -29,12 +27,12 @@ self.addEventListener('activate', (event) => {
 });
 
 /**
- * Stale-while-revalidate: serve the cached response immediately if
- * present (fast, works offline), but always fire a background fetch
- * to update the cache with the latest version for next time.
+ * Fetch handler:
+ * BYPASS service worker for any /admin/ requests so admin console is NEVER cached.
  */
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  if (event.request.url.includes('/admin/')) return;
 
   event.respondWith(
     caches.open(CACHE_NAME).then((cache) =>
