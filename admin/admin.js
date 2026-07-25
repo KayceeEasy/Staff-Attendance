@@ -1645,7 +1645,10 @@ function setLoginLoading(isLoading) {
 }
 
 async function handleAdminLogin(event) {
-    if (event) event.preventDefault();
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
     const username = document.getElementById('admin-username').value.trim();
     const password = document.getElementById('admin-password').value;
     const messageEl = document.getElementById('admin-message');
