@@ -1026,57 +1026,91 @@ function renderAnalytics() {
         <div class="analytics-section">
             <h4>⚠ Least Active Staff</h4>
             <p class="admin-intro">Staff with lowest office attendance rate. Scheduled WFH days are excluded from requirements.</p>
-            <div class="analytics-breakdown">
-                ${data.leastActive.map(s => `
-                    <div class="breakdown-row">
-                        <span class="breakdown-name">${escapeHtml(s.name)}</span>
-                        <span class="breakdown-bar"><span class="bar-in ${s.attendanceRate >= 80 ? 'bar-high' : s.attendanceRate >= 50 ? 'bar-mid' : 'bar-low'}" style="width: ${Math.max(4, Math.min(100, s.attendanceRate))}%"></span></span>
-                        <span class="breakdown-stats">
-                            <span class="stat-in">${s.signIns} in</span>
-                            <span class="stat-out">${s.signOuts} out</span>
-                            <span class="${s.attendanceRate < 60 ? 'stat-late' : 'stat-in'}">${s.attendanceRate}% rate</span>
-                            ${s.wfhDays > 0 ? `<span class="stat-wfh">🏠 ${s.wfhDays}</span>` : ''}
-                            ${s.lateCount > 0 ? `<span class="stat-late">⚠ ${s.lateCount} late</span>` : ''}
-                        </span>
+            <div class="analytics-table-wrapper">
+                <div class="analytics-table">
+                    <div class="breakdown-row breakdown-head">
+                        <span>Staff Name</span>
+                        <span>Attendance Progress</span>
+                        <span class="col-center">Sign In</span>
+                        <span class="col-center">Sign Out</span>
+                        <span class="col-center">Rate</span>
+                        <span class="col-center">WFH</span>
+                        <span class="col-center">Late</span>
                     </div>
-                `).join('')}
+                    ${data.leastActive.map(s => `
+                        <div class="breakdown-row">
+                            <span class="breakdown-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
+                            <span class="breakdown-bar-col">
+                                <div class="breakdown-bar"><span class="bar-in ${s.attendanceRate >= 80 ? 'bar-high' : s.attendanceRate >= 50 ? 'bar-mid' : 'bar-low'}" style="width: ${Math.max(4, Math.min(100, s.attendanceRate))}%"></span></div>
+                            </span>
+                            <span class="stat-cell stat-in">${s.signIns} in</span>
+                            <span class="stat-cell stat-out">${s.signOuts} out</span>
+                            <span class="stat-cell ${s.attendanceRate < 60 ? 'stat-late-val' : 'stat-in-val'}">${s.attendanceRate}%</span>
+                            <span class="stat-cell stat-wfh">${s.wfhDays > 0 ? `🏠 ${s.wfhDays}` : '-'}</span>
+                            <span class="stat-cell stat-late">${s.lateCount > 0 ? `⚠ ${s.lateCount}` : '-'}</span>
+                        </div>
+                    `).join('')}
+                </div>
             </div>
         </div>
         
         <div class="analytics-section">
             <h4>⭐ Most Active Staff</h4>
-            <div class="analytics-breakdown">
-                ${data.mostActive.map(s => `
-                    <div class="breakdown-row">
-                        <span class="breakdown-name">${escapeHtml(s.name)}</span>
-                        <span class="breakdown-bar"><span class="bar-in ${s.attendanceRate >= 80 ? 'bar-high' : s.attendanceRate >= 50 ? 'bar-mid' : 'bar-low'}" style="width: ${Math.max(4, Math.min(100, s.attendanceRate))}%"></span></span>
-                        <span class="breakdown-stats">
-                            <span class="stat-in">${s.signIns} in</span>
-                            <span class="stat-out">${s.signOuts} out</span>
-                            <span class="stat-in">${s.attendanceRate}% rate</span>
-                            ${s.lateCount > 0 ? `<span class="stat-late">⚠ ${s.lateCount} late</span>` : ''}
-                        </span>
+            <div class="analytics-table-wrapper">
+                <div class="analytics-table">
+                    <div class="breakdown-row breakdown-head">
+                        <span>Staff Name</span>
+                        <span>Attendance Progress</span>
+                        <span class="col-center">Sign In</span>
+                        <span class="col-center">Sign Out</span>
+                        <span class="col-center">Rate</span>
+                        <span class="col-center">WFH</span>
+                        <span class="col-center">Late</span>
                     </div>
-                `).join('')}
+                    ${data.mostActive.map(s => `
+                        <div class="breakdown-row">
+                            <span class="breakdown-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
+                            <span class="breakdown-bar-col">
+                                <div class="breakdown-bar"><span class="bar-in ${s.attendanceRate >= 80 ? 'bar-high' : s.attendanceRate >= 50 ? 'bar-mid' : 'bar-low'}" style="width: ${Math.max(4, Math.min(100, s.attendanceRate))}%"></span></div>
+                            </span>
+                            <span class="stat-cell stat-in">${s.signIns} in</span>
+                            <span class="stat-cell stat-out">${s.signOuts} out</span>
+                            <span class="stat-cell stat-in-val">${s.attendanceRate}%</span>
+                            <span class="stat-cell stat-wfh">${s.wfhDays > 0 ? `🏠 ${s.wfhDays}` : '-'}</span>
+                            <span class="stat-cell stat-late">${s.lateCount > 0 ? `⚠ ${s.lateCount}` : '-'}</span>
+                        </div>
+                    `).join('')}
+                </div>
             </div>
         </div>
         
         <div class="analytics-section">
             <h4>📋 Full Staff Breakdown</h4>
-            <div class="analytics-breakdown">
-                ${data.staffBreakdown.map(s => `
-                    <div class="breakdown-row">
-                        <span class="breakdown-name">${escapeHtml(s.name)}</span>
-                        <span class="breakdown-bar"><span class="bar-in ${s.attendanceRate >= 80 ? 'bar-high' : s.attendanceRate >= 50 ? 'bar-mid' : 'bar-low'}" style="width: ${Math.max(4, Math.min(100, s.attendanceRate))}%"></span></span>
-                        <span class="breakdown-stats">
-                            <span class="stat-in">${s.signIns} in</span>
-                            <span class="stat-out">${s.signOuts} out</span>
-                            <span class="stat-in">${s.attendanceRate}% office</span>
-                            ${s.wfhDays > 0 ? `<span class="stat-wfh">🏠 ${s.wfhDays}</span>` : ''}
-                            ${s.lateCount > 0 ? `<span class="stat-late">⚠ ${s.lateCount}</span>` : ''}
-                        </span>
+            <div class="analytics-table-wrapper">
+                <div class="analytics-table">
+                    <div class="breakdown-row breakdown-head">
+                        <span>Staff Name</span>
+                        <span>Attendance Progress</span>
+                        <span class="col-center">Sign In</span>
+                        <span class="col-center">Sign Out</span>
+                        <span class="col-center">Rate</span>
+                        <span class="col-center">WFH</span>
+                        <span class="col-center">Late</span>
                     </div>
-                `).join('')}
+                    ${data.staffBreakdown.map(s => `
+                        <div class="breakdown-row">
+                            <span class="breakdown-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
+                            <span class="breakdown-bar-col">
+                                <div class="breakdown-bar"><span class="bar-in ${s.attendanceRate >= 80 ? 'bar-high' : s.attendanceRate >= 50 ? 'bar-mid' : 'bar-low'}" style="width: ${Math.max(4, Math.min(100, s.attendanceRate))}%"></span></div>
+                            </span>
+                            <span class="stat-cell stat-in">${s.signIns} in</span>
+                            <span class="stat-cell stat-out">${s.signOuts} out</span>
+                            <span class="stat-cell ${s.attendanceRate < 60 ? 'stat-late-val' : 'stat-in-val'}">${s.attendanceRate}%</span>
+                            <span class="stat-cell stat-wfh">${s.wfhDays > 0 ? `🏠 ${s.wfhDays}` : '-'}</span>
+                            <span class="stat-cell stat-late">${s.lateCount > 0 ? `⚠ ${s.lateCount}` : '-'}</span>
+                        </div>
+                    `).join('')}
+                </div>
             </div>
         </div>
         
