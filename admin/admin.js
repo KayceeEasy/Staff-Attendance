@@ -1262,9 +1262,17 @@ function renderAdminPanel() {
         <div id="tab-logs" class="tab-content">
             <div class="section-header"><h3>Attendance Records</h3></div>
             <div class="logs-filters">
-                <select id="logs-filter-name-select" aria-label="Filter by name"><option value="">All staff</option></select>
-                <input id="logs-filter-from" type="date" aria-label="From date" placeholder="From" />
-                <input id="logs-filter-to" type="date" aria-label="To date" placeholder="To" />
+                <select id="logs-filter-name-select" class="logs-filter-select" aria-label="Filter by name"><option value="">All staff</option></select>
+                <div class="date-filter-row">
+                    <div class="date-input-wrap">
+                        <span class="date-input-label">From:</span>
+                        <input id="logs-filter-from" type="date" aria-label="From date" placeholder="From" />
+                    </div>
+                    <div class="date-input-wrap">
+                        <span class="date-input-label">To:</span>
+                        <input id="logs-filter-to" type="date" aria-label="To date" placeholder="To" />
+                    </div>
+                </div>
                 <div class="filter-actions">
                     <button id="logs-filter-btn" class="admin-btn secondary small" type="button">🔍 Filter</button>
                     <button id="logs-clear-btn" class="admin-btn secondary small" type="button">✕ Clear</button>
