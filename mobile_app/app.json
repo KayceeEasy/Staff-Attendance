@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "Lifecard Attendance",
+    "slug": "lifecard-attendance",
+    "owner": "kaycee.tech",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lifecard.attendance",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Lifecard Attendance requires your location to verify office check-ins.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Lifecard Attendance requires background location to detect when you enter the office and remind you to sign in.",
+        "NSLocationAlwaysUsageDescription": "Lifecard Attendance uses background location to remind you to sign in when arriving at the office.",
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "remote-notification"
+        ]
+      }
+    },
+    "android": {
+      "versionCode": 1,
+      "package": "com.lifecard.attendance",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f172a"
+      },
+      "package": "com.lifecard.attendance",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "POST_NOTIFICATIONS",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "isAndroidBackgroundLocationEnabled": true
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "944e2ea3-74d8-46d2-972f-1ee815a2af7a"
+      }
+    }
+  }
+}

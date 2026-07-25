@@ -9,6 +9,7 @@
     "build": "echo 'No build required'",
     "lint": "echo 'No lint required'",
     "start": "node server.js",
+    "telegram": "node telegram_bridge.js",
     "version:bump": "node -e \"let f=require('fs'),p='version.js',v=+f.readFileSync(p,'utf8').match(/\\d+/)[0]+1;f.writeFileSync(p,'const APP_VERSION = '+v+';\\n');console.log('Bumped to v'+v)\""
   },
   "dependencies": {
