@@ -920,7 +920,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (installBtn) {
         installBtn.addEventListener('click', triggerInstall);
-        if (!isRunningStandalone()) {
+        if (isRunningStandalone()) {
+            installBtn.style.display = 'none';
+        } else {
             installBtn.style.display = 'block';
         }
     }
@@ -930,7 +932,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function isRunningStandalone() {
     return window.matchMedia('(display-mode: standalone)').matches ||
-           window.navigator.standalone === true;
+           window.navigator.standalone === true ||
+           window.isNativeMobileApp === true ||
+           navigator.userAgent.includes('LifecardApp') ||
+           navigator.userAgent.includes('Expo');
 }
 
 function triggerInstall() {
