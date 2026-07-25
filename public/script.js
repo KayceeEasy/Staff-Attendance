@@ -3,7 +3,7 @@
  * Depends on common.js being loaded first.
  */
 
-const MAX_HISTORY_ITEMS = 5;
+const MAX_HISTORY_ITEMS = 3;
 const OWNERSHIP_MODES = {
     verify: 'verify-owner',
     register: 'register-owner',
@@ -152,20 +152,33 @@ function renderRecentLog() {
     if (!logList) return;
     const entries = readStoredJson(STORAGE_KEYS.recentLog, []);
     if (!entries.length) {
-        logList.innerHTML = '<li>No attendance yet.</li>';
+        logList.innerHTML = '<li class="empty-log">No recent attendance.</li>';
         return;
     }
     logList.innerHTML = entries.slice(0, MAX_HISTORY_ITEMS).map((entry) => {
-        const statusText = entry.status === 'pending' ? 'Pending sync'
+        const statusText = entry.status === 'pending' ? 'Pending'
             : entry.status === 'synced' ? 'Synced'
-            : entry.status === 'failed' ? 'Not synced'
-            : 'Saved offline';
+            : entry.status === 'failed' ? 'Failed'
+            : 'Offline';
         const statusClass = entry.status === 'pending' ? 'pending'
             : entry.status === 'synced' ? 'synced'
             : 'offline';
         const cleanName = escapeHtml(entry.name);
         const cleanAction = escapeHtml(entry.action);
-        return `<li><div><strong>${cleanName}</strong><div class="meta">${cleanAction} - ${statusText}</div><span class="status-pill ${statusClass}">${statusText}</span></div><div class="meta">${formatTimestamp(entry.timestamp)}</div></li>`;
+        const formattedTime = formatTimestamp(entry.timestamp);
+
+        return `
+            <li>
+                <div class="log-left">
+                    <strong class="log-name">${cleanName}</strong>
+                    <span class="status-pill ${statusClass}">${statusText}</span>
+                </div>
+                <div class="log-right">
+                    <span class="log-action ${cleanAction.toLowerCase()}">${cleanAction}</span>
+                    <span class="log-time">${formattedTime}</span>
+                </div>
+            </li>
+        `;
     }).join('');
 }
 
@@ -901,12 +914,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     flushPendingQueue();
     loadStaffDropdown();
 
-    setTimeout(() => {
-        try {
-            const overlays = document.querySelectorAll('.dialog-overlay, .session-timeout-overlay, #faq-modal.active');
-            if (!overlays || overlays.length === 0) document.body.style.overflow = '';
-        } catch (e) {}
-    }, 120);
+
 
     const installBtn = document.getElementById('install-btn');
 
