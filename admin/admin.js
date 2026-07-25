@@ -149,7 +149,7 @@ function refreshCurrentTab() {
     const activeTabBtn = document.querySelector('.admin-tabs .tab-btn.active');
     const activeTab = activeTabBtn ? activeTabBtn.dataset.tab : 'dashboard';
     if (activeTab === 'dashboard') {
-        loadWeekData();
+        loadWeekData(true);
     } else if (activeTab === 'logs') {
         fetchLogsTabRecords();
     } else if (activeTab === 'analytics') {
@@ -510,7 +510,10 @@ async function loadWeekData(isSilent = false) {
             renderAttendanceMatrix(logs, schedule, weekDays);
 
             const refreshLabel = document.getElementById('refresh-label');
-            if (refreshLabel) refreshLabel.textContent = `Updated: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+            if (refreshLabel) {
+                const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                refreshLabel.innerHTML = `<span class="live-pulse-dot" title="30s live auto-refresh active"></span> Live (${timeStr})`;
+            }
         }
         
         if (!isSilent && currentTab === 'dashboard') {
@@ -524,7 +527,10 @@ async function loadWeekData(isSilent = false) {
                         if (currentWeekStart === weekBeingLoaded) {
                             renderAttendanceMatrix(logs, freshSchedule, weekDays);
                             const refreshLabel = document.getElementById('refresh-label');
-                            if (refreshLabel) refreshLabel.textContent = `Updated: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (refreshed)`;
+                            if (refreshLabel) {
+                                const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                                refreshLabel.innerHTML = `<span class="live-pulse-dot" title="30s live auto-refresh active"></span> Live (${timeStr})`;
+                            }
                         }
                     }
                 }

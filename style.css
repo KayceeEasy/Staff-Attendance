@@ -777,6 +777,26 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
     display: flex;
     gap: 10px;
     margin-top: 14px;
+.refresh-label {
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.live-pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+    animation: livePulse 2s infinite ease-in-out;
+}
+@keyframes livePulse {
+    0% { transform: scale(0.9); opacity: 0.7; }
+    50% { transform: scale(1.25); opacity: 1; }
+    100% { transform: scale(0.9); opacity: 0.7; }
 }
 
 /* ─── LOGS TABLE & FILTERS ─── */
