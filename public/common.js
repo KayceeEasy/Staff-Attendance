@@ -110,6 +110,8 @@ async function callBackendDeduplicated(payload, timeoutMs = 20000) {
    Sends requests to /api/backend via Express proxy.
    Includes session CSRF token and Admin token if available. */
 
+const FALLBACK_GAS_URL = 'https://script.google.com/macros/s/AKfycbwKXksPAcj-dar7BkC_lAoGsVM-aF0BT81lkgToafv0natBxpb1S8iI0KD8q0NJemwksw/exec';
+
 async function callBackend(payload, timeoutMs = 20000) {
     const csrfToken = payload.csrfToken || sessionStorage.getItem('admin_csrf_token') || sessionStorage.getItem('csrf_token') || '';
     const adminToken = payload.adminToken || sessionStorage.getItem('admin_token') || '';
@@ -122,14 +124,18 @@ async function callBackend(payload, timeoutMs = 20000) {
         username: payload.username || username
     };
 
+    const isGitHubPages = window.location.hostname.endsWith('github.io');
+    const endpoint = isGitHubPages ? (window.GAS_SCRIPT_URL || FALLBACK_GAS_URL) : '/api/backend';
+
     try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
-        const response = await fetch('/api/backend', {
+        const response = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify(fullPayload),
-            signal: controller.signal
+            signal: controller.signal,
+            redirect: 'follow'
         });
         clearTimeout(timer);
         if (response.ok) {
@@ -139,7 +145,7 @@ async function callBackend(payload, timeoutMs = 20000) {
             return { ok: false, allowed: false, message: 'Server returned error status: ' + response.status };
         }
     } catch (err) {
-        return { ok: false, allowed: false, message: 'Could not reach server proxy.' };
+        return { ok: false, allowed: false, message: 'Could not reach backend server.' };
     }
 }
 
