@@ -1,3 +1,4 @@
+GAS_scripts/
 mobile_app/
 node_modules/
 
@@ -6,5 +7,4 @@ node_modules/
 .env
 .env.local
 
-Code.gs
-Hybrid.gs
+*.gs

@@ -71,6 +71,7 @@ const ALLOWED_MODES = new Set([
     'get-sheet-url',
     'list-analytics',
     'list-distance-alerts',
+    'list-audit-logs',
     'log-analytics'
 ]);
 

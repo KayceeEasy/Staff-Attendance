@@ -1025,12 +1025,12 @@ function renderAnalytics() {
         
         <div class="analytics-section">
             <h4>⚠ Least Active Staff</h4>
-            <p class="admin-intro">Staff with fewest sign-ins. Hybrid days are excluded from attendance requirements.</p>
+            <p class="admin-intro">Staff with lowest office attendance rate. Scheduled WFH days are excluded from requirements.</p>
             <div class="analytics-breakdown">
                 ${data.leastActive.map(s => `
                     <div class="breakdown-row">
                         <span class="breakdown-name">${escapeHtml(s.name)}</span>
-                        <span class="breakdown-bar"><span class="bar-in" style="width: ${Math.min(100, s.attendanceRate)}%"></span></span>
+                        <span class="breakdown-bar"><span class="bar-in ${s.attendanceRate >= 80 ? 'bar-high' : s.attendanceRate >= 50 ? 'bar-mid' : 'bar-low'}" style="width: ${Math.max(4, Math.min(100, s.attendanceRate))}%"></span></span>
                         <span class="breakdown-stats">
                             <span class="stat-in">${s.signIns} in</span>
                             <span class="stat-out">${s.signOuts} out</span>
@@ -1049,7 +1049,7 @@ function renderAnalytics() {
                 ${data.mostActive.map(s => `
                     <div class="breakdown-row">
                         <span class="breakdown-name">${escapeHtml(s.name)}</span>
-                        <span class="breakdown-bar"><span class="bar-in" style="width: ${Math.min(100, s.attendanceRate)}%"></span></span>
+                        <span class="breakdown-bar"><span class="bar-in ${s.attendanceRate >= 80 ? 'bar-high' : s.attendanceRate >= 50 ? 'bar-mid' : 'bar-low'}" style="width: ${Math.max(4, Math.min(100, s.attendanceRate))}%"></span></span>
                         <span class="breakdown-stats">
                             <span class="stat-in">${s.signIns} in</span>
                             <span class="stat-out">${s.signOuts} out</span>
@@ -1067,7 +1067,7 @@ function renderAnalytics() {
                 ${data.staffBreakdown.map(s => `
                     <div class="breakdown-row">
                         <span class="breakdown-name">${escapeHtml(s.name)}</span>
-                        <span class="breakdown-bar"><span class="bar-in" style="width: ${Math.min(100, (s.totalActions / Math.max(...data.staffBreakdown.map(x => x.totalActions)) * 100))}%"></span></span>
+                        <span class="breakdown-bar"><span class="bar-in ${s.attendanceRate >= 80 ? 'bar-high' : s.attendanceRate >= 50 ? 'bar-mid' : 'bar-low'}" style="width: ${Math.max(4, Math.min(100, s.attendanceRate))}%"></span></span>
                         <span class="breakdown-stats">
                             <span class="stat-in">${s.signIns} in</span>
                             <span class="stat-out">${s.signOuts} out</span>
@@ -1085,18 +1085,18 @@ function renderAnalytics() {
         </div>
         
         <div class="analytics-section">
-            <h4>🔴 Device Events</h4>
-            <p class="admin-intro">Geofence-blocked sign-in attempts and client-side app errors reported from staff devices.</p>
+            <h4>🔴 Device & System Audit Events</h4>
+            <p class="admin-intro">Real-time log entries recorded from Google Sheets Audit Log, Distance Alerts, and device security events.</p>
             ${deviceEvents.length > 0 ? `
             <div class="logs-table-wrapper">
-                <div class="logs-table" style="min-width:400px">
-                    <div class="logs-row logs-head" style="grid-template-columns:1fr 1fr 2fr">
+                <div class="logs-table" style="min-width:500px">
+                    <div class="logs-row logs-head" style="grid-template-columns:1.2fr 1.4fr 2.4fr">
                         <span>Time</span><span>Type</span><span>Details</span>
                     </div>
                     ${pageEvents.map(e => `
-                        <div class="logs-row" style="grid-template-columns:1fr 1fr 2fr">
+                        <div class="logs-row" style="grid-template-columns:1.2fr 1.4fr 2.4fr">
                             <span style="font-size:0.75rem">${escapeHtml(e.time || '')}</span>
-                            <span class="status-pill-small ${e.type.includes('error') || e.type.includes('geofence') ? 'late' : 'offline'}">${escapeHtml(e.type)}</span>
+                            <span class="status-pill-small ${e.type.includes('error') || e.type.includes('geofence') || e.type.includes('VIOLATION') ? 'late' : 'synced'}">${escapeHtml(e.type)}</span>
                             <span style="font-size:0.75rem;word-break:break-all">${escapeHtml(e.details || '')}</span>
                         </div>
                     `).join('')}
@@ -1109,7 +1109,7 @@ function renderAnalytics() {
                     <button id="device-events-next-btn" class="admin-btn secondary small" type="button" ${deviceEventsPage >= totalEventPages ? 'disabled' : ''}>Next ›</button>
                 </div>
             </div>
-            ` : '<div class="staff-list-state">No device errors or geofence violations reported.</div>'}
+            ` : '<div class="staff-list-state">No device errors, distance alerts, or system audit events recorded.</div>'}
         </div>
     `;
     
@@ -1136,6 +1136,10 @@ const DEVICE_EVENTS_PAGE_SIZE = 10;
 
 async function fetchDistanceAlerts(limit = 100) {
     return callBackend({ mode: 'list-distance-alerts', limit });
+}
+
+async function fetchAuditLogs(limit = 100) {
+    return callBackend({ mode: 'list-audit-logs', limit });
 }
 
 function parseEventTimestamp(dateStr, timeStr) {
@@ -1165,12 +1169,13 @@ async function loadAnalytics() {
         const allLogs = Object.values(cachedWeekData).flatMap(w => w.logs || []);
         const allSchedule = Object.values(cachedWeekData).reduce((acc, w) => ({ ...acc, ...(w.schedule || {}) }), {});
         
-        const [attendanceLogs, analyticsResponse, alertsResponse] = await Promise.all([
+        const [attendanceLogs, analyticsResponse, alertsResponse, auditResponse] = await Promise.all([
             allLogs.length > 0
                 ? Promise.resolve(allLogs)
                 : fetchLogs({ limit: 1000 }).then(r => (r.ok && Array.isArray(r.logs)) ? r.logs : []),
             callBackend({ mode: 'list-analytics', limit: 50 }).catch((err) => { console.warn('list-analytics fetch failed:', err); return { ok: false, events: [] }; }),
-            fetchDistanceAlerts(100).catch((err) => { console.warn('list-distance-alerts fetch failed:', err); return { ok: false, alerts: [] }; })
+            fetchDistanceAlerts(100).catch((err) => { console.warn('list-distance-alerts fetch failed:', err); return { ok: false, alerts: [] }; }),
+            fetchAuditLogs(100).catch((err) => { console.warn('list-audit-logs fetch failed:', err); return { ok: false, events: [] }; })
         ]);
 
         analyticsData = processAnalyticsData(attendanceLogs, allSchedule);
@@ -1189,14 +1194,23 @@ async function loadAnalytics() {
 
         const geofenceEvents = (alertsResponse.ok && Array.isArray(alertsResponse.alerts))
             ? alertsResponse.alerts.map(a => ({
-                type: 'geofence_violation',
-                details: `${a.name} attempted ${a.action} from ~${a.distance} meters away`,
+                type: 'GEOFENCE_VIOLATION',
+                details: `${a.name} attempted ${a.action} from ~${a.distance}m away (Lat: ${a.lat}, Lon: ${a.lon})`,
                 time: `${a.date} ${a.time}`,
                 sortValue: parseEventTimestamp(a.date, a.time)
             }))
             : [];
 
-        deviceEventsAll = [...clientEvents, ...geofenceEvents].sort((a, b) => b.sortValue - a.sortValue);
+        const auditEvents = (auditResponse.ok && Array.isArray(auditResponse.events))
+            ? auditResponse.events.map(a => ({
+                type: a.eventType || a.category || 'SYSTEM_AUDIT',
+                details: `${a.user ? a.user + ': ' : ''}${a.details || ''}`,
+                time: `${a.date || ''} ${a.time || ''}`.trim(),
+                sortValue: parseEventTimestamp(a.date, a.time)
+            }))
+            : [];
+
+        deviceEventsAll = [...clientEvents, ...geofenceEvents, ...auditEvents].sort((a, b) => b.sortValue - a.sortValue);
         deviceEventsPage = 1;
 
         renderAnalytics();

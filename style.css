@@ -932,15 +932,18 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
 .analytics-breakdown { display: grid; gap: 8px; margin-top: 10px; }
 .breakdown-row {
     display: grid;
-    grid-template-columns: 140px 1fr auto;
+    grid-template-columns: 130px 1fr auto;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     font-size: 0.82rem;
 }
-.breakdown-name { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.breakdown-bar { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
-.bar-in { height: 100%; background: var(--primary); border-radius: 4px; }
-.breakdown-stats { display: flex; gap: 8px; font-size: 0.76rem; font-weight: 600; }
+.breakdown-name { font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.breakdown-bar { height: 10px; border-radius: 6px; background: var(--surface-3); overflow: hidden; width: 100%; border: 1px solid var(--border); }
+.bar-in { height: 100%; border-radius: 6px; transition: width 0.4s ease; display: block; }
+.bar-in.bar-high { background: linear-gradient(90deg, #10b981, #059669); }
+.bar-in.bar-mid { background: linear-gradient(90deg, #3b82f6, #f59e0b); }
+.bar-in.bar-low { background: linear-gradient(90deg, #ef4444, #dc2626); }
+.breakdown-stats { display: flex; align-items: center; gap: 8px; font-size: 0.76rem; font-weight: 600; flex-wrap: wrap; }
 .stat-in { color: var(--success); }
 .stat-out { color: var(--muted); }
 .stat-wfh { color: var(--primary); }
