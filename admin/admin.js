@@ -1697,7 +1697,7 @@ async function handleAdminLogin(event) {
    INIT
    ============================================================ */
 
-document.addEventListener('DOMContentLoaded', () => {
+function initAdminApp() {
     initTheme();
     initRefreshButton();
     initAllPasswordToggles();
@@ -1712,8 +1712,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (session.adminToken) sessionStorage.setItem('admin_token', session.adminToken);
                 if (session.csrfToken) sessionStorage.setItem('admin_csrf_token', session.csrfToken);
                 sessionStorage.setItem('admin_username', session.username);
-                document.getElementById('admin-login-form').style.display = 'none';
-                document.getElementById('forgot-password-link').style.display = 'none';
+                const form = document.getElementById('admin-login-form');
+                if (form) form.style.display = 'none';
+                const forgot = document.getElementById('forgot-password-link');
+                if (forgot) forgot.style.display = 'none';
                 const hero = document.querySelector('.admin-hero');
                 if (hero) hero.style.display = 'none';
                 renderAdminPanel();
@@ -1727,8 +1729,24 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) { handleLogout(false); }
     }
     
-    document.getElementById('admin-login-form').addEventListener('submit', handleAdminLogin);
-    document.getElementById('forgot-password-link').addEventListener('click', (e) => { e.preventDefault(); runForgotPasswordFlow(); });
+    const form = document.getElementById('admin-login-form');
+    if (form) {
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            handleAdminLogin(e);
+        });
+    }
+    const loginBtn = document.getElementById('admin-login-btn');
+    if (loginBtn) {
+        loginBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            handleAdminLogin(e);
+        });
+    }
+    const forgotLink = document.getElementById('forgot-password-link');
+    if (forgotLink) {
+        forgotLink.addEventListener('click', (e) => { e.preventDefault(); runForgotPasswordFlow(); });
+    }
 
     setTimeout(() => {
         try {
@@ -1736,4 +1754,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!overlays || overlays.length === 0) document.body.style.overflow = '';
         } catch (e) {}
     }, 120);
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAdminApp);
+} else {
+    initAdminApp();
+}
