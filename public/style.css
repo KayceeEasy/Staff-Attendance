@@ -326,18 +326,18 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
 #log-list li { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: 0.83rem; border: 1px solid var(--border); }
 :root[data-theme="dark"] #log-list li { background: rgba(15, 25, 50, 0.7); }
 #log-list li.empty-log { justify-content: center; color: var(--muted); font-style: italic; font-size: 0.81rem; }
-.log-left { display: flex; align-items: center; gap: 8px; }
-.log-name { font-weight: 700; font-size: 0.84rem; color: var(--text); max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#log-list .status-pill { padding: 2px 7px; border-radius: var(--radius-pill); font-size: 0.68rem; font-weight: 700; line-height: 1; display: inline-block; margin-top: 0; }
+.log-left { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.log-name { font-weight: 700; font-size: 0.86rem; color: var(--text); max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#log-list .status-pill { padding: 2px 8px; border-radius: var(--radius-pill); font-size: 0.68rem; font-weight: 700; line-height: 1; display: inline-block; margin-top: 1px; }
 #log-list .status-pill.pending { background: var(--warning); color: white; }
 #log-list .status-pill.synced { background: var(--success-light); color: var(--success); }
 #log-list .status-pill.offline { background: var(--surface-3); color: var(--muted); }
 
-.log-right { display: flex; align-items: center; gap: 8px; font-size: 0.76rem; }
+.log-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 0.76rem; }
 .log-action { font-weight: 800; font-size: 0.74rem; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
 .log-action.in { background: var(--success-light); color: var(--success); }
 .log-action.out { background: var(--surface-3); color: var(--muted); }
-.log-time { color: var(--muted); font-weight: 500; font-size: 0.74rem; }
+.log-time { color: var(--muted); font-weight: 500; font-size: 0.73rem; }
 
 #install-btn { width: 100%; padding: 9px; border-radius: var(--radius); border: 1px solid rgba(37, 99, 235, 0.16); cursor: pointer; background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(37, 99, 235, 0.14)); margin-top: 8px; font-weight: 700; color: var(--primary); font-size: 0.84rem; transition: all 0.2s ease; display: none; box-shadow: inset 0 1px 0 rgba(255,255,255,0.5); }
 #install-btn:hover { border-color: var(--primary); background: linear-gradient(135deg, rgba(37, 99, 235, 0.14), rgba(37, 99, 235, 0.2)); transform: translateY(-1px); }
