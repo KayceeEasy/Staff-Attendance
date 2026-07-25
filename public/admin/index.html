@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Admin Access</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<div class="card admin-card">
+    <div class="topbar">
+        <div class="eyebrow">Admin Console</div>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch theme">Dark</button>
+    </div>
+    <div class="admin-hero">
+        <div class="admin-badge">🔐</div>
+        <div>
+            <h1>Admin Access</h1>
+            <p class="admin-intro">Use admin credentials to manage device ownership, staff access, and local sync state.</p>
+        </div>
+    </div>
+    <form id="admin-login-form" class="admin-form">
+        <input id="admin-username" type="text" placeholder="Username" autocomplete="username" required />
+        <div class="password-field-wrap">
+            <input id="admin-password" type="password" placeholder="Password" autocomplete="current-password" required />
+            <button type="button" class="password-toggle" data-toggle-target="admin-password" aria-label="Show password">👁</button>
+        </div>
+        <div class="admin-actions">
+            <button id="admin-login-btn" class="btn-in" type="submit">Log in</button>
+        </div>
+        <a id="forgot-password-link" class="admin-link secondary forgot-link" href="#">Forgot password?</a>
+    </form>
+    <div id="admin-message" class="admin-message" role="status" aria-live="polite"></div>
+    <div id="admin-panel-host"></div>
+    <a class="admin-btn secondary" href="/" target="_self">← Back to attendance</a>
+</div>
+<script src="../common.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
