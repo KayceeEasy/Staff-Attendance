@@ -124,7 +124,41 @@ async function fetchHybridSchedule(weekStart, forceRefresh = false) {
     }
 }
 
-/* ---------- Session Timeout ---------- */
+let autoRefreshTimer = null;
+const AUTO_REFRESH_MS = 30000;
+
+function startAutoRefresh() {
+    clearAutoRefresh();
+    autoRefreshTimer = setInterval(() => {
+        if (!isAdminLoggedIn) { clearAutoRefresh(); return; }
+        const timeoutOverlay = document.querySelector('.session-timeout-overlay');
+        if (timeoutOverlay) return;
+        
+        refreshCurrentTab();
+    }, AUTO_REFRESH_MS);
+}
+
+function clearAutoRefresh() {
+    if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+    }
+}
+
+function refreshCurrentTab() {
+    if (!isAdminLoggedIn) return;
+    const activeTabBtn = document.querySelector('.admin-tabs .tab-btn.active');
+    const activeTab = activeTabBtn ? activeTabBtn.dataset.tab : 'dashboard';
+    if (activeTab === 'dashboard') {
+        loadWeekData();
+    } else if (activeTab === 'logs') {
+        fetchLogsTabRecords();
+    } else if (activeTab === 'analytics') {
+        loadAnalytics();
+    } else if (activeTab === 'staff') {
+        loadStaffList();
+    }
+}
 
 function resetInactivityTimer() {
     clearTimeout(inactivityTimer);
@@ -1573,6 +1607,7 @@ function renderAdminPanel() {
     });
 
     switchTab('dashboard');
+    startAutoRefresh();
 }
 
 /* ============================================================
