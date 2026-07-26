@@ -9,9 +9,7 @@ const APP_SHELL = [
   './manifest.json',
   './version.js',
   './image/png/icon-192.png',
-  './image/png/icon-512.png',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap',
-  'https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js'
+  './image/png/icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {

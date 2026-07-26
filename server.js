@@ -11,11 +11,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SCRIPT_URL = process.env.GAS_SCRIPT_URL;
-
-if (!SCRIPT_URL) {
-    console.warn('⚠️ WARNING: process.env.GAS_SCRIPT_URL is not set in .env file!');
-}
+const SCRIPT_URL = process.env.GAS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwKXksPAcj-dar7BkC_lAoGsVM-aF0BT81lkgToafv0natBxpb1S8iI0KD8q0NJemwksw/exec';
 
 // Security Headers
 app.use(helmet({
@@ -36,6 +32,7 @@ app.use(cors());
 
 // Body parsing
 app.use(express.json({ limit: '1mb' }));
+app.use(express.text({ type: '*/*', limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Serve static frontend files from root directory
@@ -81,7 +78,10 @@ const ALLOWED_MODES = new Set([
 
 app.post('/api/backend', async (req, res) => {
     try {
-        const payload = req.body || {};
+        let payload = req.body || {};
+        if (typeof payload === 'string') {
+            try { payload = JSON.parse(payload); } catch (e) { payload = {}; }
+        }
         const mode = payload.mode;
 
         if (!mode || !ALLOWED_MODES.has(mode)) {
