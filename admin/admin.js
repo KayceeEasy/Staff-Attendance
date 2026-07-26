@@ -696,11 +696,17 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
 function renderStaffList(staff) {
     const staffList = document.getElementById('staff-list');
     if (!staffList) return;
-    if (!staff.length) {
-        staffList.innerHTML = '<div class="staff-list-state">No staff members configured. Add your first staff member below.</div>';
+    if (Array.isArray(staff)) allStaffList = staff;
+
+    const searchQuery = (document.getElementById('staff-admin-search')?.value || '').trim().toLowerCase();
+    const filteredStaff = searchQuery 
+        ? allStaffList.filter(s => String(s.name || '').toLowerCase().includes(searchQuery))
+        : allStaffList;
+
+    if (!filteredStaff.length) {
+        staffList.innerHTML = `<div class="staff-list-state">${searchQuery ? `No staff matching "${escapeHtml(searchQuery)}"` : 'No staff members configured. Add your first staff member below.'}</div>`;
         return;
     }
-    allStaffList = staff;
     
     const headerHtml = `
         <div class="staff-header-row">
@@ -710,7 +716,7 @@ function renderStaffList(staff) {
         </div>
     `;
 
-    const rowsHtml = staff.map((entry) => `
+    const rowsHtml = filteredStaff.map((entry) => `
         <div class="staff-row">
             <div class="staff-name-cell">${escapeHtml(entry.name)}</div>
             <div class="staff-device-cell">
@@ -1328,6 +1334,7 @@ function renderAdminPanel() {
         <div id="tab-staff" class="tab-content">
             <div class="section-header"><h3>Staff Management</h3></div>
             <div class="staff-manager">
+                <input id="staff-admin-search" type="text" placeholder="🔍 Search staff by name..." style="width:100%; padding:9px 13px; border-radius:var(--radius); border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.86rem; margin-bottom:10px;" />
                 <div id="staff-list"><div class="staff-list-state">Loading staff list...</div></div>
                 <div class="add-staff-form">
                     <input id="new-staff-name" type="text" placeholder="Enter staff name to add" />
@@ -1434,6 +1441,7 @@ function renderAdminPanel() {
     document.getElementById('add-staff-btn').addEventListener('click', handleAddStaff);
     document.getElementById('new-staff-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') handleAddStaff(); });
     document.getElementById('reset-all-locks-btn').addEventListener('click', handleResetAllLocks);
+    document.getElementById('staff-admin-search')?.addEventListener('input', () => renderStaffList(allStaffList));
 
     callBackend({ mode: 'get-sheet-url' }).then((res) => {
         const btn = document.getElementById('sheets-link-btn');
