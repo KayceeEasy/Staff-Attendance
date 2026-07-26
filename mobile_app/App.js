@@ -1,13 +1,14 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   StyleSheet,
   View,
-  SafeAreaView,
+  Text,
+  TouchableOpacity,
   StatusBar,
-  Platform,
-  Alert
+  Platform
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import NetInfo from '@react-native-community/netinfo';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
@@ -68,7 +69,24 @@ TaskManager.defineTask(BACKGROUND_GEOFENCE_TASK, async ({ data: { eventType, reg
 });
 
 export default function App() {
+  const webViewRef = useRef(null);
+  const [isConnected, setIsConnected] = useState(true);
+
   useEffect(() => {
+    // Listen for network connection changes and auto-recover WebView when back online
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const online = Boolean(state.isConnected && state.isInternetReachable !== false);
+      setIsConnected((prev) => {
+        if (!prev && online) {
+          // Auto-reload WebView as soon as device returns online
+          setTimeout(() => {
+            webViewRef.current?.reload();
+          }, 500);
+        }
+        return online;
+      });
+    });
+
     (async () => {
       // 1. Request Foreground & Background Location Permissions
       const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
@@ -85,6 +103,8 @@ export default function App() {
         scheduleEveningSignOutReminder();
       }
     })();
+
+    return () => unsubscribe();
   }, []);
 
   const startBackgroundGeofencing = async () => {
@@ -145,6 +165,23 @@ export default function App() {
     }
   };
 
+  const renderOfflineFallback = () => (
+    <View style={styles.offlineContainer}>
+      <Text style={styles.offlineEmoji}>📶</Text>
+      <Text style={styles.offlineTitle}>Connection Disconnected</Text>
+      <Text style={styles.offlineSub}>
+        No active internet connection. The app will automatically refresh and reconnect as soon as your signal returns.
+      </Text>
+      <TouchableOpacity 
+        style={styles.retryButton} 
+        onPress={() => webViewRef.current?.reload()}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.retryText}>🔄 Retry Connection</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <View style={styles.container}>
       {/* Immersive Full Screen Status Bar */}
@@ -155,6 +192,7 @@ export default function App() {
         hidden={true} 
       />
       <WebView
+        ref={webViewRef}
         source={{ uri: PWA_URL }}
         style={styles.webview}
         userAgent="LifecardApp/1.0 (MobileNative)"
@@ -166,6 +204,7 @@ export default function App() {
         scalesPageToFit={true}
         allowsInlineMediaPlayback={true}
         onMessage={handleWebViewMessage}
+        renderError={renderOfflineFallback}
         onPermissionRequest={(event) => {
           event.grant();
         }}
@@ -182,5 +221,41 @@ const styles = StyleSheet.create({
   webview: {
     flex: 1,
     backgroundColor: '#0f172a',
+  },
+  offlineContainer: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  offlineEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  offlineTitle: {
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  offlineSub: {
+    color: '#94a3b8',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  retryButton: {
+    backgroundColor: '#2563eb',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  retryText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
