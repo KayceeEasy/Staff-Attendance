@@ -554,42 +554,40 @@
                 <p>Still need help? Contact your admin or IT support.</p>
             </div>
         </div>
-        <footer class="app-footer" style="text-align: center; padding: 16px 0 8px 0; margin-top: 20px; font-size: 0.76rem; color: var(--text-muted, #94a3b8); border-top: 1px solid var(--border-color, rgba(255,255,255,0.08));">
+        <footer class="app-footer" style="text-align: center; padding: 16px 0 8px 0; margin-top: 20px; font-size: 0.76rem; color: var(--muted); border-top: 1px solid var(--border);">
             <p style="margin: 0 0 4px 0;">Copyright &copy; 2026 Kaycee Tech. All Rights Reserved.</p>
-            <p style="margin: 0;"><button id="privacy-policy-link" class="link-btn" type="button" style="background:none; border:none; color: var(--primary-color, #3b82f6); text-decoration:underline; font-size:0.76rem; cursor:pointer; padding:0;">Privacy &amp; Location Policy</button></p>
+            <p style="margin: 0;"><button id="privacy-policy-link" type="button" style="background:none; border:none; color: var(--primary); text-decoration:underline; font-size:0.76rem; cursor:pointer; padding:0;">Privacy &amp; Location Policy</button></p>
         </footer>
     </div>
 
     <!-- Privacy & Location Policy Modal -->
-    <div id="privacy-modal" class="faq-modal" aria-hidden="true" role="dialog" aria-labelledby="privacy-modal-title">
-        <div class="faq-modal-backdrop" id="privacy-modal-backdrop"></div>
+    <div id="privacy-modal" class="faq-overlay" role="dialog" aria-modal="true" aria-labelledby="privacy-modal-title" aria-hidden="true">
         <div class="faq-modal-content">
-            <div class="faq-modal-header">
-                <div class="faq-modal-title">
-                    <i data-lucide="shield-check" size="24"></i>
-                    <h3 id="privacy-modal-title">Privacy &amp; Location Policy</h3>
-                </div>
-                <button id="privacy-modal-close" class="faq-modal-close" aria-label="Close modal">
-                    <i data-lucide="x" size="20"></i>
+            <div class="faq-header">
+                <h2 id="privacy-modal-title" style="display:flex; align-items:center; gap:8px;">
+                    <i data-lucide="shield-check" size="22"></i> Privacy &amp; Location Policy
+                </h2>
+                <button id="privacy-modal-close" class="faq-close-btn" aria-label="Close Privacy Policy">
+                    <i data-lucide="x" size="24"></i>
                 </button>
             </div>
             
-            <div class="faq-modal-body" style="padding: 16px; font-size: 0.88rem; line-height: 1.6; color: var(--text-color, #e2e8f0);">
+            <div style="overflow-y: auto; flex: 1; padding-right: 4px; font-size: 0.88rem; line-height: 1.6; color: var(--text);">
                 <p style="margin-bottom: 12px;"><strong>Kaycee Tech Lifecard Attendance System</strong> is built with strict privacy standards to protect staff data.</p>
 
-                <h4 style="color: var(--primary-color, #3b82f6); margin: 14px 0 4px 0;">📍 Geolocation Data Usage</h4>
+                <h4 style="color: var(--primary); margin: 14px 0 4px 0;">📍 Geolocation Data Usage</h4>
                 <p style="margin-bottom: 10px;">Location data is accessed <strong>strictly at the exact moment of attendance submission</strong> (signing in or signing out) to verify physical office presence. Your real-time movements and location history are <strong>never continuously tracked or recorded</strong>.</p>
 
-                <h4 style="color: var(--primary-color, #3b82f6); margin: 14px 0 4px 0;">📱 Passive Arrival Alerts (Mobile App)</h4>
+                <h4 style="color: var(--primary); margin: 14px 0 4px 0;">📱 Passive Arrival Alerts (Mobile App)</h4>
                 <p style="margin-bottom: 10px;">On mobile devices, arrival alerts are handled passively by your phone's operating system (Android/iOS) using circular geofences. The app remains dormant until your phone enters the office area boundary to deliver a single sign-in prompt notification.</p>
 
-                <h4 style="color: var(--primary-color, #3b82f6); margin: 14px 0 4px 0;">🔒 Device Identification</h4>
+                <h4 style="color: var(--primary); margin: 14px 0 4px 0;">🔒 Device Identification</h4>
                 <p style="margin-bottom: 10px;">A unique cryptographic device identifier (UUID) is stored securely on your browser/device solely to bind your attendance account to your authorized phone and prevent multi-device account misuse.</p>
 
-                <h4 style="color: var(--primary-color, #3b82f6); margin: 14px 0 4px 0;">⚖️ Data Ownership &amp; Rights</h4>
+                <h4 style="color: var(--primary); margin: 14px 0 4px 0;">⚖️ Data Ownership &amp; Rights</h4>
                 <p style="margin-bottom: 10px;">Attendance records (name, timestamp, sign-in status, distance from office) are stored in secure company backend database logs for administrative reporting. You may request history verification via your HR administrator.</p>
 
-                <div style="margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--border-color, rgba(255,255,255,0.1)); font-size: 0.8rem; text-align: center; color: var(--text-muted, #94a3b8);">
+                <div style="margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 0.8rem; text-align: center; color: var(--muted);">
                     Copyright &copy; 2026 Kaycee Tech. All Rights Reserved.
                 </div>
             </div>

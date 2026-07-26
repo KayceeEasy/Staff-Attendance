@@ -1287,7 +1287,6 @@ function initPrivacyModal() {
     const privacyLink = document.getElementById('privacy-policy-link');
     const privacyModal = document.getElementById('privacy-modal');
     const privacyClose = document.getElementById('privacy-modal-close');
-    const privacyBackdrop = document.getElementById('privacy-modal-backdrop');
 
     if (!privacyLink || !privacyModal) return;
 
@@ -1295,6 +1294,9 @@ function initPrivacyModal() {
         privacyModal.classList.add('active');
         privacyModal.setAttribute('aria-hidden', 'false');
         document.body.style.overflow = 'hidden';
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons();
+        }
         if (privacyClose) privacyClose.focus();
     }
 
@@ -1307,7 +1309,10 @@ function initPrivacyModal() {
 
     privacyLink.addEventListener('click', openPrivacyModal);
     if (privacyClose) privacyClose.addEventListener('click', closePrivacyModal);
-    if (privacyBackdrop) privacyBackdrop.addEventListener('click', closePrivacyModal);
+
+    privacyModal.addEventListener('click', (e) => {
+        if (e.target === privacyModal) closePrivacyModal();
+    });
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && privacyModal.classList.contains('active')) {
