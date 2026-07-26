@@ -1,5 +1,5 @@
 importScripts('./version.js');
-const CACHE_NAME = 'staff-attendance-v' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '20');
+const CACHE_NAME = 'staff-attendance-v' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '26');
 const APP_SHELL = [
   './',
   './index.html',
@@ -26,50 +26,26 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-/**
- * Fetch handler:
- * BYPASS service worker for any /admin/ requests so admin console is NEVER cached.
- */
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
-  // Bypass service worker completely for admin endpoints
+  // Bypass service worker completely for admin pages & requests
   if (event.request.url.includes('/admin/')) return;
 
-  const url = new URL(event.request.url);
-  const isCodeAsset = url.pathname.endsWith('.css') || url.pathname.endsWith('.js') || url.pathname.endsWith('.html');
-
-  if (isCodeAsset) {
-    // Network-First for CSS/JS/HTML: fetch fresh code first, update cache, fallback to cache if offline
-    event.respondWith(
-      fetch(event.request)
+  event.respondWith(
+    caches.open(CACHE_NAME).then(async (cache) => {
+      const cachedResponse = await cache.match(event.request, { ignoreSearch: true });
+      
+      const fetchPromise = fetch(event.request)
         .then((networkResponse) => {
-          if (networkResponse && networkResponse.ok) {
-            const clone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+            cache.put(event.request, networkResponse.clone());
           }
           return networkResponse;
         })
-        .catch(() => caches.match(event.request))
-    );
-    return;
-  }
+        .catch(() => cachedResponse);
 
-  // Cache-First for static images/media
-  event.respondWith(
-    caches.open(CACHE_NAME).then((cache) =>
-      cache.match(event.request).then((cached) => {
-        const networkFetch = fetch(event.request)
-          .then((networkResponse) => {
-            if (networkResponse && networkResponse.ok) {
-              cache.put(event.request, networkResponse.clone());
-            }
-            return networkResponse;
-          })
-          .catch(() => null);
-
-        return cached || networkFetch.then((networkResponse) => networkResponse || caches.match('./index.html'));
-      })
-    )
+      return cachedResponse || fetchPromise;
+    })
   );
 });
