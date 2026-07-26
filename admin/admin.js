@@ -1388,7 +1388,7 @@ function renderAdminPanel() {
                 </div>
                 <div class="account-card">
                     <span class="account-icon">🚪</span>
-                    <div><strong>Logout</strong><p class="admin-intro">End your admin session (auto-timeout after 5 min)</p></div>
+                    <div><strong>Logout</strong><p class="admin-intro">End your admin session (auto-timeout after 2 hours)</p></div>
                     <button id="logout-btn" class="admin-btn secondary small danger" type="button">Logout</button>
                 </div>
             </div>
