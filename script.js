@@ -879,6 +879,34 @@ window.addEventListener('unhandledrejection', (event) => {
     showToast('A network error occurred. Please check your connection.', 'error');
 });
 
+function initRefreshButton() {
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (!refreshBtn) return;
+    refreshBtn.addEventListener('click', async () => {
+        showToast('Purging cache & fetching latest source updates...', 'default', 3000);
+        try {
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const registration of registrations) {
+                    await registration.unregister();
+                }
+            }
+            if ('caches' in window) {
+                const keys = await caches.keys();
+                for (const key of keys) {
+                    await caches.delete(key);
+                }
+            }
+        } catch (e) {
+            console.warn('Cache purge error during hard refresh:', e);
+        }
+        
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.set('reload', Date.now());
+        window.location.href = cleanUrl.toString();
+    });
+}
+
 /* ---------- Init ---------- */
 
 document.addEventListener('DOMContentLoaded', async () => {
