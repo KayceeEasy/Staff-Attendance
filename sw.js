@@ -32,8 +32,30 @@ self.addEventListener('activate', (event) => {
  */
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  // Bypass service worker completely for admin endpoints
   if (event.request.url.includes('/admin/')) return;
 
+  const url = new URL(event.request.url);
+  const isCodeAsset = url.pathname.endsWith('.css') || url.pathname.endsWith('.js') || url.pathname.endsWith('.html');
+
+  if (isCodeAsset) {
+    // Network-First for CSS/JS/HTML: fetch fresh code first, update cache, fallback to cache if offline
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.ok) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Cache-First for static images/media
   event.respondWith(
     caches.open(CACHE_NAME).then((cache) =>
       cache.match(event.request).then((cached) => {
@@ -46,12 +68,7 @@ self.addEventListener('fetch', (event) => {
           })
           .catch(() => null);
 
-        if (cached) {
-          networkFetch;
-          return cached;
-        }
-
-        return networkFetch.then((networkResponse) => networkResponse || caches.match('./index.html'));
+        return cached || networkFetch.then((networkResponse) => networkResponse || caches.match('./index.html'));
       })
     )
   );
