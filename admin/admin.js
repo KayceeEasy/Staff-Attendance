@@ -124,7 +124,7 @@ async function fetchHybridSchedule(weekStart, forceRefresh = false) {
     }
 }
 
-const AUTO_REFRESH_MS = 30000;
+const AUTO_REFRESH_MS = 60000;
 
 function startAutoRefresh() {
     clearAutoRefresh();

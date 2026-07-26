@@ -127,30 +127,28 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      {/* Native Status Bar Fix: Safe Top Inset so Clock & Icons Never Block App UI */}
+      {/* Immersive Full Screen Status Bar */}
       <StatusBar 
         barStyle="light-content" 
-        backgroundColor="#0f172a" 
-        translucent={false} 
-        hidden={false} 
+        backgroundColor="transparent" 
+        translucent={true} 
+        hidden={true} 
       />
-      <SafeAreaView style={styles.safeArea}>
-        <WebView
-          source={{ uri: PWA_URL }}
-          style={styles.webview}
-          userAgent="LifecardApp/1.0 (MobileNative)"
-          injectedJavaScript="window.isNativeMobileApp = true; true;"
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          geolocationEnabled={true}
-          startInLoadingState={true}
-          scalesPageToFit={true}
-          allowsInlineMediaPlayback={true}
-          onPermissionRequest={(event) => {
-            event.grant();
-          }}
-        />
-      </SafeAreaView>
+      <WebView
+        source={{ uri: PWA_URL }}
+        style={styles.webview}
+        userAgent="LifecardApp/1.0 (MobileNative)"
+        injectedJavaScript="window.isNativeMobileApp = true; true;"
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        geolocationEnabled={true}
+        startInLoadingState={true}
+        scalesPageToFit={true}
+        allowsInlineMediaPlayback={true}
+        onPermissionRequest={(event) => {
+          event.grant();
+        }}
+      />
     </View>
   );
 }
@@ -159,11 +157,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
-  },
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   webview: {
     flex: 1,
