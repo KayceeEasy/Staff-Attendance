@@ -54,7 +54,7 @@ TaskManager.defineTask(BACKGROUND_GEOFENCE_TASK, async ({ data: { eventType, reg
         await Notifications.scheduleNotificationAsync({
           content: {
             title: "📍 Arrived at Office!",
-            body: "You've entered the office area. Don't forget to sign in for today!",
+            body: "You've entered the office area. Click to sign in now!",
             data: { action: 'SIGN_IN' },
             channelId: 'default',
           },

@@ -883,7 +883,7 @@ function initRefreshButton() {
     const refreshBtn = document.getElementById('refresh-btn');
     if (!refreshBtn) return;
     refreshBtn.addEventListener('click', async () => {
-        showToast('Purging cache & fetching latest source updates...', 'default', 3000);
+        showToast('Refreshing...', 'default', 2000);
         try {
             if ('serviceWorker' in navigator) {
                 const registrations = await navigator.serviceWorker.getRegistrations();
