@@ -125,6 +125,26 @@ export default function App() {
     }
   };
 
+  const handleWebViewMessage = async (event) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data || '{}');
+      if (data.type === 'OFFLINE_SYNC_SUCCESS') {
+        const actionText = data.action === 'IN' ? 'Sign-In' : 'Sign-Out';
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "🟢 Offline Attendance Synced",
+            body: `Your ${actionText} record for ${data.name || 'staff'} has been updated live!`,
+            data: { action: data.action },
+            channelId: 'default',
+          },
+          trigger: null,
+        });
+      }
+    } catch (e) {
+      console.warn('WebView message error:', e);
+    }
+  };
+
   return (
     <View style={styles.container}>
       {/* Immersive Full Screen Status Bar */}
@@ -145,6 +165,7 @@ export default function App() {
         startInLoadingState={true}
         scalesPageToFit={true}
         allowsInlineMediaPlayback={true}
+        onMessage={handleWebViewMessage}
         onPermissionRequest={(event) => {
           event.grant();
         }}

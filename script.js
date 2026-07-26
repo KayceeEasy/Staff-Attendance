@@ -711,6 +711,34 @@ async function submit(action) {
     }
 }
 
+function triggerOfflineSyncNotification(name, action) {
+    const actionText = action === 'IN' ? 'Sign-In' : 'Sign-Out';
+    const title = '🟢 Offline Attendance Synced';
+    const body = `Your ${actionText} record for ${name} has been updated live!`;
+
+    if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
+        try {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'OFFLINE_SYNC_SUCCESS',
+                name,
+                action
+            }));
+        } catch (e) {
+            console.warn('Could not post offline sync message to WebView:', e);
+        }
+    }
+
+    if ('Notification' in window && Notification.permission === 'granted') {
+        try {
+            new Notification(title, { body });
+        } catch (e) {
+            console.warn('Web notification error:', e);
+        }
+    }
+
+    showToast(`✅ Offline ${actionText} synced live for ${name}!`, 'success', 5000);
+}
+
 async function handleAttendanceResponse(data) {
     const resultString = (data && data.raw) || (typeof data === 'string' ? data : null);
     if (!resultString) {
@@ -731,6 +759,7 @@ async function handleAttendanceResponse(data) {
         clearPendingAction(activeSubmission.action, activeSubmission.name);
 
         if (activeSubmission.pendingId) {
+            triggerOfflineSyncNotification(activeSubmission.name, activeSubmission.action);
             const updated = updateRecentEntryStatus(activeSubmission.pendingId, 'synced');
             if (!updated) {
                 saveRecentEntry({
