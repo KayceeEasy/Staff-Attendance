@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Lifecard Staff Attendance Portal with GPS verification",
+  "license": "UNLICENSED",
+  "private": true,
   "main": "server.js",
   "scripts": {
     "dev": "node server.js",

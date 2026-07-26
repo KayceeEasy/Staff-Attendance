@@ -13,11 +13,11 @@ let cachedWeekData = {};
 let currentWeekStart = null;
 let hybridScheduleCache = {};
 
-// Session timeout (5 min inactivity → 30s countdown)
+// Session timeout (2 hour sliding window inactivity → 60s countdown)
 let inactivityTimer = null;
 let sessionCountdownTimer = null;
-const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
-const SESSION_COUNTDOWN_MS = 30 * 1000;
+const SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+const SESSION_COUNTDOWN_MS = 60 * 1000;
 
 /* ---------- Auth ---------- */
 
@@ -1634,6 +1634,62 @@ async function runForgotPasswordFlow() {
    LOGIN
    ============================================================ */
 
+async function checkPendingDeviceTransferRequests() {
+    try {
+        const response = await callBackend({ mode: 'list-audit-logs', limit: 20 });
+        if (!response.ok || !Array.isArray(response.events)) return;
+
+        const pendingRequests = response.events.filter(e => 
+            (e.type === 'DEVICE_TRANSFER_REQUEST' || e.action === 'DEVICE_TRANSFER_REQUEST') && e.status === 'PENDING'
+        );
+
+        if (!pendingRequests.length) return;
+
+        const req = pendingRequests[0];
+        const dialog = document.createElement('div');
+        dialog.className = 'confirm-dialog-overlay active';
+        dialog.innerHTML = `
+            <div class="confirm-dialog-card" style="max-width: 440px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-color, #f8fafc);">📱 Device Transfer Request</h3>
+                    <button id="device-req-close-btn" style="background: none; border: none; color: var(--text-muted, #94a3b8); font-size: 1.2rem; cursor: pointer; padding: 2px 6px;">✕</button>
+                </div>
+                <p style="font-size: 0.88rem; color: var(--text-color, #cbd5e1); line-height: 1.5; margin-bottom: 16px;">
+                    <strong>${escapeHtml(req.staffName || req.name || 'A staff member')}</strong> has requested to bind their attendance account to a new phone.
+                    <br><small style="color: var(--text-muted, #94a3b8);">Requested at: ${escapeHtml(req.time || 'Recently')}</small>
+                </p>
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button id="device-req-reject-btn" class="admin-btn secondary small danger" type="button">❌ Reject</button>
+                    <button id="device-req-approve-btn" class="admin-btn small" type="button">✅ Approve Transfer</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(dialog);
+
+        document.getElementById('device-req-close-btn').addEventListener('click', () => dialog.remove());
+        
+        document.getElementById('device-req-reject-btn').addEventListener('click', async () => {
+            showToast('Transfer request rejected.', 'info');
+            dialog.remove();
+        });
+
+        document.getElementById('device-req-approve-btn').addEventListener('click', async () => {
+            try {
+                const res = await handleResetStaffLock(req.staffName || req.name);
+                showToast('Device transfer approved and lock reset!', 'success');
+            } catch (e) {
+                showToast('Could not process approval.', 'error');
+            } finally {
+                dialog.remove();
+            }
+        });
+
+    } catch (err) {
+        console.warn('Could not check pending device transfer requests:', err);
+    }
+}
+
 function setLoginLoading(isLoading) {
     const loginBtn = document.getElementById('admin-login-btn');
     const form = document.getElementById('admin-login-form');
@@ -1676,6 +1732,7 @@ async function handleAdminLogin(event) {
             const hero = document.querySelector('.admin-hero');
             if (hero) hero.style.display = 'none';
             renderAdminPanel();
+            checkPendingDeviceTransferRequests();
             resetInactivityTimer();
             
             document.addEventListener('click', resetInactivityTimer);

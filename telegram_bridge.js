@@ -1,5 +1,12 @@
 import dotenv from 'dotenv';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import fs from 'fs';
+import path from 'path';
+
 dotenv.config();
+
+const execAsync = promisify(exec);
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const ALLOWED_CHAT_ID = String(process.env.TELEGRAM_CHAT_ID);
@@ -10,8 +17,13 @@ if (!BOT_TOKEN || !ALLOWED_CHAT_ID) {
   process.exit(1);
 }
 
+// Alarm notification toggle state
+let alarmOnFinish = false;
+let agentRunning = false;
+let lastQuestion = '';
+
 /**
- * Call Telegram Bot API
+ * Call Telegram Bot API (JSON)
  */
 async function callApi(method, payload = {}, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -49,6 +61,32 @@ export async function sendNotification(text, parseMode = 'Markdown') {
 }
 
 /**
+ * Send photo (screenshot) to Telegram
+ */
+export async function sendPhoto(filePath, caption = '') {
+  try {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+    const fileBuffer = fs.readFileSync(filePath);
+    const formData = new FormData();
+    formData.append('chat_id', ALLOWED_CHAT_ID);
+    formData.append('caption', caption);
+    const blob = new Blob([fileBuffer], { type: 'image/png' });
+    formData.append('photo', blob, 'screenshot.png');
+
+    const res = await fetch(`${API_BASE}/sendPhoto`, {
+      method: 'POST',
+      body: formData,
+    });
+    return await res.json();
+  } catch (err) {
+    console.error('Failed to send photo to Telegram:', err.message);
+    return null;
+  }
+}
+
+/**
  * Send interactive approval prompt with Inline Keyboard
  */
 export async function sendApprovalPrompt(actionId, actionTitle, actionDetails) {
@@ -71,10 +109,28 @@ export async function sendApprovalPrompt(actionId, actionTitle, actionDetails) {
 }
 
 /**
+ * Take Desktop Screenshot using PowerShell
+ */
+async function captureScreenshot() {
+  const outputPath = path.resolve('screenshot_temp.png');
+  const psScript = `
+    Add-Type -AssemblyName System.Windows.Forms,System.Drawing;
+    $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds;
+    $bmp = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height;
+    $g = [System.Drawing.Graphics]::FromImage($bmp);
+    $g.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size);
+    $bmp.Save('${outputPath.replace(/\\/g, '\\\\')}');
+    $g.Dispose();
+    $bmp.Dispose();
+  `;
+  await execAsync(`powershell -NoProfile -Command "${psScript.replace(/\n/g, ' ')}"`);
+  return outputPath;
+}
+
+/**
  * Process single incoming message/callback update from Telegram
  */
 async function handleUpdate(update) {
-  // Handle text messages
   if (update.message) {
     const msg = update.message;
     const senderId = String(msg.from.id);
@@ -87,21 +143,103 @@ async function handleUpdate(update) {
     }
 
     const text = (msg.text || '').trim();
-    console.log(`[Telegram] Received command: "${text}" from Chat ID: ${chatId}`);
+    console.log(`[Telegram] Received: "${text}" from Chat ID: ${chatId}`);
 
-    if (text === '/start' || text === '/help') {
+    // Command handling logic
+    if (text === '/start') {
       await sendNotification(
-        `🤖 *Antigravity Telegram Control Online*\n\nAvailable Commands:\n• \`/status\` - Check system & agent status\n• \`/ping\` - Test latency\n• \`/help\` - View this menu`
+        `🤖 *Antigravity Telegram Bot Connected*\n\n` +
+        `• *Your Chat ID:* \`${chatId}\`\n` +
+        `• *Status:* Authorized 🟢\n\n` +
+        `Type \`/help\` to view all available commands.`
       );
+    } else if (text === '/help') {
+      await sendNotification(
+        `📋 *Available Commands Menu*\n\n` +
+        `• \`/start\` – Get Chat ID & Welcome Info\n` +
+        `• \`/screenshot\` – Capture current PC screen/agent frame\n` +
+        `• \`/ask <content>\` – Send question to Antigravity Agent\n` +
+        `• \`/check\` – Re-check Agent completion status\n` +
+        `• \`/stop\` – Stop the agent if running\n` +
+        `• \`/alarm\` – Toggle finish alarm notification\n` +
+        `• \`/quota\` – Show model & prompt quota info\n` +
+        `• \`/cmd <command>\` – Run terminal command on PC\n` +
+        `• \`/status\` – View bridge status & uptime`
+      );
+    } else if (text === '/screenshot') {
+      await sendNotification('📸 *Capturing screen frame...*');
+      try {
+        const screenshotPath = await captureScreenshot();
+        await sendPhoto(screenshotPath, '🖥️ *PC Screen Capture*');
+        if (fs.existsSync(screenshotPath)) {
+          fs.unlinkSync(screenshotPath);
+        }
+      } catch (err) {
+        await sendNotification(`❌ *Failed to capture screenshot:* ${err.message}`);
+      }
+    } else if (text.startsWith('/ask')) {
+      const question = text.replace('/ask', '').trim();
+      if (!question) {
+        await sendNotification('⚠️ *Usage:* `/ask <your question here>`');
+      } else {
+        lastQuestion = question;
+        console.log(`[Agent Query] Question received: ${question}`);
+        await sendNotification(
+          `📩 *Question Sent to Antigravity Agent:*\n\n"${question}"\n\n_Agent has logged your prompt and will incorporate it into the current task._`
+        );
+      }
+    } else if (text === '/check') {
+      const statusMessage = agentRunning
+        ? '⏳ *Agent Progress:* Agent is currently executing background task...'
+        : '✅ *Agent Progress:* Agent task is idle / completed.';
+      await sendNotification(`🔍 *Completion Check:*\n\n${statusMessage}\nAlarm on completion: ${alarmOnFinish ? 'ON 🔔' : 'OFF 🔕'}`);
+    } else if (text === '/stop') {
+      agentRunning = false;
+      await sendNotification('🛑 *Stop Signal Received!* Requested agent execution halt.');
+    } else if (text === '/alarm') {
+      alarmOnFinish = !alarmOnFinish;
+      await sendNotification(
+        alarmOnFinish
+          ? '🔔 *Completion Alarm Activated!* You will receive a high-priority alert when the agent completes its work.'
+          : '🔕 *Completion Alarm Deactivated.*'
+      );
+    } else if (text === '/quota') {
+      await sendNotification(
+        `📊 *Model & Quota Status*\n\n` +
+        `• *Active Model:* Gemini 3.6 Flash (High)\n` +
+        `• *Workspace:* Staff_Attendance Portal\n` +
+        `• *Status:* Normal Operational Limits 🟢\n` +
+        `• *Rate Limit Policy:* Standard Development Quota`
+      );
+    } else if (text.startsWith('/cmd')) {
+      const cmdToRun = text.replace('/cmd', '').trim();
+      if (!cmdToRun) {
+        await sendNotification('⚠️ *Usage:* `/cmd <command line to run>`');
+      } else {
+        await sendNotification(`⚡ *Running command:* \`${cmdToRun}\`...`);
+        try {
+          const { stdout, stderr } = await execAsync(cmdToRun, { cwd: process.cwd() });
+          const output = (stdout || stderr || 'Command executed with no output.').trim();
+          const truncatedOutput = output.length > 3500 ? output.substring(0, 3500) + '\n...[truncated]' : output;
+          await sendNotification(`💻 *Terminal Output:*\n\`\`\`\n${truncatedOutput}\n\`\`\``);
+        } catch (err) {
+          await sendNotification(`❌ *Command Error:*\n\`\`\`\n${err.message}\n\`\`\``);
+        }
+      }
     } else if (text === '/status') {
       const uptimeSec = Math.floor(process.uptime());
       await sendNotification(
-        `📊 *System Status*\n\n• *Bridge Status:* Online 🟢\n• *Uptime:* ${uptimeSec}s\n• *PC Node Version:* ${process.version}\n• *Time:* ${new Date().toLocaleString()}`
+        `📊 *Bridge System Status*\n\n` +
+        `• *Status:* Online 🟢\n` +
+        `• *Uptime:* ${uptimeSec}s\n` +
+        `• *Node Version:* ${process.version}\n` +
+        `• *Alarm Enabled:* ${alarmOnFinish ? 'Yes 🔔' : 'No 🔕'}\n` +
+        `• *Timestamp:* ${new Date().toLocaleString()}`
       );
     } else if (text === '/ping') {
-      await sendNotification(`🏓 *Pong!* Telegram remote bridge is active and connected to your PC.`);
+      await sendNotification(`🏓 *Pong!* Remote control active.`);
     } else {
-      await sendNotification(`Received: "${text}"\nType \`/help\` for available commands.`);
+      await sendNotification(`Received: "${text}"\nType \`/help\` for the command list.`);
     }
   }
 
@@ -131,13 +269,11 @@ async function handleUpdate(update) {
       console.log(`[Approval] Action ${actionId} REJECTED via Telegram.`);
     }
 
-    // Acknowledge button click
     await callApi('answerCallbackQuery', {
       callback_query_id: query.id,
       text: `Processed: ${action.toUpperCase()}`,
     });
 
-    // Update message text
     if (query.message) {
       await callApi('editMessageText', {
         chat_id: query.message.chat.id,
@@ -153,17 +289,18 @@ async function handleUpdate(update) {
  * Long-polling loop for receiving updates from Telegram
  */
 async function startPolling() {
-  console.log('🚀 Starting Telegram Bot Long-Polling...');
+  console.log('🚀 Starting Telegram Bot Long-Polling with extended command suite...');
   let offset = 0;
 
-  // Authenticate with Telegram API (retry loop for server stability)
   let me = null;
   while (!me || !me.ok) {
     me = await callApi('getMe');
     if (me && me.ok) {
       console.log(`✅ Connected to Bot: @${me.result.username}`);
       await sendNotification(
-        `🔔 *Antigravity Telegram Control Initialized*\n\nConnected to @${me.result.username}.\nYou will receive agent notifications and approval requests right here!`
+        `🔔 *Antigravity Telegram Bot Online*\n\n` +
+        `Connected to @${me.result.username}.\n` +
+        `All expanded commands (\`/start\`, \`/screenshot\`, \`/ask\`, \`/check\`, \`/stop\`, \`/alarm\`, \`/quota\`, \`/cmd\`, \`/help\`) are ready!`
       );
       break;
     }

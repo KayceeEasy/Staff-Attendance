@@ -11,7 +11,11 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SCRIPT_URL = process.env.GAS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwKXksPAcj-dar7BkC_lAoGsVM-aF0BT81lkgToafv0natBxpb1S8iI0KD8q0NJemwksw/exec';
+const SCRIPT_URL = process.env.GAS_SCRIPT_URL;
+
+if (!SCRIPT_URL) {
+    console.warn('⚠️ WARNING: process.env.GAS_SCRIPT_URL is not set in .env file!');
+}
 
 // Security Headers
 app.use(helmet({
