@@ -415,25 +415,12 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
 .skip-link:focus { top: 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
 
-@media (max-width: 768px) {
-    body { padding: 8px 6px; align-items: flex-start; min-height: 100dvh; }
-    .card { width: 100%; max-width: 100%; border-radius: var(--radius-lg); padding: 1.2rem 1rem calc(1rem + env(safe-area-inset-bottom)); margin: 0 auto; box-sizing: border-box; }
-    .admin-card { width: 100%; max-width: 100%; border-radius: var(--radius-lg); padding: 0.85rem; margin: 0 auto; box-sizing: border-box; }
+@media (max-width: 600px) {
+    body { padding: 12px 10px; align-items: flex-start; min-height: 100dvh; }
+    .card { width: 100%; max-width: 100%; border-radius: var(--radius-lg); padding: 1.2rem 1rem calc(1rem + env(safe-area-inset-bottom)); margin: 0 auto; }
+    .admin-card { width: 100%; max-width: 100%; border-radius: var(--radius-lg); padding: 1rem; margin: 0 auto; }
     .dialog-overlay { align-items: flex-end; padding: 0; }
     .dialog-box { border-radius: var(--radius-xl) var(--radius-xl) 0 0; width: 100%; max-width: 100%; margin: 0; }
-    .admin-hero { flex-direction: column; text-align: center; gap: 8px; }
-    .dashboard-header { flex-direction: column; align-items: stretch; gap: 10px; }
-    .week-navigator { width: 100%; justify-content: space-between; }
-    .dashboard-actions { width: 100%; justify-content: space-between; }
-    .today-attendance-summary { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-    .analytics-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-    .config-cards { grid-template-columns: 1fr; }
-    .admin-tabs { padding: 4px; gap: 3px; width: 100%; max-width: 100%; box-sizing: border-box; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    .tab-btn { padding: 8px 11px; font-size: 0.78rem; flex-shrink: 0; white-space: nowrap; }
-    .staff-list-container, .matrix-wrapper, .analytics-table-wrapper, .logs-table-wrapper { width: 100%; max-width: 100%; box-sizing: border-box; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--radius); }
-    .staff-header-row, .staff-row { min-width: 520px; box-sizing: border-box; }
-    .analytics-table { min-width: 600px; box-sizing: border-box; }
-    .logs-table { min-width: 560px; box-sizing: border-box; }
 }
 
 /* ─── FAQ TRIGGER & MODAL ─── */
@@ -790,26 +777,6 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
     display: flex;
     gap: 10px;
     margin-top: 14px;
-.refresh-label {
-    font-size: 0.76rem;
-    font-weight: 600;
-    color: var(--muted);
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-.live-pulse-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #10b981;
-    box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
-    animation: livePulse 2s infinite ease-in-out;
-}
-@keyframes livePulse {
-    0% { transform: scale(0.9); opacity: 0.7; }
-    50% { transform: scale(1.25); opacity: 1; }
-    100% { transform: scale(0.9); opacity: 0.7; }
 }
 
 /* ─── LOGS TABLE & FILTERS ─── */
@@ -1126,3 +1093,25 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
 .account-card > div { flex: 1; }
 .account-icon { font-size: 1.4rem; }
 .config-tools { margin-top: 1.5rem; display: flex; gap: 10px; flex-wrap: wrap; }
+
+.refresh-label {
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.live-pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+    animation: livePulse 2s infinite ease-in-out;
+}
+@keyframes livePulse {
+    0% { transform: scale(0.9); opacity: 0.7; }
+    50% { transform: scale(1.25); opacity: 1; }
+    100% { transform: scale(0.9); opacity: 0.7; }
+}
