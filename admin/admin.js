@@ -13,10 +13,10 @@ let cachedWeekData = {};
 let currentWeekStart = null;
 let hybridScheduleCache = {};
 
-// Session timeout (2 hour sliding window inactivity → 60s countdown)
+// Session timeout (15 min idle sliding window inactivity → 60s countdown)
 let inactivityTimer = null;
 let sessionCountdownTimer = null;
-const SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+const SESSION_TIMEOUT_MS = 15 * 60 * 1000;
 const SESSION_COUNTDOWN_MS = 60 * 1000;
 
 /* ---------- Auth ---------- */
@@ -1388,7 +1388,7 @@ function renderAdminPanel() {
                 </div>
                 <div class="account-card">
                     <span class="account-icon">🚪</span>
-                    <div><strong>Logout</strong><p class="admin-intro">End your admin session (auto-timeout after 2 hours)</p></div>
+                    <div><strong>Logout</strong><p class="admin-intro">End your admin session (auto-timeout after 15 min idle)</p></div>
                     <button id="logout-btn" class="admin-btn secondary small danger" type="button">Logout</button>
                 </div>
             </div>
