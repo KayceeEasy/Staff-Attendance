@@ -159,9 +159,9 @@ function normalizeBackendResponse(data) {
         return normalized;
     }
     if (typeof data === 'string') {
-        const lower = data.toLowerCase();
-        const negative = lower.includes('denied') || lower.includes('block') || lower.includes('unauthorized');
-        return { ok: !negative, allowed: !negative, message: data, raw: data };
+        const parts = data.split('|');
+        const isSuccess = ['WELCOME', 'LATE', 'NORMAL'].includes(parts[0]);
+        return { ok: isSuccess, allowed: isSuccess, message: parts[1] || data, raw: data };
     }
     return {
         ok: data.ok === true || data.allowed === true,

@@ -750,11 +750,23 @@ async function handleAttendanceResponse(data) {
     }
 
     const [status, text, distanceStr] = resultString.split('|');
-    setMessage(text || 'Action recorded.', (status === 'WELCOME' || status === 'NORMAL') ? 'msg-welcome' : 'msg-late');
-    playWindowsSound(status === 'WELCOME' || status === 'NORMAL');
-    updateDistanceLabel(distanceStr);
+    const isSuccess = ['WELCOME', 'NORMAL', 'LATE'].includes(status);
 
-    if (activeSubmission && status !== 'BLOCK') {
+    if (isSuccess) {
+        setMessage(text || 'Action recorded.', (status === 'WELCOME' || status === 'NORMAL') ? 'msg-welcome' : 'msg-late');
+        playWindowsSound(status === 'WELCOME' || status === 'NORMAL');
+    } else {
+        setMessage(status || 'Action denied.', 'msg-late');
+        playWindowsSound(false);
+    }
+
+    let finalDistance = distanceStr;
+    if (!isSuccess && text && !isNaN(parseFloat(text))) {
+        finalDistance = text;
+    }
+    updateDistanceLabel(finalDistance);
+
+    if (activeSubmission && isSuccess) {
         rememberLastAction(activeSubmission.action, activeSubmission.name);
         clearPendingAction(activeSubmission.action, activeSubmission.name);
 
@@ -794,12 +806,12 @@ async function handleAttendanceResponse(data) {
         }
 
         activeSubmission = null;
-    } else if (activeSubmission && activeSubmission.pendingId && status === 'BLOCK') {
+    } else if (activeSubmission && activeSubmission.pendingId && !isSuccess) {
         clearPendingAction(activeSubmission.action, activeSubmission.name);
         updateRecentEntryStatus(activeSubmission.pendingId, 'failed');
         removeQueuedSubmission(activeSubmission.pendingId);
         activeSubmission = null;
-    } else if (activeSubmission && status === 'BLOCK') {
+    } else if (activeSubmission && !isSuccess) {
         activeSubmission = null;
     }
 

@@ -7,3 +7,6 @@ node_modules/
 .env.local
 
 *.gs
+
+mobile_app/.expo/
+mobile_app/node_modules/
