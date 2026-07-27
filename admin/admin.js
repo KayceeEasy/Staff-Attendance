@@ -1,3 +1,5 @@
+function setHtmlIfChanged(element, newHtml) { if (!element) return false; if (element.innerHTML !== newHtml) { element.innerHTML = newHtml; return true; } return false; }
+
 /**
  * Admin console logic.
  * Tabbed interface with weekly navigation, session timeout, hybrid schedule.
@@ -151,11 +153,11 @@ function refreshCurrentTab() {
     if (activeTab === 'dashboard') {
         loadWeekData(true);
     } else if (activeTab === 'logs') {
-        fetchLogsTabRecords();
+        loadLogsViewer(true);
     } else if (activeTab === 'analytics') {
-        loadAnalytics();
+        loadAnalytics(null, null, null, true);
     } else if (activeTab === 'staff') {
-        loadStaffList();
+        loadStaffList(true);
     }
 }
 
@@ -292,7 +294,17 @@ function navigateWeek(direction) {
 
 function parseDmyDate(str) {
     const parts = String(str || '').split('/').map(p => p.trim());
-    return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+    if (parts.length === 3) {
+        return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+    }
+    return null;
+}
+
+function isoDateToDdMmYyyy(isoStr) {
+    if (!isoStr) return '';
+    const parts = isoStr.split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return isoStr;
 }
 
 function normalizeDateKey(value) {
@@ -367,21 +379,188 @@ async function loadConfigValues() {
     }
 }
 
-/* ---------- Helper Functions ---------- */
-
-function isoDateToDdMmYyyy(isoDate) {
-    if (!isoDate) return '';
-    const [yyyy, mm, dd] = isoDate.split('-');
-    if (!yyyy || !mm || !dd) return '';
-    return `${dd}/${mm}/${yyyy}`;
+function maskEmail(email) {
+    if (!email || typeof email !== 'string' || !email.includes('@')) return 'Not configured';
+    const parts = email.split('@');
+    const user = parts[0];
+    const domain = parts[1];
+    const maskedUser = user.length <= 2 ? user[0] + '***' : user[0] + '***' + user[user.length - 1];
+    const maskedDomain = domain.length <= 4 ? domain : domain[0] + '***' + domain.slice(domain.lastIndexOf('.'));
+    return `${maskedUser}@${maskedDomain}`;
 }
 
-function formatMinutesAsTime(totalMinutes) {
-    const hh = Math.floor(totalMinutes / 60);
-    const mm = totalMinutes % 60;
-    const period = hh >= 12 ? 'PM' : 'AM';
-    const displayHour = hh % 12 === 0 ? 12 : hh % 12;
-    return `${displayHour}:${String(mm).padStart(2, '0')} ${period}`;
+async function loadRecoveryEmailDisplay() {
+    const el = document.getElementById('recovery-email-display');
+    if (!el) return;
+    try {
+        const res = await callBackend({ mode: 'get-recovery-email' });
+        if (res && res.ok && res.email) {
+            el.textContent = `Active: ${maskEmail(res.email)}`;
+        } else {
+            el.textContent = 'Not configured';
+        }
+    } catch (e) {
+        el.textContent = 'Active: (Configured)';
+    }
+}
+
+async function loadAdminUsersList() {
+    const section = document.getElementById('admin-user-management-section');
+    const container = document.getElementById('admin-users-list');
+    if (!container) return;
+
+    const isSuper = sessionStorage.getItem('is_superuser') === 'true';
+    const roleTier = sessionStorage.getItem('admin_role_tier') || (isSuper ? 'developer' : 'admin');
+
+    // Sub-admins and Team Leads cannot manage other admins
+    if (roleTier === 'sub_admin' || roleTier === 'team_lead') {
+        if (section) section.style.display = 'none';
+        return;
+    }
+
+    try {
+        const res = await callBackend({ mode: 'list-admin-users' });
+        let users = (res && res.ok && Array.isArray(res.users)) ? res.users : [];
+
+        if (!users.length) {
+            users = [
+                { username: currentAdminUsername || 'admin', role: isSuper ? 'developer' : 'admin' }
+            ];
+        }
+
+        const roleLabels = {
+            developer: '👑 Superuser',
+            admin: '🏢 Super Admin',
+            sub_admin: '🛡️ Sub-Admin',
+            team_lead: '👥 Team Lead'
+        };
+
+        const rowsHtml = users.map(u => {
+            // Hide developer superuser row from non-developer admins
+            if (u.role === 'developer' && !isSuper) return '';
+            
+            const isSelf = u.username === currentAdminUsername;
+            const isDevAccount = u.role === 'developer';
+            const canManage = !isSelf && !isDevAccount;
+
+            return `
+                <div class="staff-card" style="margin-bottom:8px; padding:12px 14px;">
+                    <div class="staff-info" style="flex:1;">
+                        <strong>${escapeHtml(u.username)}</strong>
+                        <span class="staff-device" style="margin-left:10px; font-weight:600; font-size:0.78rem;">${roleLabels[u.role] || u.role}</span>
+                        ${isSelf ? '<span style="margin-left:6px; font-size:0.7rem; color:var(--primary); font-weight:600;">(You)</span>' : ''}
+                    </div>
+                    ${canManage ? `
+                        <div class="staff-actions" style="display:flex; gap:6px;">
+                            <button class="admin-btn secondary small" type="button" data-reset-admin-pw="${escapeHtml(u.username)}" title="Reset Password">🔑 Reset</button>
+                            <button class="admin-btn secondary small danger" type="button" data-remove-admin="${escapeHtml(u.username)}" title="Remove Admin">🗑 Remove</button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = rowsHtml || '<div class="staff-list-state">No delegated admin users.</div>';
+
+        // Bind remove buttons
+        container.querySelectorAll('[data-remove-admin]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const target = btn.getAttribute('data-remove-admin');
+                const confirmed = await confirmDialog(`Remove admin privileges for "${target}"? This cannot be undone.`, { danger: true, confirmLabel: 'Remove' });
+                if (confirmed) {
+                    const res = await callBackend({ mode: 'remove-admin-user', targetUsername: target });
+                    showToast(res.message || 'Admin user removed.', res.ok ? 'success' : 'error');
+                    if (res.ok) loadAdminUsersList();
+                }
+            });
+        });
+
+        // Bind reset password buttons
+        container.querySelectorAll('[data-reset-admin-pw]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const target = btn.getAttribute('data-reset-admin-pw');
+                const result = await showInlineDialog({
+                    title: `Reset Password: ${target}`,
+                    message: 'Enter a new password for this admin user.',
+                    fields: [
+                        { placeholder: 'New password', type: 'password', autocomplete: 'new-password' },
+                        { placeholder: 'Confirm password', type: 'password', autocomplete: 'new-password' }
+                    ],
+                    confirmLabel: 'Reset Password'
+                });
+                if (!result) return;
+                if (result[0] !== result[1]) {
+                    showToast('Passwords do not match.', 'error');
+                    return;
+                }
+                const passHash = await sha256Hex(result[0]);
+                const res = await callBackend({ mode: 'admin-reset-user-password', targetUsername: target, newPasswordHash: passHash });
+                showToast(res.message || 'Password reset successfully.', res.ok ? 'success' : 'error');
+            });
+        });
+    } catch (e) {
+        container.innerHTML = '<div class="staff-list-state">Default Super Admin configured.</div>';
+    }
+}
+
+async function handleAddAdminUser() {
+    const isSuper = sessionStorage.getItem('is_superuser') === 'true';
+    
+    // Build stealthed role options — Superuser can create other Superusers
+    let roleOptionsHtml = '';
+    if (isSuper) {
+        roleOptionsHtml = `
+            <option value="developer">👑 Superuser</option>
+            <option value="admin" selected>🏢 Super Admin</option>
+            <option value="sub_admin">🛡️ Sub-Admin</option>
+            <option value="team_lead">👥 Team Lead</option>
+        `;
+    } else {
+        // Regular admin can only create lower tiers
+        roleOptionsHtml = `
+            <option value="sub_admin" selected>🛡️ Sub-Admin</option>
+            <option value="team_lead">👥 Team Lead</option>
+        `;
+    }
+
+    const customHtml = `
+        <div style="display:flex; flex-direction:column; gap:10px; text-align:left; margin-top:8px;">
+            <label style="font-size:0.82rem; font-weight:600; color:var(--text);">Permission Tier</label>
+            <select id="add-admin-role-select" style="padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.88rem;">
+                ${roleOptionsHtml}
+            </select>
+        </div>
+    `;
+
+    const result = await showInlineDialog({
+        title: 'Add Admin User',
+        message: 'Create a new admin account for this tenant.',
+        fields: [
+            { placeholder: 'Username (e.g. john_hr)' },
+            { placeholder: 'Password', type: 'password' }
+        ],
+        customContentHtml: customHtml,
+        confirmLabel: 'Create Admin'
+    });
+
+    if (!result || !result[0] || !result[1]) return;
+    const newUsername = result[0].trim();
+    const newPass = result[1];
+
+    // Read the role from the captured custom select value (saved by showInlineDialog before overlay removal)
+    let selectedRole = window['_dialogVal_add-admin-role-select'] || (isSuper ? 'admin' : 'sub_admin');
+    delete window['_dialogVal_add-admin-role-select'];
+
+    const passHash = await sha256Hex(newPass);
+    const res = await callBackend({
+        mode: 'add-admin-user',
+        newUsername,
+        passwordHash: passHash,
+        role: selectedRole
+    });
+
+    showToast(res.message || 'Admin user created successfully!', res.ok ? 'success' : 'error');
+    if (res.ok) loadAdminUsersList();
 }
 
 /* ---------- Export Functions ---------- */
@@ -485,10 +664,34 @@ async function loadWeekData(isSilent = false) {
     
     const weekLabel = document.getElementById('week-label');
     if (weekLabel) weekLabel.textContent = `📅 ${mondayStr} - ${fridayStr}`;
+
+    const weekDays = [];
+    for (let i = 0; i < 5; i++) {
+        const day = new Date(monday);
+        day.setDate(monday.getDate() + i);
+        weekDays.push(formatDateDMY(day));
+    }
     
-    if (!isSilent) {
-        document.getElementById('today-attendance-list').innerHTML = '<div class="staff-list-state">Loading...</div>';
-        document.getElementById('attendance-matrix').innerHTML = '<div class="staff-list-state">Loading...</div>';
+    // Check in-memory & localStorage cache for 0ms instant rendering
+    if (!cachedWeekData[weekBeingLoaded]) {
+        try {
+            const stored = localStorage.getItem('admin_cache_week_' + weekBeingLoaded);
+            if (stored) cachedWeekData[weekBeingLoaded] = JSON.parse(stored);
+        } catch (e) {}
+    }
+
+    if (cachedWeekData[weekBeingLoaded]) {
+        renderWeekOverview(cachedWeekData[weekBeingLoaded].logs, cachedWeekData[weekBeingLoaded].schedule, weekDays);
+        renderAttendanceMatrix(cachedWeekData[weekBeingLoaded].logs, cachedWeekData[weekBeingLoaded].schedule, weekDays);
+    } else if (!isSilent) {
+        document.getElementById('today-attendance-list').innerHTML = `
+            <div class="summary-stat-card skeleton-box skeleton-card"></div>
+        `;
+        document.getElementById('attendance-matrix').innerHTML = `
+            <div class="skeleton-box skeleton-row"></div>
+            <div class="skeleton-box skeleton-row"></div>
+            <div class="skeleton-box skeleton-row"></div>
+        `;
     }
     
     try {
@@ -497,6 +700,7 @@ async function loadWeekData(isSilent = false) {
         const schedule = await fetchHybridSchedule(weekBeingLoaded, false);
         
         cachedWeekData[weekBeingLoaded] = { logs, schedule };
+        try { localStorage.setItem('admin_cache_week_' + weekBeingLoaded, JSON.stringify({ logs, schedule })); } catch (e) {}
         
         const weekDays = [];
         for (let i = 0; i < 5; i++) {
@@ -556,7 +760,7 @@ function renderWeekOverview(logs, schedule, weekDays) {
     const signedIn = logs.filter(s => String(s.action || '').trim().toUpperCase() === 'IN').length;
     const lateCount = logs.filter(s => normalizeAttendanceStatus(s.status) === 'late' && String(s.action || '').trim().toUpperCase() === 'IN').length;
     
-    host.innerHTML = `
+    setHtmlIfChanged(host, `
         <div class="today-attendance-summary">
             <div class="summary-stat-card">
                 <span class="stat-number">${logs.length}</span>
@@ -571,7 +775,7 @@ function renderWeekOverview(logs, schedule, weekDays) {
                 <span class="stat-label">Late</span>
             </div>
         </div>
-    `;
+    `);
 }
 
 function renderAttendanceMatrix(logs, schedule, weekDays) {
@@ -620,7 +824,7 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
         });
     });
     
-    host.innerHTML = `
+    setHtmlIfChanged(host, `
         <div class="matrix-wrapper">
             <table class="attendance-matrix">
                 <thead>
@@ -641,14 +845,14 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
                                 let status = '';
                                 let statusClass = '';
 
-                                if (cell.isWfh) {
-                                    status = '<span class="matrix-home-emoji" aria-label="Home">🏠</span>';
-                                    statusClass = 'matrix-wfh';
-                                } else if (inLog) {
+                                if (inLog) {
                                     const isLate = inLog.status && String(inLog.status).trim().toUpperCase() === 'LATE';
                                     status = `✓ In<br>${escapeHtml(inLog.time || '')}`;
                                     if (isLate) status += '<br>⚠ Late';
                                     statusClass = isLate ? 'matrix-late' : 'matrix-in';
+                                } else if (cell.isWfh) {
+                                    status = '<span class="matrix-home-emoji" aria-label="Home">🏠</span>';
+                                    statusClass = 'matrix-wfh';
                                 } else {
                                     status = '—';
                                     statusClass = 'matrix-absent';
@@ -667,7 +871,7 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
             <span class="legend-item"><span class="legend-dot matrix-wfh"></span> Home</span>
             <span class="legend-item"><span class="legend-dot matrix-absent"></span> Absent</span>
         </div>
-    `;
+    `);
 
     if (window.location && window.location.hash === '#debug-schedule') {
         try {
@@ -729,7 +933,7 @@ function renderStaffList(staff) {
         </div>
     `).join('');
 
-    staffList.innerHTML = headerHtml + rowsHtml;
+    if (!setHtmlIfChanged(staffList, headerHtml + rowsHtml)) return;
 
     staffList.querySelectorAll('[data-reset-name]').forEach((button) => {
         button.addEventListener('click', () => handleResetStaffLock(button.getAttribute('data-reset-name')));
@@ -739,19 +943,46 @@ function renderStaffList(staff) {
     });
 }
 
-async function loadStaffList() {
+async function loadStaffList(isSilent = false) {
     const staffList = document.getElementById('staff-list');
-    if (staffList) staffList.innerHTML = '<div class="staff-list-state">Loading staff list...</div>';
+    
+    // Check in-memory & localStorage cache for 0ms instant rendering
+    if (allStaffList && allStaffList.length) {
+        renderStaffList(allStaffList);
+        populateStaffFilterDropdowns(allStaffList);
+    } else {
+        try {
+            const stored = localStorage.getItem('admin_cache_staff');
+            if (stored) {
+                allStaffList = JSON.parse(stored);
+                renderStaffList(allStaffList);
+                populateStaffFilterDropdowns(allStaffList);
+            }
+        } catch (e) {}
+    }
+
+    if ((!allStaffList || !allStaffList.length) && staffList && !isSilent) {
+        staffList.innerHTML = `
+            <div class="skeleton-box skeleton-row"></div>
+            <div class="skeleton-box skeleton-row"></div>
+            <div class="skeleton-box skeleton-row"></div>
+        `;
+    }
+
     try {
         const response = await listStaff();
         if (response.ok && response.staff) {
+            allStaffList = response.staff;
+            try { localStorage.setItem('admin_cache_staff', JSON.stringify(response.staff)); } catch (e) {}
             renderStaffList(response.staff);
             populateStaffFilterDropdowns(response.staff);
-        } else {
+        } else if (!allStaffList || !allStaffList.length) {
             if (staffList) staffList.innerHTML = `<div class="staff-list-state">${escapeHtml(response.message || 'Could not load staff list.')}</div>`;
         }
     } catch (error) {
-        if (staffList) staffList.innerHTML = '<div class="staff-list-state">Failed to reach the server.</div>';
+        if ((!allStaffList || !allStaffList.length) && staffList && !isSilent) {
+            staffList.innerHTML = '<div class="staff-list-state">Failed to reach the server.</div>';
+        }
     }
 }
 
@@ -820,9 +1051,29 @@ let logsAllRecords = [];
 let logsCurrentPage = 1;
 let logsPageSize = 20;
 
-async function loadLogsViewer() {
+async function loadLogsViewer(isSilent = false) {
     const host = document.getElementById('logs-list');
-    if (host) host.innerHTML = '<div class="staff-list-state">Loading records...</div>';
+    
+    // Check in-memory & localStorage cache for 0ms instant rendering
+    if (logsAllRecords && logsAllRecords.length) {
+        renderLogsTable();
+    } else {
+        try {
+            const stored = localStorage.getItem('admin_cache_logs');
+            if (stored) {
+                logsAllRecords = JSON.parse(stored);
+                renderLogsTable();
+            }
+        } catch (e) {}
+    }
+
+    if ((!logsAllRecords || !logsAllRecords.length) && host && !isSilent) {
+        host.innerHTML = `
+            <div class="skeleton-box skeleton-row"></div>
+            <div class="skeleton-box skeleton-row"></div>
+            <div class="skeleton-box skeleton-row"></div>
+        `;
+    }
 
     const nameFilter = document.getElementById('logs-filter-name-select')?.value || '';
     const fromInput = document.getElementById('logs-filter-from')?.value || '';
@@ -837,15 +1088,18 @@ async function loadLogsViewer() {
         });
         if (response.ok && Array.isArray(response.logs)) {
             logsAllRecords = response.logs;
+            try { localStorage.setItem('admin_cache_logs', JSON.stringify(response.logs)); } catch (e) {}
             logsCurrentPage = 1;
             renderLogsTable();
-        } else {
+        } else if (!logsAllRecords || !logsAllRecords.length) {
             logsAllRecords = [];
             if (host) host.innerHTML = `<div class="staff-list-state">${escapeHtml(response.message || 'No records found.')}</div>`;
         }
     } catch (error) {
-        logsAllRecords = [];
-        if (host) host.innerHTML = '<div class="staff-list-state">Failed to reach the server.</div>';
+        if (!logsAllRecords || !logsAllRecords.length) {
+            logsAllRecords = [];
+            if (host) host.innerHTML = '<div class="staff-list-state">Failed to reach the server.</div>';
+        }
     }
 }
 
@@ -955,14 +1209,53 @@ function isExemptFromAnalytics(name) {
     return lower.includes('kenneth') || lower.includes('valentine');
 }
 
-function processAnalyticsData(logs, schedule) {
+function processAnalyticsData(logs, schedule, filterType = 'all', customFromDate = null, customToDate = null) {
     if (!logs || !logs.length) return null;
     
+    const now = new Date();
+    let startDate = null, endDate = null;
+
+    if (filterType === 'month') {
+        // 1st calendar day of current month to today
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    } else if (filterType === 'week') {
+        // Monday of current week to today
+        const day = now.getDay();
+        const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+        startDate = new Date(now.getFullYear(), now.getMonth(), diff);
+        endDate = new Date(now.getFullYear(), now.getMonth(), diff + 6, 23, 59, 59);
+    } else if (filterType === 'custom' && customFromDate) {
+        const p1 = customFromDate.split('-');
+        startDate = parseDmyDate(customFromDate) || (p1.length === 3 ? new Date(parseInt(p1[0], 10), parseInt(p1[1], 10)-1, parseInt(p1[2], 10)) : new Date(customFromDate));
+        
+        const p2 = customToDate ? customToDate.split('-') : [];
+        endDate = customToDate ? (parseDmyDate(customToDate) || (p2.length === 3 ? new Date(parseInt(p2[0], 10), parseInt(p2[1], 10)-1, parseInt(p2[2], 10)) : new Date(customToDate))) : new Date();
+        
+        if (startDate) startDate.setHours(0, 0, 0, 0);
+        if (endDate) endDate.setHours(23, 59, 59, 999);
+        
+        if (startDate && endDate && startDate > endDate) {
+            const temp = new Date(startDate);
+            startDate = new Date(endDate);
+            endDate = temp;
+            startDate.setHours(0, 0, 0, 0);
+            endDate.setHours(23, 59, 59, 999);
+        }
+    }
+
+    const filteredLogs = logs.filter(entry => {
+        if (!startDate) return true;
+        const entryDate = parseDmyDate(entry.date) || new Date(entry.timestamp || entry.date);
+        if (isNaN(entryDate.getTime())) return true;
+        return entryDate >= startDate && entryDate <= endDate;
+    });
+
     const staffCounts = {};
     let lateCount = 0, earlyOutCount = 0;
     const totalDays = new Set();
     
-    logs.forEach(entry => {
+    filteredLogs.forEach(entry => {
         const name = entry.name;
         if (isExemptFromAnalytics(name)) return;
         if (!staffCounts[name]) staffCounts[name] = { in: 0, out: 0, late: 0, earlyOut: 0, wfhDays: 0, daysPresent: new Set() };
@@ -1013,12 +1306,12 @@ function processAnalyticsData(logs, schedule) {
         .sort((a, b) => a.totalActions - b.totalActions);
     
     return {
-        totalEntries: logs.length,
+        totalEntries: filteredLogs.length,
         uniqueStaff: Object.keys(staffCounts).length,
         totalDays: totalDaysInRange,
         lateCount,
         earlyOutCount,
-        latePercentage: logs.length ? ((lateCount / logs.length) * 100).toFixed(1) : 0,
+        latePercentage: filteredLogs.length ? ((lateCount / filteredLogs.length) * 100).toFixed(1) : 0,
         leastActive: staffBreakdown.slice(0, 3),
         mostActive: [...staffBreakdown].reverse().slice(0, 3),
         staffBreakdown
@@ -1041,7 +1334,7 @@ function renderAnalytics() {
     const eventsStart = (deviceEventsPage - 1) * DEVICE_EVENTS_PAGE_SIZE;
     const pageEvents = deviceEvents.slice(eventsStart, eventsStart + DEVICE_EVENTS_PAGE_SIZE);
     
-    host.innerHTML = `
+    if (!setHtmlIfChanged(host, `
         <div class="analytics-grid">
             <div class="analytics-card">
                 <span class="analytics-icon">📊</span>
@@ -1063,7 +1356,7 @@ function renderAnalytics() {
         
         <div class="analytics-section">
             <h4>⚠ Least Active Staff</h4>
-            <p class="admin-intro">Staff with lowest office attendance rate. Scheduled WFH days are excluded from requirements. (Kenneth & Valentine exempted)</p>
+            <p class="admin-intro">Staff with lowest office attendance rate. Scheduled WFH days are excluded from requirements.</p>
             <div class="analytics-table-wrapper">
                 <div class="analytics-table">
                     <div class="breakdown-row breakdown-head">
@@ -1084,7 +1377,7 @@ function renderAnalytics() {
                             <span class="stat-cell stat-in">${s.signIns} in</span>
                             <span class="stat-cell stat-out">${s.signOuts} out</span>
                             <span class="stat-cell ${s.attendanceRate < 60 ? 'stat-late-val' : 'stat-in-val'}">${s.attendanceRate}%</span>
-                            <span class="stat-cell stat-wfh">${s.wfhDays > 0 ? `🏠 ${s.wfhDays}` : '-'}</span>
+                            <span class="stat-cell stat-wfh">${s.wfhDays}</span>
                             <span class="stat-cell stat-late">${s.lateCount > 0 ? `⚠ ${s.lateCount}` : '-'}</span>
                         </div>
                     `).join('')}
@@ -1114,7 +1407,7 @@ function renderAnalytics() {
                             <span class="stat-cell stat-in">${s.signIns} in</span>
                             <span class="stat-cell stat-out">${s.signOuts} out</span>
                             <span class="stat-cell stat-in-val">${s.attendanceRate}%</span>
-                            <span class="stat-cell stat-wfh">${s.wfhDays > 0 ? `🏠 ${s.wfhDays}` : '-'}</span>
+                            <span class="stat-cell stat-wfh">${s.wfhDays}</span>
                             <span class="stat-cell stat-late">${s.lateCount > 0 ? `⚠ ${s.lateCount}` : '-'}</span>
                         </div>
                     `).join('')}
@@ -1144,7 +1437,7 @@ function renderAnalytics() {
                             <span class="stat-cell stat-in">${s.signIns} in</span>
                             <span class="stat-cell stat-out">${s.signOuts} out</span>
                             <span class="stat-cell ${s.attendanceRate < 60 ? 'stat-late-val' : 'stat-in-val'}">${s.attendanceRate}%</span>
-                            <span class="stat-cell stat-wfh">${s.wfhDays > 0 ? `🏠 ${s.wfhDays}` : '-'}</span>
+                            <span class="stat-cell stat-wfh">${s.wfhDays}</span>
                             <span class="stat-cell stat-late">${s.lateCount > 0 ? `⚠ ${s.lateCount}` : '-'}</span>
                         </div>
                     `).join('')}
@@ -1183,7 +1476,7 @@ function renderAnalytics() {
             </div>
             ` : '<div class="staff-list-state">No device errors, distance alerts, or system audit events recorded.</div>'}
         </div>
-    `;
+    `)) return;
     
     document.getElementById('export-analytics-btn')?.addEventListener('click', () => {
         const exportData = analyticsData.staffBreakdown.map(s => ({
@@ -1233,24 +1526,57 @@ function parseEventTimestamp(dateStr, timeStr) {
     return new Date(year, month, day).getTime();
 }
 
-async function loadAnalytics() {
+let currentAnalyticsFilter = 'all';
+let currentAnalyticsFrom = null;
+let currentAnalyticsTo = null;
+
+async function loadAnalytics(filterType = null, customFrom = null, customTo = null, isSilent = false) {
+    if (filterType) {
+        currentAnalyticsFilter = filterType;
+        currentAnalyticsFrom = customFrom;
+        currentAnalyticsTo = customTo;
+    } else {
+        filterType = currentAnalyticsFilter;
+        customFrom = currentAnalyticsFrom;
+        customTo = currentAnalyticsTo;
+    }
+    
     const host = document.getElementById('analytics-content');
-    if (host) host.innerHTML = '<div class="staff-list-state">Loading analytics...</div>';
+    
+    // Check in-memory or localStorage cache for 0ms instant rendering
+    if (analyticsData && filterType === 'all' && !customFrom) {
+        renderAnalytics();
+    } else {
+        try {
+            const stored = localStorage.getItem('admin_cache_analytics');
+            if (stored && filterType === 'all' && !customFrom) {
+                const parsed = JSON.parse(stored);
+                analyticsData = parsed.analyticsData;
+                deviceEventsAll = parsed.deviceEventsAll || [];
+                renderAnalytics();
+            }
+        } catch (e) {}
+    }
+
+    if (host && !isSilent) {
+        host.innerHTML = `
+            <div class="skeleton-box skeleton-card" style="margin-bottom:12px;"></div>
+            <div class="skeleton-box skeleton-row"></div>
+            <div class="skeleton-box skeleton-row"></div>
+        `;
+    }
     
     try {
-        const allLogs = Object.values(cachedWeekData).flatMap(w => w.logs || []);
         const allSchedule = Object.values(cachedWeekData).reduce((acc, w) => ({ ...acc, ...(w.schedule || {}) }), {});
         
         const [attendanceLogs, analyticsResponse, alertsResponse, auditResponse] = await Promise.all([
-            allLogs.length > 0
-                ? Promise.resolve(allLogs)
-                : fetchLogs({ limit: 1000 }).then(r => (r.ok && Array.isArray(r.logs)) ? r.logs : []),
+            fetchLogs({ limit: 1000 }).then(r => (r.ok && Array.isArray(r.logs)) ? r.logs : []),
             callBackend({ mode: 'list-analytics', limit: 50 }).catch((err) => { console.warn('list-analytics fetch failed:', err); return { ok: false, events: [] }; }),
             fetchDistanceAlerts(100).catch((err) => { console.warn('list-distance-alerts fetch failed:', err); return { ok: false, alerts: [] }; }),
             fetchAuditLogs(100).catch((err) => { console.warn('list-audit-logs fetch failed:', err); return { ok: false, events: [] }; })
         ]);
 
-        analyticsData = processAnalyticsData(attendanceLogs, allSchedule);
+        analyticsData = processAnalyticsData(attendanceLogs, allSchedule, filterType, customFrom, customTo);
 
         const clientEvents = (analyticsResponse.ok && Array.isArray(analyticsResponse.events))
             ? analyticsResponse.events.map(e => {
@@ -1286,6 +1612,7 @@ async function loadAnalytics() {
         deviceEventsPage = 1;
 
         renderAnalytics();
+        try { localStorage.setItem('admin_cache_analytics', JSON.stringify({ analyticsData, deviceEventsAll })); } catch (e) {}
     } catch (error) {
         if (host) host.innerHTML = '<div class="staff-list-state">Failed to load analytics.</div>';
     }
@@ -1297,14 +1624,18 @@ async function loadAnalytics() {
 
 function renderAdminPanel() {
     const panelHost = document.getElementById('admin-panel-host');
+    const isSuper = sessionStorage.getItem('is_superuser') === 'true';
+    const devBadgeHtml = isSuper ? `<span class="developer-badge" title="Elevated Developer Superuser Session" style="margin-left: auto; align-self: center;">👑 Developer Mode</span>` : '';
+
     panelHost.innerHTML = `
         <div class="admin-tabs">
             <button class="tab-btn active" data-tab="dashboard" title="Dashboard"><span class="tab-icon">📊</span><span class="tab-label">Dashboard</span></button>
             <button class="tab-btn" data-tab="staff" title="Staff"><span class="tab-icon">👥</span><span class="tab-label">Staff</span></button>
             <button class="tab-btn" data-tab="logs" title="Logs"><span class="tab-icon">📋</span><span class="tab-label">Logs</span></button>
             <button class="tab-btn" data-tab="analytics" title="Analytics"><span class="tab-icon">📈</span><span class="tab-label">Analytics</span></button>
-            <button class="tab-btn" data-tab="account" title="Account"><span class="tab-icon">🔐</span><span class="tab-label">Account</span></button>
             <button class="tab-btn" data-tab="config" title="Config"><span class="tab-icon">⚙️</span><span class="tab-label">Config</span></button>
+            <button class="tab-btn" data-tab="account" title="Account"><span class="tab-icon">🔐</span><span class="tab-label">Account</span></button>
+            ${devBadgeHtml}
         </div>
         
         <div id="tab-dashboard" class="tab-content active">
@@ -1369,10 +1700,74 @@ function renderAdminPanel() {
         </div>
         
         <div id="tab-analytics" class="tab-content">
-            <div class="section-header"><h3>Attendance Analytics</h3><p class="admin-intro">Hybrid days excluded from attendance rate calculations</p></div>
+            <div class="section-header">
+                <h3>Attendance Analytics</h3>
+                <p class="admin-intro">Hybrid days excluded from attendance rate calculations</p>
+            </div>
+            <div class="analytics-filter-bar" style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center;">
+                <button id="analytics-filter-all" class="admin-btn secondary small active" type="button">🌐 All Time</button>
+                <button id="analytics-filter-month" class="admin-btn secondary small" type="button">📆 This Month</button>
+                <button id="analytics-filter-week" class="admin-btn secondary small" type="button">📅 This Week</button>
+                <button id="analytics-filter-custom-toggle" class="admin-btn secondary small" type="button">📅 Custom Range</button>
+                <div id="analytics-custom-inputs" style="display:none; gap:6px; align-items:center;">
+                    <input id="analytics-from-date" type="date" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.8rem;" />
+                    <span style="font-size:0.8rem;">to</span>
+                    <input id="analytics-to-date" type="date" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.8rem;" />
+                    <button id="analytics-apply-custom" class="admin-btn small" type="button">Apply</button>
+                </div>
+            </div>
             <div id="analytics-content"><div class="staff-list-state">Loading analytics...</div></div>
         </div>
         
+        <div id="tab-config" class="tab-content">
+            <div class="section-header"><h3>System Configuration</h3><p class="admin-intro">Office location, attendance schedule & geofence settings</p></div>
+            
+            <div class="config-section-group">
+                <h4>📍 Office Location</h4>
+                <div class="config-cards">
+                    <div class="config-card">
+                        <span class="config-icon">📍</span>
+                        <div class="config-info"><strong>Office Latitude</strong><span class="config-value" id="config-lat-current">6.4518631</span></div>
+                        <button id="config-office-lat-btn" class="admin-btn secondary small" type="button">Edit</button>
+                    </div>
+                    <div class="config-card">
+                        <span class="config-icon">📍</span>
+                        <div class="config-info"><strong>Office Longitude</strong><span class="config-value" id="config-lon-current">3.5277863</span></div>
+                        <button id="config-office-lon-btn" class="admin-btn secondary small" type="button">Edit</button>
+                    </div>
+                    <div class="config-card">
+                        <span class="config-icon">📏</span>
+                        <div class="config-info"><strong>Geofence Radius</strong><span class="config-value" id="config-radius-current">100 meters</span></div>
+                        <button id="config-radius-btn" class="admin-btn secondary small" type="button">Edit</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="config-section-group">
+                <h4>⏰ Attendance Schedule</h4>
+                <div class="config-cards">
+                    <div class="config-card">
+                        <span class="config-icon">⏰</span>
+                        <div class="config-info"><strong>Late Cutoff Time</strong><span class="config-value" id="config-late-cutoff-current">8:30 AM</span></div>
+                        <button id="config-late-cutoff-btn" class="admin-btn secondary small" type="button">Edit</button>
+                    </div>
+                    <div class="config-card">
+                        <span class="config-icon">🗓️</span>
+                        <div class="config-info"><strong>Working Days</strong><span class="config-value" id="config-workdays-current">Monday – Friday</span></div>
+                        <button id="config-workdays-btn" class="admin-btn secondary small" type="button">Edit</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="config-section-group">
+                <h4>🔧 Tools</h4>
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <button id="config-auto-location-btn" class="admin-btn secondary" type="button">🎯 Set Office to My Current Location</button>
+                    <button id="config-test-distance-btn" class="admin-btn secondary" type="button">📡 Test Current Distance from Office</button>
+                </div>
+            </div>
+        </div>
+
         <div id="tab-account" class="tab-content">
             <div class="section-header"><h3>Account Settings</h3></div>
             <div class="account-actions">
@@ -1383,8 +1778,11 @@ function renderAdminPanel() {
                 </div>
                 <div class="account-card">
                     <span class="account-icon">📧</span>
-                    <div><strong>Recovery Email</strong><p class="admin-intro">Set email for password recovery</p></div>
-                    <button id="set-recovery-email-btn" class="admin-btn secondary small" type="button">Set</button>
+                    <div>
+                        <strong>Recovery Email</strong>
+                        <p class="admin-intro" id="recovery-email-display">Active: Loading...</p>
+                    </div>
+                    <button id="set-recovery-email-btn" class="admin-btn secondary small" type="button">Set / Edit</button>
                 </div>
                 <div class="account-card">
                     <span class="account-icon">🚪</span>
@@ -1392,35 +1790,12 @@ function renderAdminPanel() {
                     <button id="logout-btn" class="admin-btn secondary small danger" type="button">Logout</button>
                 </div>
             </div>
-        </div>
-        
-        <div id="tab-config" class="tab-content">
-            <div class="section-header"><h3>System Configuration</h3><p class="admin-intro">Office location, geofence, timezone</p></div>
-            <div class="config-cards">
-                <div class="config-card">
-                    <span class="config-icon">📍</span>
-                    <div class="config-info"><strong>Office Latitude</strong><span class="config-value" id="config-lat-current">6.4518631</span></div>
-                    <button id="config-office-lat-btn" class="admin-btn secondary small" type="button">Edit</button>
-                </div>
-                <div class="config-card">
-                    <span class="config-icon">📍</span>
-                    <div class="config-info"><strong>Office Longitude</strong><span class="config-value" id="config-lon-current">3.5277863</span></div>
-                    <button id="config-office-lon-btn" class="admin-btn secondary small" type="button">Edit</button>
-                </div>
-                <div class="config-card">
-                    <span class="config-icon">📏</span>
-                    <div class="config-info"><strong>Geofence Radius</strong><span class="config-value" id="config-radius-current">100 meters</span></div>
-                    <button id="config-radius-btn" class="admin-btn secondary small" type="button">Edit</button>
-                </div>
-                <div class="config-card">
-                    <span class="config-icon">⏰</span>
-                    <div class="config-info"><strong>Late Cutoff Time</strong><span class="config-value" id="config-late-cutoff-current">8:30 AM</span></div>
-                    <button id="config-late-cutoff-btn" class="admin-btn secondary small" type="button">Edit</button>
-                </div>
-            </div>
-            <div class="config-tools" style="margin-top: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
-                <button id="config-auto-location-btn" class="admin-btn secondary" type="button">🎯 Set Office to My Current Location</button>
-                <button id="config-test-distance-btn" class="admin-btn secondary" type="button">📡 Test Current Distance from Office</button>
+
+            <div id="admin-user-management-section" class="dashboard-section" style="margin-top:2rem;">
+                <h4>👥 Admin Users & Permission Tiers</h4>
+                <p class="admin-intro">Manage delegated admin accounts and access levels.</p>
+                <div id="admin-users-list" style="margin-bottom:1rem;"><div class="staff-list-state">Loading admin users...</div></div>
+                <button id="add-admin-user-btn" class="admin-btn secondary small" type="button">➕ Add Admin User</button>
             </div>
         </div>
     `;
@@ -1490,8 +1865,85 @@ function renderAdminPanel() {
         try {
             const r = await setRecoveryEmail(currentAdminUsername, result[0], result[1]);
             showToast(r.message || 'Email saved.', r.ok ? 'success' : 'error');
+            if (r.ok) loadRecoveryEmailDisplay();
         } catch (e) { showToast('Server error.', 'error'); }
     });
+
+    document.getElementById('add-admin-user-btn')?.addEventListener('click', handleAddAdminUser);
+
+    document.getElementById('analytics-filter-all')?.addEventListener('click', (e) => {
+        document.querySelectorAll('.analytics-filter-bar button').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        document.getElementById('analytics-custom-inputs').style.display = 'none';
+        loadAnalytics('all');
+    });
+    document.getElementById('analytics-filter-month')?.addEventListener('click', (e) => {
+        document.querySelectorAll('.analytics-filter-bar button').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        document.getElementById('analytics-custom-inputs').style.display = 'none';
+        loadAnalytics('month');
+    });
+    document.getElementById('analytics-filter-week')?.addEventListener('click', (e) => {
+        document.querySelectorAll('.analytics-filter-bar button').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        document.getElementById('analytics-custom-inputs').style.display = 'none';
+        loadAnalytics('week');
+    });
+    document.getElementById('analytics-filter-custom-toggle')?.addEventListener('click', (e) => {
+        document.querySelectorAll('.analytics-filter-bar button').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        const customWrap = document.getElementById('analytics-custom-inputs');
+        if (customWrap) customWrap.style.display = customWrap.style.display === 'none' ? 'flex' : 'none';
+    });
+    document.getElementById('analytics-apply-custom')?.addEventListener('click', () => {
+        const fromVal = document.getElementById('analytics-from-date')?.value;
+        const toVal = document.getElementById('analytics-to-date')?.value;
+        if (!fromVal) { showToast('Select a "From" date first.', 'error'); return; }
+        loadAnalytics('custom', fromVal, toVal);
+    });
+
+    document.getElementById('config-workdays-btn')?.addEventListener('click', async () => {
+        const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        const startOptions = dayNames.map((d, i) => `<option value="${i}"${i === 0 ? ' selected' : ''}>${d}</option>`).join('');
+        const endOptions = dayNames.map((d, i) => `<option value="${i}"${i === 4 ? ' selected' : ''}>${d}</option>`).join('');
+        const dialogHtml = `
+            <div style="display:flex; flex-direction:column; gap:12px; text-align:left; margin-top:10px;">
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <label style="font-size:0.82rem; font-weight:600; min-width:50px;">From:</label>
+                    <select id="config-workdays-start" style="flex:1; padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text);">
+                        ${startOptions}
+                    </select>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <label style="font-size:0.82rem; font-weight:600; min-width:50px;">To:</label>
+                    <select id="config-workdays-end" style="flex:1; padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text);">
+                        ${endOptions}
+                    </select>
+                </div>
+            </div>
+        `;
+        const confirmed = await showInlineDialog({
+            title: 'Working Days Schedule',
+            message: 'Set the start and end days for office attendance.',
+            customContentHtml: dialogHtml,
+            confirmLabel: 'Save Schedule'
+        });
+        if (!confirmed) return;
+        const startIdx = window['_dialogVal_config-workdays-start'] || '0';
+        const endIdx = window['_dialogVal_config-workdays-end'] || '4';
+        delete window['_dialogVal_config-workdays-start'];
+        delete window['_dialogVal_config-workdays-end'];
+        const displayLabel = `${dayNames[+startIdx]} – ${dayNames[+endIdx]}`;
+        const val = `${startIdx}_${endIdx}`;
+        try {
+            const res = await callBackend({ mode: 'update-config', key: 'WORK_DAYS', value: val });
+            showToast(res.message || 'Workdays schedule updated.', res.ok ? 'success' : 'error');
+            if (res.ok) document.getElementById('config-workdays-current').textContent = displayLabel;
+        } catch (e) { showToast('Server error.', 'error'); }
+    });
+
+    loadRecoveryEmailDisplay();
+    loadAdminUsersList();
 
     document.getElementById('logout-btn').addEventListener('click', async () => {
         const confirmed = await confirmDialog('Are you sure you want to logout?', { confirmLabel: 'Logout' });
@@ -1647,9 +2099,9 @@ async function checkPendingDeviceTransferRequests() {
 
         const req = pendingRequests[0];
         const dialog = document.createElement('div');
-        dialog.className = 'confirm-dialog-overlay active';
+        dialog.className = 'dialog-overlay confirm-dialog-overlay active';
         dialog.innerHTML = `
-            <div class="confirm-dialog-card" style="max-width: 440px;">
+            <div class="dialog-box confirm-dialog-card" style="max-width: 440px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-color, #f8fafc);">📱 Device Transfer Request</h3>
                     <button id="device-req-close-btn" style="background: none; border: none; color: var(--text-muted, #94a3b8); font-size: 1.2rem; cursor: pointer; padding: 2px 6px;">✕</button>
@@ -1725,6 +2177,8 @@ async function handleAdminLogin(event) {
             }));
             if (response.csrfToken) sessionStorage.setItem('admin_csrf_token', response.csrfToken);
             if (response.adminToken) sessionStorage.setItem('admin_token', response.adminToken);
+            if (response.isSuperuser) sessionStorage.setItem('is_superuser', 'true');
+            else sessionStorage.removeItem('is_superuser');
             sessionStorage.setItem('admin_username', username);
             
             document.getElementById('admin-login-form').style.display = 'none';

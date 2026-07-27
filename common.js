@@ -308,7 +308,7 @@ function showToast(message, type = 'default', durationMs = 3200) {
 
 /* ---------- Inline dialog ---------- */
 
-function showInlineDialog({ title, message, fields = [], confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false }) {
+function showInlineDialog({ title, message, fields = [], confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false, customContentHtml = '' }) {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
         overlay.className = 'dialog-overlay';
@@ -337,6 +337,7 @@ function showInlineDialog({ title, message, fields = [], confirmLabel = 'Confirm
                 <h3>${escapeHtml(title)}</h3>
                 ${message ? `<p>${escapeHtml(message)}</p>` : ''}
                 ${fieldsHtml}
+                ${customContentHtml}
                 <div class="dialog-actions">
                     <button type="button" class="admin-btn secondary" data-action="cancel">${escapeHtml(cancelLabel)}</button>
                     <button type="button" class="admin-btn${danger ? ' danger' : ''}" data-action="confirm">${escapeHtml(confirmLabel)}</button>
@@ -362,6 +363,11 @@ function showInlineDialog({ title, message, fields = [], confirmLabel = 'Confirm
                 showToast('Please fill in all fields.', 'error');
                 return;
             }
+            // Capture all custom select/input values before overlay removal
+            const customSelects = overlay.querySelectorAll('select');
+            customSelects.forEach(sel => {
+                if (sel.id) window['_dialogVal_' + sel.id] = sel.value;
+            });
             cleanup(fields.length ? values : true);
         });
         overlay.addEventListener('click', (event) => {

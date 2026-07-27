@@ -1026,8 +1026,8 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
 /* ─── CONFIG CARDS ─── */
 .config-cards {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 14px;
 }
 .config-card {
     padding: 14px;
@@ -1042,6 +1042,29 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
 .config-info { flex: 1; }
 .config-info strong { display: block; font-size: 0.82rem; color: var(--text); }
 .config-value { font-size: 0.88rem; font-weight: 700; color: var(--primary); }
+
+/* ─── ANALYTICS FILTER PILL ACTIVE STATE ─── */
+.analytics-filter-bar .admin-btn.active {
+    background: var(--primary) !important;
+    color: #fff !important;
+    border-color: var(--primary) !important;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+    font-weight: 700;
+}
+
+/* ─── CONFIG SECTION GROUPS ─── */
+.config-section-group {
+    margin-bottom: 1.5rem;
+}
+.config-section-group h4 {
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+}
 
 /* ─── ADDITIONAL UI & ADMIN PANEL COMPONENTS ─── */
 .session-timeout-dialog { text-align: center; }
@@ -1115,3 +1138,42 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
     50% { transform: scale(1.25); opacity: 1; }
     100% { transform: scale(0.9); opacity: 0.7; }
 }
+
+/* ─── SKELETON SHIMMER LOADERS ─── */
+.skeleton-box {
+    background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface) 50%, var(--surface-2) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite linear;
+    border-radius: var(--radius-sm, 6px);
+}
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+.skeleton-row {
+    height: 48px;
+    width: 100%;
+    margin-bottom: 8px;
+    border-radius: var(--radius);
+}
+.skeleton-card {
+    height: 90px;
+    width: 100%;
+    border-radius: var(--radius);
+}
+
+/* ─── DEVELOPER SUPERUSER BADGE ─── */
+.developer-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #ffffff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
+    letter-spacing: 0.3px;
+}
+
