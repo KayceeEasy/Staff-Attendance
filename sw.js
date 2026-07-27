@@ -14,8 +14,9 @@ const APP_SHELL = [
 ];
 
 self.addEventListener('install', (event) => {
+  const versionedShell = APP_SHELL.map(url => url + (url.includes('?') ? '&' : '?') + 'v=' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : Date.now()));
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(versionedShell))
   );
   self.skipWaiting();
 });
