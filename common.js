@@ -14,6 +14,12 @@ const STORAGE_KEYS = {
     analytics: 'attendance_analytics'
 };
 
+// Supabase Initialization
+const supabaseUrl = 'https://akhditjeiwjuzvubnacw.supabase.co';
+const supabaseKey = 'sb_publishable_9BkVRtmi-6UG15Va5xNHbw_R7J_hKhi';
+const supabase = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
+
+
 /* ---------- HTML Escaping ---------- */
 
 function escapeHtml(value) {
@@ -107,45 +113,108 @@ async function callBackendDeduplicated(payload, timeoutMs = 20000) {
 }
 
 /* ---------- Backend communication ----------
-   Sends requests to /api/backend via Express proxy.
-   Includes session CSRF token and Admin token if available. */
-
-const FALLBACK_GAS_URL = 'https://script.google.com/macros/s/AKfycbwKXksPAcj-dar7BkC_lAoGsVM-aF0BT81lkgToafv0natBxpb1S8iI0KD8q0NJemwksw/exec';
+   Routes requests to Supabase (PostgreSQL + Edge RPCs). */
 
 async function callBackend(payload, timeoutMs = 20000) {
-    const csrfToken = payload.csrfToken || sessionStorage.getItem('admin_csrf_token') || sessionStorage.getItem('csrf_token') || '';
+    if (!supabase) return { ok: false, message: 'Supabase client not loaded.' };
     const adminToken = payload.adminToken || sessionStorage.getItem('admin_token') || '';
-    const username = payload.username || sessionStorage.getItem('admin_username') || '';
-
-    const fullPayload = {
-        ...payload,
-        csrfToken,
-        adminToken,
-        username: payload.username || username
-    };
-
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const endpoint = isLocalhost ? '/api/backend' : (window.GAS_SCRIPT_URL || FALLBACK_GAS_URL);
-
+    const mode = payload.mode;
+    
     try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify(fullPayload),
-            signal: controller.signal,
-            redirect: 'follow'
-        });
-        clearTimeout(timer);
-        if (response.ok) {
-            const data = await response.json();
-            return normalizeBackendResponse(data);
-        } else {
-            return { ok: false, allowed: false, message: 'Server returned error status: ' + response.status };
+        switch (mode) {
+            case 'admin-login': {
+                const { data, error } = await supabase.rpc('admin_login', { p_username: payload.username, p_hash: payload.passwordHash });
+                if (error) throw error;
+                return data;
+            }
+            case 'attendance': {
+                const { data, error } = await supabase.rpc('process_attendance', {
+                    p_name: payload.name,
+                    p_action: payload.action,
+                    p_lat: payload.lat,
+                    p_lon: payload.lon,
+                    p_device_id: payload.deviceId || ''
+                });
+                if (error) throw error;
+                // Supabase rpc returns json directly, normalize if needed
+                if (typeof data === 'string') return normalizeBackendResponse(data);
+                return normalizeBackendResponse(data);
+            }
+            case 'list-staff': {
+                const { data, error } = await supabase.from('staff').select('*').order('name');
+                if (error) throw error;
+                return { ok: true, allowed: true, staff: data };
+            }
+            case 'list-logs': {
+                const { data, error } = await supabase.from('attendance_logs').select('*').order('id', { ascending: false }).limit(200);
+                if (error) throw error;
+                return { ok: true, allowed: true, logs: data };
+            }
+            case 'list-distance-alerts': {
+                const { data, error } = await supabase.from('distance_alerts').select('*').order('id', { ascending: false }).limit(200);
+                if (error) throw error;
+                return { ok: true, allowed: true, logs: data }; // admin.js expects 'logs' property for alerts too sometimes, or 'alerts'
+            }
+            case 'list-audit-logs': {
+                const { data, error } = await supabase.from('audit_logs').select('*').order('id', { ascending: false }).limit(200);
+                if (error) throw error;
+                return { ok: true, allowed: true, logs: data };
+            }
+            case 'log-analytics': {
+                // Not strictly necessary for core function, but we can log it
+                const { error } = await supabase.from('audit_logs').insert([{
+                    date: new Date().toLocaleDateString(),
+                    time: new Date().toLocaleTimeString(),
+                    category: 'Analytics',
+                    event_type: payload.eventType,
+                    user_staff: payload.deviceId || 'System',
+                    details: payload.details
+                }]);
+                if (error) throw error;
+                return { ok: true, message: 'Logged' };
+            }
+            case 'add-staff': {
+                const { data, error } = await supabase.rpc('add_staff', { p_name: payload.name, p_admintoken: adminToken });
+                if (error) throw error;
+                return data;
+            }
+            case 'remove-staff': {
+                const { data, error } = await supabase.rpc('remove_staff', { p_name: payload.name, p_admintoken: adminToken });
+                if (error) throw error;
+                return data;
+            }
+            case 'reset-staff-lock': {
+                const { data, error } = await supabase.rpc('reset_staff_lock', { p_name: payload.name, p_admintoken: adminToken });
+                if (error) throw error;
+                return data;
+            }
+            case 'reset-all-locks': {
+                const { data, error } = await supabase.rpc('reset_all_locks', { p_admintoken: adminToken });
+                if (error) throw error;
+                return data;
+            }
+            case 'get-config': {
+                const { data, error } = await supabase.rpc('get_config');
+                if (error) throw error;
+                return data;
+            }
+            case 'update-config': {
+                const { data, error } = await supabase.rpc('update_config', { p_key: payload.key, p_value: payload.value, p_admintoken: adminToken });
+                if (error) throw error;
+                return data;
+            }
+            case 'list-admin-users': {
+                const { data, error } = await supabase.rpc('list_admin_users', { p_admintoken: adminToken });
+                if (error) throw error;
+                return data;
+            }
+            default:
+                // For unmapped endpoints, return false so the UI knows it's not implemented yet
+                return { ok: false, allowed: false, message: `Endpoint '${mode}' is not implemented in Supabase yet.` };
         }
     } catch (err) {
-        return { ok: false, allowed: false, message: 'Could not reach backend server.' };
+        console.error('Supabase Error:', err);
+        return { ok: false, allowed: false, message: err.message || 'Database error.' };
     }
 }
 
