@@ -123,9 +123,28 @@ async function callBackend(payload, timeoutMs = 20000) {
     try {
         switch (mode) {
             case 'admin-login': {
-                const { data, error } = await supabase.rpc('admin_login', { p_username: payload.username, p_hash: payload.passwordHash });
-                if (error) throw error;
-                return data;
+                // True Supabase Auth Login
+                const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+                    email: payload.email,
+                    password: payload.password
+                });
+                if (authError) throw authError;
+                
+                // Fetch their role from admin_roles
+                const { data: roleData, error: roleError } = await supabase.from('admin_roles').select('role').eq('id', authData.user.id).single();
+                if (roleError) throw roleError;
+
+                return {
+                    ok: true,
+                    message: 'Admin access granted.',
+                    role: roleData.role,
+                    isSuperuser: roleData.role === 'developer',
+                    username: payload.email
+                };
+            }
+            case 'admin-logout': {
+                await supabase.auth.signOut();
+                return { ok: true, message: 'Logged out.' };
             }
             case 'attendance': {
                 const { data, error } = await supabase.rpc('process_attendance', {
@@ -174,39 +193,41 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, message: 'Logged' };
             }
             case 'add-staff': {
-                const { data, error } = await supabase.rpc('add_staff', { p_name: payload.name, p_admintoken: adminToken });
+                const { error } = await supabase.from('staff').insert([{ name: payload.name }]);
                 if (error) throw error;
-                return data;
+                return { ok: true, message: 'Staff added successfully.' };
             }
             case 'remove-staff': {
-                const { data, error } = await supabase.rpc('remove_staff', { p_name: payload.name, p_admintoken: adminToken });
+                const { error } = await supabase.from('staff').delete().eq('name', payload.name);
                 if (error) throw error;
-                return data;
+                return { ok: true, message: 'Staff removed successfully.' };
             }
             case 'reset-staff-lock': {
-                const { data, error } = await supabase.rpc('reset_staff_lock', { p_name: payload.name, p_admintoken: adminToken });
+                const { error } = await supabase.from('staff').update({ device_id: null }).eq('name', payload.name);
                 if (error) throw error;
-                return data;
+                return { ok: true, message: 'Device lock reset.' };
             }
             case 'reset-all-locks': {
-                const { data, error } = await supabase.rpc('reset_all_locks', { p_admintoken: adminToken });
+                // Supabase doesn't easily allow update all without a filter if RLS is tricky, but we can do neq
+                const { error } = await supabase.from('staff').update({ device_id: null }).neq('name', 'invalid_dummy_name_123');
                 if (error) throw error;
-                return data;
+                return { ok: true, message: 'All device locks reset.' };
             }
             case 'get-config': {
-                const { data, error } = await supabase.rpc('get_config');
+                const { data, error } = await supabase.from('app_config').select('*');
                 if (error) throw error;
-                return data;
+                const configObj = {};
+                data.forEach(row => configObj[row.key] = row.value);
+                return { ok: true, config: configObj };
             }
             case 'update-config': {
-                const { data, error } = await supabase.rpc('update_config', { p_key: payload.key, p_value: payload.value, p_admintoken: adminToken });
+                const { error } = await supabase.from('app_config').update({ value: payload.value }).eq('key', payload.key);
                 if (error) throw error;
-                return data;
+                return { ok: true, message: 'Configuration updated.' };
             }
             case 'list-admin-users': {
-                const { data, error } = await supabase.rpc('list_admin_users', { p_admintoken: adminToken });
-                if (error) throw error;
-                return data;
+                // N/A for now since we use Supabase Dashboard for user management
+                return { ok: true, users: [] };
             }
             default:
                 // For unmapped endpoints, return false so the UI knows it's not implemented yet

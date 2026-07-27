@@ -23,9 +23,9 @@ const SESSION_COUNTDOWN_MS = 60 * 1000;
 
 /* ---------- Auth ---------- */
 
-async function authenticateAdmin(username, password) {
-    const passwordHash = await sha256Hex(password);
-    return callBackend({ mode: 'admin-login', username, passwordHash });
+async function authenticateAdmin(email, password) {
+    // True Supabase Auth handles hashing internally. We pass the raw password.
+    return callBackend({ mode: 'admin-login', email, password });
 }
 
 async function changeAdminPassword(username, currentPassword, newPassword) {
@@ -206,7 +206,7 @@ function showSessionTimeoutWarning() {
 
 function clearAdminLoginForm() {
     const form = document.getElementById('admin-login-form');
-    const usernameInput = document.getElementById('admin-username');
+    const usernameInput = document.getElementById('admin-email');
     const passwordInput = document.getElementById('admin-password');
     const messageEl = document.getElementById('admin-message');
 
@@ -2206,7 +2206,7 @@ async function handleAdminLogin(event) {
         event.preventDefault();
         event.stopPropagation();
     }
-    const username = document.getElementById('admin-username').value.trim();
+    const username = document.getElementById('admin-email').value.trim();
     const password = document.getElementById('admin-password').value;
     const messageEl = document.getElementById('admin-message');
 
