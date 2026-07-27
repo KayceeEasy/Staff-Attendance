@@ -110,7 +110,7 @@ app.post('/api/backend', async (req, res) => {
                     username: superuserUsername,
                     csrfToken: superuserCsrf,
                     adminToken: superuserToken,
-                    message: '👑 Developer Superuser authenticated successfully.'
+                    message: '👑 Superuser authenticated successfully.'
                 });
             }
         }
