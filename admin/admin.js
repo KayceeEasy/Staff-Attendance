@@ -271,6 +271,16 @@ function formatDateDMY(date) {
     return `${dd}/${mm}/${yyyy}`;
 }
 
+function formatMinutesAsTime(minutes) {
+    if (minutes === undefined || minutes === null) return '';
+    let hh = Math.floor(minutes / 60);
+    const mm = String(minutes % 60).padStart(2, '0');
+    const ampm = hh >= 12 ? 'PM' : 'AM';
+    hh = hh % 12;
+    if (hh === 0) hh = 12;
+    return `${hh}:${mm} ${ampm}`;
+}
+
 function getMondayFromDate(date) {
     const d = new Date(date);
     const day = d.getDay();
@@ -1623,7 +1633,8 @@ async function loadAnalytics(filterType = null, customFrom = null, customTo = nu
         renderAnalytics();
         try { localStorage.setItem('admin_cache_analytics', JSON.stringify({ analyticsData, deviceEventsAll })); } catch (e) {}
     } catch (error) {
-        if (host) host.innerHTML = '<div class="staff-list-state">Failed to load analytics.</div>';
+        if (host && !analyticsData) host.innerHTML = '<div class="staff-list-state">Failed to load analytics.</div>';
+        else if (host) showToast('Could not refresh analytics data (offline).', 'error');
     }
 }
 
@@ -1813,7 +1824,13 @@ function renderAdminPanel() {
         btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
 
-    document.getElementById('refresh-today-btn').addEventListener('click', () => loadWeekData(false));
+    document.getElementById('refresh-today-btn').addEventListener('click', async (e) => {
+        const btn = e.target.closest('button') || e.target;
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '⏳';
+        await loadWeekData(false);
+        btn.innerHTML = originalHtml;
+    });
     document.getElementById('week-prev-btn').addEventListener('click', () => navigateWeek('prev'));
     document.getElementById('week-next-btn').addEventListener('click', () => navigateWeek('next'));
     document.getElementById('dashboard-export-btn').addEventListener('click', () => {
