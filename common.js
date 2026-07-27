@@ -61,13 +61,13 @@ function clearAnalytics() {
 
 
 /* ---------- Safe Storage Wrapper ---------- */
-const safeStorage = {
+window.safeStorage = {
     getItem: (key) => { try { return localStorage.getItem(key); } catch(e) { return null; } },
     setItem: (key, val) => { try { localStorage.setItem(key, val); } catch(e) {} },
     removeItem: (key) => { try { localStorage.removeItem(key); } catch(e) {} }
 };
 
-const safeSession = {
+window.safeSession = {
     getItem: (key) => { try { return sessionStorage.getItem(key); } catch(e) { return null; } },
     setItem: (key, val) => { try { sessionStorage.setItem(key, val); } catch(e) {} },
     removeItem: (key) => { try { sessionStorage.removeItem(key); } catch(e) {} }

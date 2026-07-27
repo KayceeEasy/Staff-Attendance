@@ -1,4 +1,5 @@
 importScripts('./version.js');
+// Force update 2
 const CACHE_NAME = 'staff-attendance-v' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '26');
 const APP_SHELL = [
   './',
