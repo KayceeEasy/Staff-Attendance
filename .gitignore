@@ -1,12 +1,7 @@
-GAS_scripts/
+mobile_app/.expo/
+mobile_app/node_modules/
 node_modules/
-
-.vscode/
 
 .env
 .env.local
 
-*.gs
-
-mobile_app/.expo/
-mobile_app/node_modules/

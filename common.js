@@ -59,11 +59,25 @@ function clearAnalytics() {
     writeStoredJson(STORAGE_KEYS.analytics, []);
 }
 
+
+/* ---------- Safe Storage Wrapper ---------- */
+const safeStorage = {
+    getItem: (key) => { try { return localStorage.getItem(key); } catch(e) { return null; } },
+    setItem: (key, val) => { try { localStorage.setItem(key, val); } catch(e) {} },
+    removeItem: (key) => { try { localStorage.removeItem(key); } catch(e) {} }
+};
+
+const safeSession = {
+    getItem: (key) => { try { return sessionStorage.getItem(key); } catch(e) { return null; } },
+    setItem: (key, val) => { try { sessionStorage.setItem(key, val); } catch(e) {} },
+    removeItem: (key) => { try { sessionStorage.removeItem(key); } catch(e) {} }
+};
+
 /* ---------- Storage helpers ---------- */
 
 function readStoredJson(key, fallback = []) {
     try {
-        const value = localStorage.getItem(key);
+        const value = safeStorage.getItem(key);
         return value ? JSON.parse(value) : fallback;
     } catch (error) {
         console.warn(`Failed to parse stored value for "${key}":`, error);
@@ -73,7 +87,7 @@ function readStoredJson(key, fallback = []) {
 
 function writeStoredJson(key, value) {
     try {
-        localStorage.setItem(key, JSON.stringify(value));
+        safeStorage.setItem(key, JSON.stringify(value));
     } catch (error) {
         console.warn(`Failed to persist value for "${key}":`, error);
     }
@@ -117,7 +131,7 @@ async function callBackendDeduplicated(payload, timeoutMs = 20000) {
 
 async function callBackend(payload, timeoutMs = 20000) {
     if (!supabase) return { ok: false, message: 'Supabase client not loaded.' };
-    const adminToken = payload.adminToken || sessionStorage.getItem('admin_token') || '';
+    const adminToken = payload.adminToken || safeSession.getItem('admin_token') || '';
     const mode = payload.mode;
     
     try {
@@ -280,19 +294,31 @@ function applyTheme(theme) {
         toggle.setAttribute('aria-pressed', String(isDark));
         toggle.setAttribute('title', isDark ? 'Switch to light mode' : 'Switch to dark mode');
     }
-    localStorage.setItem(STORAGE_KEYS.theme, isDark ? 'dark' : 'light');
+    try {
+        safeStorage.setItem(STORAGE_KEYS.theme, isDark ? 'dark' : 'light');
+    } catch (e) {
+        console.warn('localStorage not available:', e);
+    }
 }
 
 function initTheme() {
-    const savedTheme = localStorage.getItem(STORAGE_KEYS.theme);
-    applyTheme(savedTheme === 'dark' ? 'dark' : 'light');
     const toggle = document.getElementById('theme-toggle');
-    if (toggle) {
-        toggle.addEventListener('click', () => {
-            const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-            applyTheme(next);
-        });
+    if (!toggle) return;
+    
+    let saved = null;
+    try {
+        saved = safeStorage.getItem(STORAGE_KEYS.theme);
+    } catch (e) {
+        console.warn('localStorage not available:', e);
     }
+    
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    applyTheme(saved === 'dark' || (!saved && prefersDark) ? 'dark' : 'light');
+    
+    toggle.addEventListener('click', () => {
+        const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        applyTheme(next);
+    });
 }
 
 /* ---------- Hard refresh ---------- */

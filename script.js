@@ -85,7 +85,7 @@ async function getOrCreateDeviceIdentity() {
 
     try {
         const lsKey = 'attendance_device_identity';
-        const stored = localStorage.getItem(lsKey);
+        const stored = safeStorage.getItem(lsKey);
         if (stored) {
             try {
                 const parsed = JSON.parse(stored);
@@ -93,7 +93,7 @@ async function getOrCreateDeviceIdentity() {
             } catch (parseErr) {}
         }
         const identity = { uuid: generateUuid(), hw: computeCanvasHardwareHash() };
-        localStorage.setItem(lsKey, JSON.stringify(identity));
+        safeStorage.setItem(lsKey, JSON.stringify(identity));
         return identity;
     } catch (lsError) {
         console.warn('localStorage also unavailable, using session-only identity:', lsError.message);
@@ -185,7 +185,7 @@ function renderRecentLog() {
 function updateLastSyncedLabel() {
     const label = document.getElementById('last-synced');
     if (!label) return;
-    const lastSynced = localStorage.getItem(STORAGE_KEYS.lastSynced);
+    const lastSynced = safeStorage.getItem(STORAGE_KEYS.lastSynced);
     label.innerText = lastSynced ? `Last synced: ${lastSynced}` : 'Last synced: none';
 }
 
@@ -235,15 +235,15 @@ async function reassignDeviceOwnership(newName, resetCode) {
 /* ---------- Local-only device hint ---------- */
 
 function getLocalDeviceLockHint() {
-    return localStorage.getItem(STORAGE_KEYS.deviceLock);
+    return safeStorage.getItem(STORAGE_KEYS.deviceLock);
 }
 
 function setLocalDeviceLockHint(name) {
-    localStorage.setItem(STORAGE_KEYS.deviceLock, name);
+    safeStorage.setItem(STORAGE_KEYS.deviceLock, name);
 }
 
 function clearLocalDeviceLockHint() {
-    localStorage.removeItem(STORAGE_KEYS.deviceLock);
+    safeStorage.removeItem(STORAGE_KEYS.deviceLock);
 }
 
 /* ---------- Submission queue ---------- */
@@ -271,9 +271,9 @@ function scheduleSyncRetry(baseDelay = 8000) {
     const pendingQueue = readStoredJson(STORAGE_KEYS.pendingQueue, []);
     if (!pendingQueue.length) return;
     
-    const retryCount = parseInt(localStorage.getItem('sync_retry_count') || '0', 10);
+    const retryCount = parseInt(safeStorage.getItem('sync_retry_count') || '0', 10);
     const delay = Math.min(baseDelay * Math.pow(2, retryCount), 60000);
-    localStorage.setItem('sync_retry_count', retryCount + 1);
+    safeStorage.setItem('sync_retry_count', retryCount + 1);
     
     syncRetryTimer = setTimeout(() => {
         flushPendingQueue();
@@ -281,7 +281,7 @@ function scheduleSyncRetry(baseDelay = 8000) {
 }
 
 function resetSyncRetryCount() {
-    localStorage.removeItem('sync_retry_count');
+    safeStorage.removeItem('sync_retry_count');
 }
 
 function preventDuplicateSubmission(action, name) {
@@ -318,7 +318,7 @@ function setPendingAction(action, name) {
 function clearPendingAction(action, name) {
     const current = getPendingAction();
     if (current && current.date === getTodayKey() && current.action === action && current.name === name) {
-        localStorage.removeItem(STORAGE_KEYS.pendingAction);
+        safeStorage.removeItem(STORAGE_KEYS.pendingAction);
     }
 }
 
@@ -336,7 +336,7 @@ function queuePendingSubmission(name, action, lat, lon) {
     pendingQueue.unshift(entry);
     writeStoredJson(STORAGE_KEYS.pendingQueue, pendingQueue.slice(0, 10));
     saveRecentEntry({ ...entry, status: 'pending' });
-    localStorage.setItem(STORAGE_KEYS.lastSynced, 'Queued offline');
+    safeStorage.setItem(STORAGE_KEYS.lastSynced, 'Queued offline');
     updateLastSyncedLabel();
     setMessage('Saved offline. It will sync automatically when connection returns.', 'msg-late');
     scheduleSyncRetry(1500);
@@ -407,7 +407,7 @@ function populateStaffDropdown(names, preserveSelection = true) {
         staffNameSelect.value = currentValue;
         activeName = currentValue;
     } else {
-        const saved = localStorage.getItem('saved_name');
+        const saved = safeStorage.getItem('saved_name');
         if (saved && sortedNames.includes(saved)) {
             staffNameSelect.value = saved;
             activeName = saved;
@@ -502,7 +502,7 @@ function initSearchableStaffDropdown() {
         select.value = name;
         input.value = name;
         if (clearBtn) clearBtn.style.display = name ? 'block' : 'none';
-        localStorage.setItem('saved_name', name);
+        safeStorage.setItem('saved_name', name);
         closeDropdown();
         select.dispatchEvent(new Event('change', { bubbles: true }));
         updateSignInButtonsState();
@@ -512,7 +512,7 @@ function initSearchableStaffDropdown() {
         select.value = '';
         input.value = '';
         if (clearBtn) clearBtn.style.display = 'none';
-        localStorage.removeItem('saved_name');
+        safeStorage.removeItem('saved_name');
         select.dispatchEvent(new Event('change', { bubbles: true }));
         updateSignInButtonsState();
         openDropdown();
@@ -529,7 +529,7 @@ function initSearchableStaffDropdown() {
 
         if (!query) {
             select.value = '';
-            localStorage.removeItem('saved_name');
+            safeStorage.removeItem('saved_name');
             select.dispatchEvent(new Event('change', { bubbles: true }));
             updateSignInButtonsState();
         }
@@ -598,7 +598,7 @@ function initSearchableStaffDropdown() {
         }
     });
 
-    const savedName = select.value || localStorage.getItem('saved_name') || '';
+    const savedName = select.value || safeStorage.getItem('saved_name') || '';
     if (savedName) {
         select.value = savedName;
         input.value = savedName;
@@ -793,7 +793,7 @@ async function handleAttendanceResponse(data) {
             });
         }
 
-        localStorage.setItem(STORAGE_KEYS.lastSynced, formatDateDisplay(new Date().toISOString()));
+        safeStorage.setItem(STORAGE_KEYS.lastSynced, formatDateDisplay(new Date().toISOString()));
         updateLastSyncedLabel();
 
         try {
@@ -964,9 +964,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (staffNameSelect) {
         staffNameSelect.addEventListener('change', () => {
             if (staffNameSelect.value) {
-                localStorage.setItem('saved_name', staffNameSelect.value);
+                safeStorage.setItem('saved_name', staffNameSelect.value);
             } else {
-                localStorage.removeItem('saved_name');
+                safeStorage.removeItem('saved_name');
             }
             updateSignInButtonsState();
         });

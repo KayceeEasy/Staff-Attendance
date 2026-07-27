@@ -31,15 +31,15 @@ async function authenticateAdmin(email, password) {
 async function changeAdminPassword(username, currentPassword, newPassword) {
     const currentPasswordHash = await sha256Hex(currentPassword);
     const newPasswordHash = await sha256Hex(newPassword);
-    const adminToken = sessionStorage.getItem('admin_token') || currentPasswordHash;
-    const csrfToken = sessionStorage.getItem('admin_csrf_token') || '';
+    const adminToken = safeSession.getItem('admin_token') || currentPasswordHash;
+    const csrfToken = safeSession.getItem('admin_csrf_token') || '';
     return callBackend({ mode: 'admin-change-password', username, currentPasswordHash, newPasswordHash, adminToken, csrfToken });
 }
 
 async function setRecoveryEmail(username, currentPassword, email) {
     const currentPasswordHash = await sha256Hex(currentPassword);
-    const adminToken = sessionStorage.getItem('admin_token') || currentPasswordHash;
-    const csrfToken = sessionStorage.getItem('admin_csrf_token') || '';
+    const adminToken = safeSession.getItem('admin_token') || currentPasswordHash;
+    const csrfToken = safeSession.getItem('admin_csrf_token') || '';
     return callBackend({ mode: 'admin-set-recovery-email', username, currentPasswordHash, email, adminToken, csrfToken });
 }
 
@@ -226,10 +226,10 @@ function handleLogout(isTimeout = false) {
     clearTimeout(inactivityTimer);
     clearInterval(sessionCountdownTimer);
     clearAutoRefresh();
-    sessionStorage.removeItem('admin_session');
-    sessionStorage.removeItem('admin_csrf_token');
-    sessionStorage.removeItem('admin_token');
-    sessionStorage.removeItem('admin_username');
+    safeSession.removeItem('admin_session');
+    safeSession.removeItem('admin_csrf_token');
+    safeSession.removeItem('admin_token');
+    safeSession.removeItem('admin_username');
     isAdminLoggedIn = false;
     currentAdminUsername = '';
     cachedWeekData = {};
@@ -428,8 +428,8 @@ async function loadAdminUsersList() {
     const container = document.getElementById('admin-users-list');
     if (!container) return;
 
-    const isSuper = sessionStorage.getItem('is_superuser') === 'true';
-    const roleTier = sessionStorage.getItem('admin_role_tier') || (isSuper ? 'developer' : 'admin');
+    const isSuper = safeSession.getItem('is_superuser') === 'true';
+    const roleTier = safeSession.getItem('admin_role_tier') || (isSuper ? 'developer' : 'admin');
 
     // Sub-admins and Team Leads cannot manage other admins
     if (roleTier === 'sub_admin' || roleTier === 'team_lead') {
@@ -551,8 +551,8 @@ async function loadAdminUsersList() {
 }
 
 async function handleAddAdminUser() {
-    const isSuper = sessionStorage.getItem('is_superuser') === 'true';
-    const currentTier = sessionStorage.getItem('admin_role_tier') || 'admin';
+    const isSuper = safeSession.getItem('is_superuser') === 'true';
+    const currentTier = safeSession.getItem('admin_role_tier') || 'admin';
     
     const options = [];
     if (currentTier === 'developer' || currentTier === 'admin' || currentTier === 'sub_admin' || currentTier === 'team_lead') {
@@ -709,7 +709,7 @@ async function loadWeekData(isSilent = false) {
     // Check in-memory & localStorage cache for 0ms instant rendering
     if (!cachedWeekData[weekBeingLoaded]) {
         try {
-            const stored = localStorage.getItem('admin_cache_week_' + weekBeingLoaded);
+            const stored = safeStorage.getItem('admin_cache_week_' + weekBeingLoaded);
             if (stored) cachedWeekData[weekBeingLoaded] = JSON.parse(stored);
         } catch (e) {}
     }
@@ -734,7 +734,7 @@ async function loadWeekData(isSilent = false) {
         const schedule = await fetchHybridSchedule(weekBeingLoaded, false);
         
         cachedWeekData[weekBeingLoaded] = { logs, schedule };
-        try { localStorage.setItem('admin_cache_week_' + weekBeingLoaded, JSON.stringify({ logs, schedule })); } catch (e) {}
+        try { safeStorage.setItem('admin_cache_week_' + weekBeingLoaded, JSON.stringify({ logs, schedule })); } catch (e) {}
         
         const weekDays = [];
         for (let i = 0; i < 5; i++) {
@@ -986,7 +986,7 @@ async function loadStaffList(isSilent = false) {
         populateStaffFilterDropdowns(allStaffList);
     } else {
         try {
-            const stored = localStorage.getItem('admin_cache_staff');
+            const stored = safeStorage.getItem('admin_cache_staff');
             if (stored) {
                 allStaffList = JSON.parse(stored);
                 renderStaffList(allStaffList);
@@ -1007,7 +1007,7 @@ async function loadStaffList(isSilent = false) {
         const response = await listStaff();
         if (response.ok && response.staff) {
             allStaffList = response.staff;
-            try { localStorage.setItem('admin_cache_staff', JSON.stringify(response.staff)); } catch (e) {}
+            try { safeStorage.setItem('admin_cache_staff', JSON.stringify(response.staff)); } catch (e) {}
             renderStaffList(response.staff);
             populateStaffFilterDropdowns(response.staff);
         } else if (!allStaffList || !allStaffList.length) {
@@ -1093,7 +1093,7 @@ async function loadLogsViewer(isSilent = false) {
         renderLogsTable();
     } else {
         try {
-            const stored = localStorage.getItem('admin_cache_logs');
+            const stored = safeStorage.getItem('admin_cache_logs');
             if (stored) {
                 logsAllRecords = JSON.parse(stored);
                 renderLogsTable();
@@ -1122,7 +1122,7 @@ async function loadLogsViewer(isSilent = false) {
         });
         if (response.ok && Array.isArray(response.logs)) {
             logsAllRecords = response.logs;
-            try { localStorage.setItem('admin_cache_logs', JSON.stringify(response.logs)); } catch (e) {}
+            try { safeStorage.setItem('admin_cache_logs', JSON.stringify(response.logs)); } catch (e) {}
             logsCurrentPage = 1;
             renderLogsTable();
         } else if (!logsAllRecords || !logsAllRecords.length) {
@@ -1584,7 +1584,7 @@ async function loadAnalytics(filterType = null, customFrom = null, customTo = nu
         hasLoadedFromCache = true;
     } else if (filterType === 'all' && !customFrom) {
         try {
-            const stored = localStorage.getItem('admin_cache_analytics');
+            const stored = safeStorage.getItem('admin_cache_analytics');
             if (stored) {
                 const parsed = JSON.parse(stored);
                 analyticsData = parsed.analyticsData;
@@ -1650,7 +1650,7 @@ async function loadAnalytics(filterType = null, customFrom = null, customTo = nu
 
         renderAnalytics();
         if (filterType === 'all' && !customFrom) {
-            try { localStorage.setItem('admin_cache_analytics', JSON.stringify({ analyticsData, deviceEventsAll })); } catch (e) {}
+            try { safeStorage.setItem('admin_cache_analytics', JSON.stringify({ analyticsData, deviceEventsAll })); } catch (e) {}
         }
     } catch (error) {
         if (host && !analyticsData) host.innerHTML = '<div class="staff-list-state">Failed to load analytics.</div>';
@@ -1664,8 +1664,8 @@ async function loadAnalytics(filterType = null, customFrom = null, customTo = nu
 
 function renderAdminPanel() {
     const panelHost = document.getElementById('admin-panel-host');
-    const isSuper = sessionStorage.getItem('is_superuser') === 'true';
-    const roleTier = sessionStorage.getItem('admin_role_tier') || 'admin';
+    const isSuper = safeSession.getItem('is_superuser') === 'true';
+    const roleTier = safeSession.getItem('admin_role_tier') || 'admin';
     const badgeMap = { developer: '👑', admin: '🏢', sub_admin: '🛡️', team_lead: '👥' };
     const badgeContainer = document.getElementById('topbar-badge-container');
     if (badgeContainer) {
@@ -2219,23 +2219,23 @@ async function handleAdminLogin(event) {
         if (response.ok) {
             isAdminLoggedIn = true;
             currentAdminUsername = username;
-            sessionStorage.setItem('admin_session', JSON.stringify({ 
+            safeSession.setItem('admin_session', JSON.stringify({ 
                 username, 
                 adminToken: response.adminToken || '', 
                 csrfToken: response.csrfToken || '', 
                 timestamp: Date.now() 
             }));
-            if (response.csrfToken) sessionStorage.setItem('admin_csrf_token', response.csrfToken);
-            if (response.adminToken) sessionStorage.setItem('admin_token', response.adminToken);
+            if (response.csrfToken) safeSession.setItem('admin_csrf_token', response.csrfToken);
+            if (response.adminToken) safeSession.setItem('admin_token', response.adminToken);
             
             if (response.role === 'developer') {
-                sessionStorage.setItem('is_superuser', 'true');
-                sessionStorage.setItem('admin_role_tier', 'developer');
+                safeSession.setItem('is_superuser', 'true');
+                safeSession.setItem('admin_role_tier', 'developer');
             } else {
-                sessionStorage.setItem('is_superuser', 'false');
-                sessionStorage.setItem('admin_role_tier', response.role || 'admin');
+                safeSession.setItem('is_superuser', 'false');
+                safeSession.setItem('admin_role_tier', response.role || 'admin');
             }
-            sessionStorage.setItem('admin_username', username);
+            safeSession.setItem('admin_username', username);
             
             document.getElementById('admin-login-form').style.display = 'none';
             document.getElementById('forgot-password-link').style.display = 'none';
@@ -2268,16 +2268,16 @@ function initAdminApp() {
     initRefreshButton();
     initAllPasswordToggles();
     
-    const savedSession = sessionStorage.getItem('admin_session');
+    const savedSession = safeSession.getItem('admin_session');
     if (savedSession) {
         try {
             const session = JSON.parse(savedSession);
             if (session.username && session.timestamp && (Date.now() - session.timestamp < 3600000)) {
                 isAdminLoggedIn = true;
                 currentAdminUsername = session.username;
-                if (session.adminToken) sessionStorage.setItem('admin_token', session.adminToken);
-                if (session.csrfToken) sessionStorage.setItem('admin_csrf_token', session.csrfToken);
-                sessionStorage.setItem('admin_username', session.username);
+                if (session.adminToken) safeSession.setItem('admin_token', session.adminToken);
+                if (session.csrfToken) safeSession.setItem('admin_csrf_token', session.csrfToken);
+                safeSession.setItem('admin_username', session.username);
                 const form = document.getElementById('admin-login-form');
                 if (form) form.style.display = 'none';
                 const forgot = document.getElementById('forgot-password-link');
