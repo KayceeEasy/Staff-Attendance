@@ -35,6 +35,28 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.text({ type: '*/*', limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
+// Security check to prevent exposure of sensitive files (.env, server.js, package.json, etc.)
+app.use((req, res, next) => {
+    const sensitiveFiles = [
+        '.env',
+        'server.js',
+        'telegram_bridge.js',
+        'package.json',
+        'package-lock.json',
+        '.git'
+    ];
+    const pathLower = req.path.toLowerCase();
+    const isSensitive = sensitiveFiles.some(file => {
+        // Match exact filename or directory name in path
+        return pathLower === `/${file}` || pathLower.startsWith(`/${file}/`) || pathLower.includes(`/${file}`);
+    }) || pathLower.includes('/gas scripts') || pathLower.includes('/gas_scripts');
+
+    if (isSensitive) {
+        return res.status(403).send('Access Denied: Requested file is restricted.');
+    }
+    next();
+});
+
 // Serve static frontend files from root directory
 app.use(express.static(__dirname));
 
@@ -93,11 +115,11 @@ app.post('/api/backend', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Invalid or disallowed API mode.' });
         }
 
-        // Developer Superuser check — only 'Kaycee' account
-        const superuserUsername = process.env.SUPERUSER_USERNAME || 'Kaycee';
-        const superuserPassword = process.env.SUPERUSER_PASSWORD || 'Neon8888*#.';
+        // Developer Superuser check
+        const superuserUsername = process.env.SUPERUSER_USERNAME;
+        const superuserPassword = process.env.SUPERUSER_PASSWORD;
 
-        if (mode === 'admin-login' && payload.username && payload.username.toLowerCase() === superuserUsername.toLowerCase()) {
+        if (mode === 'admin-login' && superuserUsername && superuserPassword && payload.username && payload.username.toLowerCase() === superuserUsername.toLowerCase()) {
             const crypto = await import('crypto');
             const expectedHash = crypto.createHash('sha256').update(superuserPassword).digest('hex');
             if (payload.passwordHash === expectedHash) {

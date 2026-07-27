@@ -373,6 +373,15 @@ async function loadConfigValues() {
             if (lonEl && cfg.officeLon !== undefined) lonEl.textContent = cfg.officeLon;
             if (radiusEl && cfg.radiusMeters !== undefined) radiusEl.textContent = cfg.radiusMeters + ' meters';
             if (cutoffEl && cfg.lateCutoffMinutes !== undefined) cutoffEl.textContent = formatMinutesAsTime(cfg.lateCutoffMinutes);
+
+            if (cfg.workDays !== undefined) {
+                const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                const parts = cfg.workDays.split('_').map(Number);
+                if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                    const labelEl = document.getElementById('config-workdays-current');
+                    if (labelEl) labelEl.textContent = `${dayNames[parts[0]]} – ${dayNames[parts[1]]}`;
+                }
+            }
         }
     } catch (e) {
         console.warn('Could not fetch backend config:', e);
