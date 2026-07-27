@@ -124,8 +124,8 @@ async function callBackend(payload, timeoutMs = 20000) {
         username: payload.username || username
     };
 
-    const isGitHubPages = window.location.hostname.endsWith('github.io');
-    const endpoint = isGitHubPages ? (window.GAS_SCRIPT_URL || FALLBACK_GAS_URL) : '/api/backend';
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const endpoint = isLocalhost ? '/api/backend' : (window.GAS_SCRIPT_URL || FALLBACK_GAS_URL);
 
     try {
         const controller = new AbortController();

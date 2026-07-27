@@ -1,2299 +1,1 @@
-function setHtmlIfChanged(element, newHtml) { if (!element) return false; if (element.innerHTML !== newHtml) { element.innerHTML = newHtml; return true; } return false; }
-
-/**
- * Admin console logic.
- * Tabbed interface with weekly navigation, session timeout, hybrid schedule.
- * Depends on ../common.js being loaded first.
- */
-
-let isAdminLoggedIn = false;
-let currentAdminUsername = '';
-let currentTab = 'dashboard';
-let autoRefreshTimer = null;
-let allStaffList = [];
-let cachedWeekData = {};
-let currentWeekStart = null;
-let hybridScheduleCache = {};
-
-// Session timeout (15 min idle sliding window inactivity → 60s countdown)
-let inactivityTimer = null;
-let sessionCountdownTimer = null;
-const SESSION_TIMEOUT_MS = 15 * 60 * 1000;
-const SESSION_COUNTDOWN_MS = 60 * 1000;
-
-/* ---------- Auth ---------- */
-
-async function authenticateAdmin(username, password) {
-    const passwordHash = await sha256Hex(password);
-    return callBackend({ mode: 'admin-login', username, passwordHash });
-}
-
-async function changeAdminPassword(username, currentPassword, newPassword) {
-    const currentPasswordHash = await sha256Hex(currentPassword);
-    const newPasswordHash = await sha256Hex(newPassword);
-    const adminToken = sessionStorage.getItem('admin_token') || currentPasswordHash;
-    const csrfToken = sessionStorage.getItem('admin_csrf_token') || '';
-    return callBackend({ mode: 'admin-change-password', username, currentPasswordHash, newPasswordHash, adminToken, csrfToken });
-}
-
-async function setRecoveryEmail(username, currentPassword, email) {
-    const currentPasswordHash = await sha256Hex(currentPassword);
-    const adminToken = sessionStorage.getItem('admin_token') || currentPasswordHash;
-    const csrfToken = sessionStorage.getItem('admin_csrf_token') || '';
-    return callBackend({ mode: 'admin-set-recovery-email', username, currentPasswordHash, email, adminToken, csrfToken });
-}
-
-async function requestPasswordResetCode(username) {
-    return callBackend({ mode: 'admin-forgot-password-request', username });
-}
-
-async function confirmPasswordReset(username, code, newPassword) {
-    const newPasswordHash = await sha256Hex(newPassword);
-    return callBackend({ mode: 'admin-forgot-password-confirm', username, code, newPasswordHash });
-}
-
-/* ---------- API ---------- */
-
-async function listStaff() {
-    return callBackend({ mode: 'list-staff' });
-}
-
-async function addStaff(name) {
-    return callBackend({ mode: 'add-staff', name });
-}
-
-async function removeStaffRecord(name) {
-    return callBackend({ mode: 'remove-staff', name });
-}
-
-async function resetStaffLock(name) {
-    return callBackend({ mode: 'reset-staff-lock', name });
-}
-
-async function resetAllLocks() {
-    return callBackend({ mode: 'reset-all-locks' });
-}
-
-async function fetchLogs(filters = {}) {
-    return callBackend({ mode: 'list-logs', ...filters });
-}
-
-async function fetchHybridSchedule(weekStart, forceRefresh = false) {
-    if (!forceRefresh && hybridScheduleCache[weekStart] && Object.keys(hybridScheduleCache[weekStart]).length) {
-        return hybridScheduleCache[weekStart];
-    }
-
-    try {
-        const response = await callBackend({ mode: 'get-hybrid-schedule', weekStart });
-        let schedule = null;
-        
-        if (response && response.ok && response.schedule && Object.keys(response.schedule).length) {
-            schedule = response.schedule;
-        } else {
-            const possibleFields = ['schedule', 'result', 'data', 'raw', 'payload', 'scheduleJson'];
-            for (const f of possibleFields) {
-                const candidate = response && response[f];
-                if (!candidate) continue;
-                if (typeof candidate === 'object' && Object.keys(candidate).length) {
-                    schedule = candidate;
-                    break;
-                }
-                if (typeof candidate === 'string') {
-                    try {
-                        const parsed = JSON.parse(candidate);
-                        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
-                            schedule = parsed;
-                            break;
-                        }
-                    } catch (e) {}
-                }
-            }
-        }
-        
-        if (schedule && Object.keys(schedule).length) {
-            hybridScheduleCache[weekStart] = schedule;
-        } else if (hybridScheduleCache[weekStart]) {
-            schedule = hybridScheduleCache[weekStart];
-        }
-        
-        return schedule || {};
-    } catch (e) {
-        console.warn('Could not fetch hybrid schedule:', e);
-        if (hybridScheduleCache[weekStart] && Object.keys(hybridScheduleCache[weekStart]).length) {
-            return hybridScheduleCache[weekStart];
-        }
-        return {};
-    }
-}
-
-const AUTO_REFRESH_MS = 60000;
-
-function startAutoRefresh() {
-    clearAutoRefresh();
-    autoRefreshTimer = setInterval(() => {
-        if (!isAdminLoggedIn) { clearAutoRefresh(); return; }
-        const timeoutOverlay = document.querySelector('.session-timeout-overlay');
-        if (timeoutOverlay) return;
-        
-        refreshCurrentTab();
-    }, AUTO_REFRESH_MS);
-}
-
-function clearAutoRefresh() {
-    if (autoRefreshTimer) {
-        clearInterval(autoRefreshTimer);
-        autoRefreshTimer = null;
-    }
-}
-
-function refreshCurrentTab() {
-    if (!isAdminLoggedIn) return;
-    const activeTabBtn = document.querySelector('.admin-tabs .tab-btn.active');
-    const activeTab = activeTabBtn ? activeTabBtn.dataset.tab : 'dashboard';
-    if (activeTab === 'dashboard') {
-        loadWeekData(true);
-    } else if (activeTab === 'logs') {
-        loadLogsViewer(true);
-    } else if (activeTab === 'analytics') {
-        loadAnalytics(null, null, null, true);
-    } else if (activeTab === 'staff') {
-        loadStaffList(true);
-    }
-}
-
-function resetInactivityTimer() {
-    clearTimeout(inactivityTimer);
-    clearInterval(sessionCountdownTimer);
-    
-    const existingOverlay = document.querySelector('.session-timeout-overlay');
-    if (existingOverlay) existingOverlay.remove();
-    
-    inactivityTimer = setTimeout(showSessionTimeoutWarning, SESSION_TIMEOUT_MS);
-}
-
-function showSessionTimeoutWarning() {
-    const overlay = document.createElement('div');
-    overlay.className = 'dialog-overlay session-timeout-overlay';
-    overlay.innerHTML = `
-        <div class="dialog-box session-timeout-dialog">
-            <h3>⏰ Are you still there?</h3>
-            <p>This session will timeout in <strong id="session-countdown">30</strong> seconds due to inactivity.</p>
-            <div class="dialog-actions" style="grid-template-columns: 1fr;">
-                <button id="session-here-btn" class="btn-in" type="button">✅ I'm here</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(overlay);
-    
-    const countdownEl = document.getElementById('session-countdown');
-    let secondsLeft = 30;
-    
-    sessionCountdownTimer = setInterval(() => {
-        secondsLeft--;
-        if (countdownEl) countdownEl.textContent = secondsLeft;
-        if (secondsLeft <= 0) {
-            clearInterval(sessionCountdownTimer);
-            handleLogout(true);
-        }
-    }, 1000);
-    
-    document.getElementById('session-here-btn').addEventListener('click', () => {
-        clearInterval(sessionCountdownTimer);
-        overlay.remove();
-        resetInactivityTimer();
-    });
-}
-
-function clearAdminLoginForm() {
-    const form = document.getElementById('admin-login-form');
-    const usernameInput = document.getElementById('admin-username');
-    const passwordInput = document.getElementById('admin-password');
-    const messageEl = document.getElementById('admin-message');
-
-    if (form) form.reset();
-    if (usernameInput) usernameInput.value = '';
-    if (passwordInput) {
-        passwordInput.value = '';
-        passwordInput.type = 'password';
-    }
-    if (messageEl) {
-        messageEl.textContent = '';
-        messageEl.className = 'admin-message';
-    }
-}
-
-function handleLogout(isTimeout = false) {
-    clearTimeout(inactivityTimer);
-    clearInterval(sessionCountdownTimer);
-    clearAutoRefresh();
-    sessionStorage.removeItem('admin_session');
-    sessionStorage.removeItem('admin_csrf_token');
-    sessionStorage.removeItem('admin_token');
-    sessionStorage.removeItem('admin_username');
-    isAdminLoggedIn = false;
-    currentAdminUsername = '';
-    cachedWeekData = {};
-    hybridScheduleCache = {};
-    clearAdminLoginForm();
-    
-    const timeoutOverlay = document.querySelector('.session-timeout-overlay');
-    if (timeoutOverlay) timeoutOverlay.remove();
-    
-    document.getElementById('admin-panel-host').innerHTML = '';
-    document.getElementById('admin-login-form').style.display = 'grid';
-    document.getElementById('forgot-password-link').style.display = 'block';
-    const hero = document.querySelector('.admin-hero');
-    if (hero) hero.style.display = 'flex';
-    
-    if (isTimeout) {
-        showToast('Session timed out due to inactivity.', 'error');
-    }
-}
-
-/* ---------- Week Navigation ---------- */
-
-function getWeekRange(mondayDate) {
-    if (!mondayDate) {
-        mondayDate = new Date();
-        const day = mondayDate.getDay();
-        const diff = mondayDate.getDate() - day + (day === 0 ? -6 : 1);
-        mondayDate = new Date(mondayDate.getFullYear(), mondayDate.getMonth(), diff);
-    }
-    const friday = new Date(mondayDate);
-    friday.setDate(mondayDate.getDate() + 4);
-    return { monday: mondayDate, friday: friday };
-}
-
-function formatDateDMY(date) {
-    const dd = String(date.getDate()).padStart(2, '0');
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const yyyy = date.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-}
-
-function formatMinutesAsTime(minutes) {
-    if (minutes === undefined || minutes === null) return '';
-    let hh = Math.floor(minutes / 60);
-    const mm = String(minutes % 60).padStart(2, '0');
-    const ampm = hh >= 12 ? 'PM' : 'AM';
-    hh = hh % 12;
-    if (hh === 0) hh = 12;
-    return `${hh}:${mm} ${ampm}`;
-}
-
-function getMondayFromDate(date) {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    return new Date(d.getFullYear(), d.getMonth(), diff);
-}
-
-function navigateWeek(direction) {
-    if (!currentWeekStart) {
-        const today = new Date();
-        currentWeekStart = getMondayFromDate(today);
-    } else {
-        const parsed = parseDmyDate(currentWeekStart);
-        if (direction === 'prev') parsed.setDate(parsed.getDate() - 7);
-        else parsed.setDate(parsed.getDate() + 7);
-        currentWeekStart = parsed;
-    }
-    currentWeekStart = formatDateDMY(currentWeekStart);
-    loadWeekData();
-}
-
-function parseDmyDate(str) {
-    const parts = String(str || '').split('/').map(p => p.trim());
-    if (parts.length === 3) {
-        return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
-    }
-    return null;
-}
-
-function isoDateToDdMmYyyy(isoStr) {
-    if (!isoStr) return '';
-    const parts = isoStr.split('-');
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    return isoStr;
-}
-
-function normalizeDateKey(value) {
-    if (!value) return '';
-    if (value instanceof Date && !isNaN(value)) {
-        return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
-    }
-    const trimmed = String(value).trim();
-    if (!trimmed) return '';
-    const dmyMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (dmyMatch) {
-        return `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
-    }
-    const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-    if (isoMatch) {
-        return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
-    }
-    const parsed = new Date(trimmed);
-    if (!isNaN(parsed)) {
-        return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
-    }
-    return '';
-}
-
-function buildScheduleNameIndex(schedule) {
-    const index = {};
-    if (!schedule || typeof schedule !== 'object') return index;
-    Object.keys(schedule).forEach((raw) => {
-        const key = String(raw || '').trim().toLowerCase();
-        if (key) index[key] = raw;
-    });
-    return index;
-}
-
-/* ---------- Tab Navigation ---------- */
-
-function switchTab(tabId) {
-    currentTab = tabId;
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tabId));
-    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-    const activeContent = document.getElementById(`tab-${tabId}`);
-    if (activeContent) activeContent.classList.add('active');
-    
-    if (tabId === 'dashboard') { loadWeekData(); startAutoRefresh(); }
-    else if (tabId === 'staff') loadStaffList();
-    else if (tabId === 'logs') loadLogsViewer();
-    else if (tabId === 'analytics') loadAnalytics();
-    else if (tabId === 'config') loadConfigValues();
-    else { clearAutoRefresh(); }
-    
-    resetInactivityTimer();
-}
-
-async function loadConfigValues() {
-    clearAutoRefresh();
-    try {
-        const res = await callBackend({ mode: 'get-config' });
-        if (res && res.ok && res.config) {
-            const cfg = res.config;
-            const latEl = document.getElementById('config-lat-current');
-            const lonEl = document.getElementById('config-lon-current');
-            const radiusEl = document.getElementById('config-radius-current');
-            const cutoffEl = document.getElementById('config-late-cutoff-current');
-
-            if (latEl && cfg.officeLat !== undefined) latEl.textContent = cfg.officeLat;
-            if (lonEl && cfg.officeLon !== undefined) lonEl.textContent = cfg.officeLon;
-            if (radiusEl && cfg.radiusMeters !== undefined) radiusEl.textContent = cfg.radiusMeters + ' meters';
-            if (cutoffEl && cfg.lateCutoffMinutes !== undefined) cutoffEl.textContent = formatMinutesAsTime(cfg.lateCutoffMinutes);
-
-            if (cfg.workDays !== undefined) {
-                const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-                const parts = cfg.workDays.split('_').map(Number);
-                if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-                    const labelEl = document.getElementById('config-workdays-current');
-                    if (labelEl) labelEl.textContent = `${dayNames[parts[0]]} – ${dayNames[parts[1]]}`;
-                }
-            }
-        }
-    } catch (e) {
-        console.warn('Could not fetch backend config:', e);
-    }
-}
-
-function maskEmail(email) {
-    if (!email || typeof email !== 'string' || !email.includes('@')) return 'Not configured';
-    const parts = email.split('@');
-    const user = parts[0];
-    const domain = parts[1];
-    const maskedUser = user.length <= 2 ? user[0] + '***' : user[0] + '***' + user[user.length - 1];
-    const maskedDomain = domain.length <= 4 ? domain : domain[0] + '***' + domain.slice(domain.lastIndexOf('.'));
-    return `${maskedUser}@${maskedDomain}`;
-}
-
-async function loadRecoveryEmailDisplay() {
-    const el = document.getElementById('recovery-email-display');
-    if (!el) return;
-    try {
-        const res = await callBackend({ mode: 'get-recovery-email' });
-        if (res && res.ok && res.email) {
-            el.textContent = `Active: ${maskEmail(res.email)}`;
-        } else {
-            el.textContent = 'Not configured';
-        }
-    } catch (e) {
-        el.textContent = 'Active: (Configured)';
-    }
-}
-
-async function loadAdminUsersList() {
-    const section = document.getElementById('admin-user-management-section');
-    const container = document.getElementById('admin-users-list');
-    if (!container) return;
-
-    const isSuper = sessionStorage.getItem('is_superuser') === 'true';
-    const roleTier = sessionStorage.getItem('admin_role_tier') || (isSuper ? 'developer' : 'admin');
-
-    // Sub-admins and Team Leads cannot manage other admins
-    if (roleTier === 'sub_admin' || roleTier === 'team_lead') {
-        if (section) section.style.display = 'none';
-        return;
-    }
-
-    try {
-        const res = await callBackend({ mode: 'list-admin-users' });
-        let users = (res && res.ok && Array.isArray(res.users)) ? res.users : [];
-
-        if (!users.length) {
-            users = [
-                { username: currentAdminUsername || 'admin', role: isSuper ? 'developer' : 'admin' }
-            ];
-        }
-
-        const roleLabels = {
-            developer: '👑 Superuser',
-            admin: '🏢 Super Admin',
-            sub_admin: '🛡️ Sub-Admin',
-            team_lead: '👥 Team Lead'
-        };
-
-        const rowsHtml = users.map(u => {
-            // Hide developer superuser row from non-developer admins
-            if (u.role === 'developer' && !isSuper) return '';
-            
-            const isSelf = u.username === currentAdminUsername;
-            const isDevAccount = u.role === 'developer';
-            const canManage = !isSelf && !isDevAccount;
-
-            return `
-                <div class="staff-card" style="margin-bottom:8px; padding:12px 14px;">
-                    <div class="staff-info" style="flex:1;">
-                        <strong>${escapeHtml(u.username)}</strong>
-                        <span class="staff-device" style="margin-left:10px; font-weight:600; font-size:0.78rem;">${roleLabels[u.role] || u.role}</span>
-                        ${isSelf ? '<span style="margin-left:6px; font-size:0.7rem; color:var(--primary); font-weight:600;">(You)</span>' : ''}
-                    </div>
-                    ${canManage ? `
-                        <div class="staff-actions" style="display:flex; gap:6px;">
-                            <button class="admin-btn secondary small" type="button" data-reset-admin-pw="${escapeHtml(u.username)}" title="Reset Password">🔑 Reset</button>
-                            <button class="admin-btn secondary small danger" type="button" data-remove-admin="${escapeHtml(u.username)}" title="Remove Admin">🗑 Remove</button>
-                        </div>
-                    ` : ''}
-                </div>
-            `;
-        }).join('');
-
-        container.innerHTML = rowsHtml || '<div class="staff-list-state">No delegated admin users.</div>';
-
-        // Bind remove buttons
-        container.querySelectorAll('[data-remove-admin]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const target = btn.getAttribute('data-remove-admin');
-                const confirmed = await confirmDialog(`Remove admin privileges for "${target}"? This cannot be undone.`, { danger: true, confirmLabel: 'Remove' });
-                if (confirmed) {
-                    const res = await callBackend({ mode: 'remove-admin-user', targetUsername: target });
-                    showToast(res.message || 'Admin user removed.', res.ok ? 'success' : 'error');
-                    if (res.ok) loadAdminUsersList();
-                }
-            });
-        });
-
-        // Bind reset password buttons
-        container.querySelectorAll('[data-reset-admin-pw]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const target = btn.getAttribute('data-reset-admin-pw');
-                const result = await showInlineDialog({
-                    title: `Reset Password: ${target}`,
-                    message: 'Enter a new password for this admin user.',
-                    fields: [
-                        { placeholder: 'New password', type: 'password', autocomplete: 'new-password' },
-                        { placeholder: 'Confirm password', type: 'password', autocomplete: 'new-password' }
-                    ],
-                    confirmLabel: 'Reset Password'
-                });
-                if (!result) return;
-                if (result[0] !== result[1]) {
-                    showToast('Passwords do not match.', 'error');
-                    return;
-                }
-                const passHash = await sha256Hex(result[0]);
-                const res = await callBackend({ mode: 'admin-reset-user-password', targetUsername: target, newPasswordHash: passHash });
-                showToast(res.message || 'Password reset successfully.', res.ok ? 'success' : 'error');
-            });
-        });
-    } catch (e) {
-        container.innerHTML = '<div class="staff-list-state">Default Super Admin configured.</div>';
-    }
-}
-
-async function handleAddAdminUser() {
-    const isSuper = sessionStorage.getItem('is_superuser') === 'true';
-    
-    // Build stealthed role options — Superuser can create other Superusers
-    let roleOptionsHtml = '';
-    if (isSuper) {
-        roleOptionsHtml = `
-            <option value="developer">👑 Superuser</option>
-            <option value="admin" selected>🏢 Super Admin</option>
-            <option value="sub_admin">🛡️ Sub-Admin</option>
-            <option value="team_lead">👥 Team Lead</option>
-        `;
-    } else {
-        // Regular admin can only create lower tiers
-        roleOptionsHtml = `
-            <option value="sub_admin" selected>🛡️ Sub-Admin</option>
-            <option value="team_lead">👥 Team Lead</option>
-        `;
-    }
-
-    const customHtml = `
-        <div style="display:flex; flex-direction:column; gap:10px; text-align:left; margin-top:8px;">
-            <label style="font-size:0.82rem; font-weight:600; color:var(--text);">Permission Tier</label>
-            <select id="add-admin-role-select" style="padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.88rem;">
-                ${roleOptionsHtml}
-            </select>
-        </div>
-    `;
-
-    const result = await showInlineDialog({
-        title: 'Add Admin User',
-        message: 'Create a new admin account for this tenant.',
-        fields: [
-            { placeholder: 'Username (e.g. john_hr)' },
-            { placeholder: 'Password', type: 'password' }
-        ],
-        customContentHtml: customHtml,
-        confirmLabel: 'Create Admin'
-    });
-
-    if (!result || !result[0] || !result[1]) return;
-    const newUsername = result[0].trim();
-    const newPass = result[1];
-
-    // Read the role from the captured custom select value (saved by showInlineDialog before overlay removal)
-    let selectedRole = window['_dialogVal_add-admin-role-select'] || (isSuper ? 'admin' : 'sub_admin');
-    delete window['_dialogVal_add-admin-role-select'];
-
-    const passHash = await sha256Hex(newPass);
-    const res = await callBackend({
-        mode: 'add-admin-user',
-        newUsername,
-        passwordHash: passHash,
-        role: selectedRole
-    });
-
-    showToast(res.message || 'Admin user created successfully!', res.ok ? 'success' : 'error');
-    if (res.ok) loadAdminUsersList();
-}
-
-/* ---------- Export Functions ---------- */
-
-function exportToCSV(data, filename) {
-    if (!data || !data.length) { showToast('No data to export.', 'error'); return; }
-    const headers = Object.keys(data[0]);
-    const csvRows = [
-        headers.join(','),
-        ...data.map(row => headers.map(h => `"${String(row[h] || '').replace(/"/g, '""')}"`).join(','))
-    ];
-    const blob = new Blob(['\uFEFF' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `${filename}_${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    showToast(`Exported ${data.length} records.`, 'success');
-}
-
-function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
-    const monday = parseDmyDate(weekStartStr);
-    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-    const weekDays = [];
-    for (let i = 0; i < 5; i++) {
-        const day = new Date(monday);
-        day.setDate(monday.getDate() + i);
-        weekDays.push(formatDateDMY(day));
-    }
-
-    const allStaff = new Set();
-    Object.keys(schedule || {}).forEach(name => allStaff.add(name));
-    (logs || []).forEach(entry => allStaff.add(entry.name));
-    if (allStaffList.length) allStaffList.forEach(s => allStaff.add(s.name));
-    const sortedStaff = Array.from(allStaff).sort((a, b) => a.localeCompare(b));
-
-    if (!sortedStaff.length) { showToast('No staff data to export for this week.', 'error'); return; }
-
-    const scheduleNameIndex = buildScheduleNameIndex(schedule);
-
-    const rows = sortedStaff.map(name => {
-        const normalizedStaffName = String(name || '').trim().toLowerCase();
-        const row = { Staff: name };
-
-        weekDays.forEach((day, idx) => {
-            const columnLabel = `${dayNames[idx]} ${day}`;
-            const dayKey = normalizeDateKey(day);
-
-            const dayLogs = (logs || []).filter(l => {
-                const logName = String(l.name || '').trim().toLowerCase();
-                const logDateKey = normalizeDateKey(l.date || l.timestamp || '');
-                return logName === normalizedStaffName && logDateKey === dayKey;
-            });
-
-            let scheduleKey = scheduleNameIndex[normalizedStaffName] || null;
-            if (!scheduleKey) {
-                const candidate = Object.keys(schedule || {}).find(k => {
-                    const nk = String(k || '').trim().toLowerCase();
-                    return nk === normalizedStaffName || nk.includes(normalizedStaffName) || normalizedStaffName.includes(nk);
-                });
-                if (candidate) scheduleKey = candidate;
-            }
-            const staffSchedules = scheduleKey ? (schedule[scheduleKey] || []) : [];
-            const daySchedule = staffSchedules.find(s => normalizeDateKey(s.date) === dayKey);
-            const isWfh = String(daySchedule?.location || '').trim().toLowerCase() === 'home';
-
-            const inLog = dayLogs.find(l => String(l.action || '').trim().toUpperCase() === 'IN');
-
-            let cellText = '\u2014';
-            if (isWfh) {
-                cellText = '\ud83c\udfe0 Home';
-            } else if (inLog) {
-                const isLate = inLog.status && String(inLog.status).trim().toUpperCase() === 'LATE';
-                cellText = `\u2713 ${inLog.time || ''}`.trim();
-                if (isLate) cellText += ' (Late)';
-            }
-
-            row[columnLabel] = cellText;
-        });
-
-        return row;
-    });
-
-    exportToCSV(rows, 'attendance_matrix_week');
-}
-
-/* ============================================================
-   DASHBOARD / WEEK DATA
-   ============================================================ */
-
-async function loadWeekData(isSilent = false) {
-    if (!currentWeekStart) {
-        const today = new Date();
-        currentWeekStart = formatDateDMY(getMondayFromDate(today));
-    }
-
-    const weekBeingLoaded = currentWeekStart;
-    const { monday, friday } = getWeekRange(parseDmyDate(weekBeingLoaded));
-    const mondayStr = formatDateDMY(monday);
-    const fridayStr = formatDateDMY(friday);
-    
-    const weekLabel = document.getElementById('week-label');
-    if (weekLabel) weekLabel.textContent = `📅 ${mondayStr} - ${fridayStr}`;
-
-    const weekDays = [];
-    for (let i = 0; i < 5; i++) {
-        const day = new Date(monday);
-        day.setDate(monday.getDate() + i);
-        weekDays.push(formatDateDMY(day));
-    }
-    
-    // Check in-memory & localStorage cache for 0ms instant rendering
-    if (!cachedWeekData[weekBeingLoaded]) {
-        try {
-            const stored = localStorage.getItem('admin_cache_week_' + weekBeingLoaded);
-            if (stored) cachedWeekData[weekBeingLoaded] = JSON.parse(stored);
-        } catch (e) {}
-    }
-
-    if (cachedWeekData[weekBeingLoaded]) {
-        renderWeekOverview(cachedWeekData[weekBeingLoaded].logs, cachedWeekData[weekBeingLoaded].schedule, weekDays);
-        renderAttendanceMatrix(cachedWeekData[weekBeingLoaded].logs, cachedWeekData[weekBeingLoaded].schedule, weekDays);
-    } else if (!isSilent) {
-        document.getElementById('today-attendance-list').innerHTML = `
-            <div class="summary-stat-card skeleton-box skeleton-card"></div>
-        `;
-        document.getElementById('attendance-matrix').innerHTML = `
-            <div class="skeleton-box skeleton-row"></div>
-            <div class="skeleton-box skeleton-row"></div>
-            <div class="skeleton-box skeleton-row"></div>
-        `;
-    }
-    
-    try {
-        const response = await fetchLogs({ weekStart: weekBeingLoaded, limit: 500 });
-        let logs = response.ok && Array.isArray(response.logs) ? response.logs : [];
-        const schedule = await fetchHybridSchedule(weekBeingLoaded, false);
-        
-        cachedWeekData[weekBeingLoaded] = { logs, schedule };
-        try { localStorage.setItem('admin_cache_week_' + weekBeingLoaded, JSON.stringify({ logs, schedule })); } catch (e) {}
-        
-        const weekDays = [];
-        for (let i = 0; i < 5; i++) {
-            const day = new Date(monday);
-            day.setDate(monday.getDate() + i);
-            weekDays.push(formatDateDMY(day));
-        }
-        
-        if (currentWeekStart === weekBeingLoaded) {
-            renderWeekOverview(logs, schedule, weekDays);
-            renderAttendanceMatrix(logs, schedule, weekDays);
-
-            const refreshLabel = document.getElementById('refresh-label');
-            if (refreshLabel) {
-                const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                refreshLabel.innerHTML = `<span class="live-pulse-dot" title="30s live auto-refresh active"></span> Live (${timeStr})`;
-            }
-        }
-        
-        if (!isSilent && currentTab === 'dashboard') {
-            fetchHybridSchedule(weekBeingLoaded, true).then(freshSchedule => {
-                if (freshSchedule && Object.keys(freshSchedule).length) {
-                    const oldSchedule = hybridScheduleCache[weekBeingLoaded];
-                    if (JSON.stringify(oldSchedule) !== JSON.stringify(freshSchedule)) {
-                        hybridScheduleCache[weekBeingLoaded] = freshSchedule;
-                        if (cachedWeekData[weekBeingLoaded]) cachedWeekData[weekBeingLoaded].schedule = freshSchedule;
-
-                        if (currentWeekStart === weekBeingLoaded) {
-                            renderAttendanceMatrix(logs, freshSchedule, weekDays);
-                            const refreshLabel = document.getElementById('refresh-label');
-                            if (refreshLabel) {
-                                const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                                refreshLabel.innerHTML = `<span class="live-pulse-dot" title="30s live auto-refresh active"></span> Live (${timeStr})`;
-                            }
-                        }
-                    }
-                }
-            }).catch(err => console.warn('Background schedule refresh failed:', err));
-        }
-    } catch (error) {
-        console.error('Error loading week data:', error);
-        if (!isSilent && currentWeekStart === weekBeingLoaded) {
-            document.getElementById('today-attendance-list').innerHTML = '<div class="staff-list-state">Failed to load data. Check connection.</div>';
-        }
-    }
-}
-
-function renderWeekOverview(logs, schedule, weekDays) {
-    const host = document.getElementById('today-attendance-list');
-    if (!host) return;
-    
-    if (!logs || !logs.length) {
-        host.innerHTML = '<div class="staff-list-state">No attendance records for this week.</div>';
-        return;
-    }
-    
-    const signedIn = logs.filter(s => String(s.action || '').trim().toUpperCase() === 'IN').length;
-    const lateCount = logs.filter(s => normalizeAttendanceStatus(s.status) === 'late' && String(s.action || '').trim().toUpperCase() === 'IN').length;
-    
-    setHtmlIfChanged(host, `
-        <div class="today-attendance-summary">
-            <div class="summary-stat-card">
-                <span class="stat-number">${logs.length}</span>
-                <span class="stat-label">Total Actions</span>
-            </div>
-            <div class="summary-stat-card signed-in-bg">
-                <span class="stat-number">${signedIn}</span>
-                <span class="stat-label">Sign Ins</span>
-            </div>
-            <div class="summary-stat-card ${lateCount > 0 ? 'warning' : 'ok'}">
-                <span class="stat-number">${lateCount}</span>
-                <span class="stat-label">Late</span>
-            </div>
-        </div>
-    `);
-}
-
-function renderAttendanceMatrix(logs, schedule, weekDays) {
-    const host = document.getElementById('attendance-matrix');
-    if (!host) return;
-    
-    const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-    const allStaff = new Set();
-    
-    Object.keys(schedule).forEach(name => allStaff.add(name));
-    logs.forEach(entry => allStaff.add(entry.name));
-    if (allStaffList.length) allStaffList.forEach(s => allStaff.add(s.name));
-    
-    const sortedStaff = Array.from(allStaff).sort((a, b) => a.localeCompare(b));
-    const scheduleNameIndex = buildScheduleNameIndex(schedule);
-    
-    const matrix = {};
-    sortedStaff.forEach(name => {
-        matrix[name] = {};
-        weekDays.forEach((day, idx) => {
-            const dayKey = normalizeDateKey(day);
-            const normalizedStaffName = String(name || '').trim().toLowerCase();
-
-            const dayLogs = logs.filter(l => {
-                const logName = String(l.name || '').trim().toLowerCase();
-                const logDateKey = normalizeDateKey(l.date || l.timestamp || '');
-                return logName === normalizedStaffName && logDateKey === dayKey;
-            });
-
-            let scheduleKey = scheduleNameIndex[normalizedStaffName] || null;
-            if (!scheduleKey) {
-                const candidate = Object.keys(schedule || {}).find(k => {
-                    const nk = String(k || '').trim().toLowerCase();
-                    return nk === normalizedStaffName || nk.includes(normalizedStaffName) || normalizedStaffName.includes(nk);
-                });
-                if (candidate) scheduleKey = candidate;
-            }
-            const staffSchedules = scheduleKey ? (schedule[scheduleKey] || []) : [];
-            const daySchedule = staffSchedules.find(s => normalizeDateKey(s.date) === dayKey);
-
-            matrix[name][idx] = {
-                logs: dayLogs,
-                schedule: daySchedule || null,
-                isWfh: String(daySchedule?.location || '').trim().toLowerCase() === 'home'
-            };
-        });
-    });
-    
-    setHtmlIfChanged(host, `
-        <div class="matrix-wrapper">
-            <table class="attendance-matrix">
-                <thead>
-                    <tr>
-                        <th>Staff</th>
-                        ${dayLabels.map((label, i) => `<th>${label}<br><span class="matrix-date">${weekDays[i]}</span></th>`).join('')}
-                    </tr>
-                </thead>
-                <tbody>
-                    ${sortedStaff.map(name => {
-                        const row = matrix[name];
-                        return `<tr>
-                            <td class="matrix-name">${escapeHtml(name)}</td>
-                            ${weekDays.map((_, i) => {
-                                const cell = row[i];
-                                const inLog = cell.logs.find(l => String(l.action || '').trim().toUpperCase() === 'IN');
-
-                                let status = '';
-                                let statusClass = '';
-
-                                if (inLog) {
-                                    const isLate = inLog.status && String(inLog.status).trim().toUpperCase() === 'LATE';
-                                    status = `✓ In<br>${escapeHtml(inLog.time || '')}`;
-                                    if (isLate) status += '<br>⚠ Late';
-                                    statusClass = isLate ? 'matrix-late' : 'matrix-in';
-                                } else if (cell.isWfh) {
-                                    status = '<span class="matrix-home-emoji" aria-label="Home">🏠</span>';
-                                    statusClass = 'matrix-wfh';
-                                } else {
-                                    status = '—';
-                                    statusClass = 'matrix-absent';
-                                }
-
-                                return `<td class="matrix-cell ${statusClass}">${status}</td>`;
-                            }).join('')}
-                        </tr>`;
-                    }).join('')}
-                </tbody>
-            </table>
-        </div>
-        <div class="matrix-legend">
-            <span class="legend-item"><span class="legend-dot matrix-in"></span> Signed In</span>
-            <span class="legend-item"><span class="legend-dot matrix-late"></span> Late</span>
-            <span class="legend-item"><span class="legend-dot matrix-wfh"></span> Home</span>
-            <span class="legend-item"><span class="legend-dot matrix-absent"></span> Absent</span>
-        </div>
-    `);
-
-    if (window.location && window.location.hash === '#debug-schedule') {
-        try {
-            const debugRows = sortedStaff.map(name => {
-                const n = String(name || '').trim();
-                const key = scheduleNameIndex[n.toLowerCase()] || null;
-                const sched = key ? (schedule[key] || []) : [];
-                const wfhCount = sched.filter(s => String(s.location || '').toLowerCase() === 'home').length;
-                return { name: n, scheduleKey: key, wfhCount, sched };
-            });
-            const debugHtml = '<div class="analytics-section debug-schedule">' +
-                '<h4>🧪 Schedule Debug</h4>' +
-                '<pre style="max-height:240px;overflow:auto;white-space:pre-wrap">' + escapeHtml(JSON.stringify({ scheduleNameIndex, debugRows }, null, 2)) + '</pre>' +
-                '</div>';
-            host.innerHTML += debugHtml;
-        } catch (e) {
-            console.warn('Schedule debug render failed', e.message);
-        }
-    }
-}
-
-/* ============================================================
-   STAFF MANAGEMENT TAB
-   ============================================================ */
-
-function renderStaffList(staff) {
-    const staffList = document.getElementById('staff-list');
-    if (!staffList) return;
-    if (Array.isArray(staff)) allStaffList = staff;
-
-    const searchQuery = (document.getElementById('staff-admin-search')?.value || '').trim().toLowerCase();
-    const filteredStaff = searchQuery 
-        ? allStaffList.filter(s => String(s.name || '').toLowerCase().includes(searchQuery))
-        : allStaffList;
-
-    if (!filteredStaff.length) {
-        staffList.innerHTML = `<div class="staff-list-state">${searchQuery ? `No staff matching "${escapeHtml(searchQuery)}"` : 'No staff members configured. Add your first staff member below.'}</div>`;
-        return;
-    }
-    
-    const headerHtml = `
-        <div class="staff-header-row">
-            <div>Staff Member</div>
-            <div>Device Lock</div>
-            <div style="text-align: right;">Actions</div>
-        </div>
-    `;
-
-    const rowsHtml = filteredStaff.map((entry) => `
-        <div class="staff-row">
-            <div class="staff-name-cell">${escapeHtml(entry.name)}</div>
-            <div class="staff-device-cell">
-                <span class="status-pill-small ${entry.deviceId ? 'late' : 'synced'}">${entry.deviceId ? '🔒 Locked' : '🔓 Unlocked'}</span>
-            </div>
-            <div class="staff-actions">
-                <button class="admin-btn secondary small" type="button" title="Clear device lock for ${escapeHtml(entry.name)}" data-reset-name="${escapeHtml(entry.name)}">🔓 Reset</button>
-                <button class="admin-btn secondary small danger" type="button" title="Remove ${escapeHtml(entry.name)}" data-remove-name="${escapeHtml(entry.name)}">🗑 Remove</button>
-            </div>
-        </div>
-    `).join('');
-
-    if (!setHtmlIfChanged(staffList, headerHtml + rowsHtml)) return;
-
-    staffList.querySelectorAll('[data-reset-name]').forEach((button) => {
-        button.addEventListener('click', () => handleResetStaffLock(button.getAttribute('data-reset-name')));
-    });
-    staffList.querySelectorAll('[data-remove-name]').forEach((button) => {
-        button.addEventListener('click', () => handleRemoveStaff(button.getAttribute('data-remove-name')));
-    });
-}
-
-async function loadStaffList(isSilent = false) {
-    const staffList = document.getElementById('staff-list');
-    
-    // Check in-memory & localStorage cache for 0ms instant rendering
-    if (allStaffList && allStaffList.length) {
-        renderStaffList(allStaffList);
-        populateStaffFilterDropdowns(allStaffList);
-    } else {
-        try {
-            const stored = localStorage.getItem('admin_cache_staff');
-            if (stored) {
-                allStaffList = JSON.parse(stored);
-                renderStaffList(allStaffList);
-                populateStaffFilterDropdowns(allStaffList);
-            }
-        } catch (e) {}
-    }
-
-    if ((!allStaffList || !allStaffList.length) && staffList && !isSilent) {
-        staffList.innerHTML = `
-            <div class="skeleton-box skeleton-row"></div>
-            <div class="skeleton-box skeleton-row"></div>
-            <div class="skeleton-box skeleton-row"></div>
-        `;
-    }
-
-    try {
-        const response = await listStaff();
-        if (response.ok && response.staff) {
-            allStaffList = response.staff;
-            try { localStorage.setItem('admin_cache_staff', JSON.stringify(response.staff)); } catch (e) {}
-            renderStaffList(response.staff);
-            populateStaffFilterDropdowns(response.staff);
-        } else if (!allStaffList || !allStaffList.length) {
-            if (staffList) staffList.innerHTML = `<div class="staff-list-state">${escapeHtml(response.message || 'Could not load staff list.')}</div>`;
-        }
-    } catch (error) {
-        if ((!allStaffList || !allStaffList.length) && staffList && !isSilent) {
-            staffList.innerHTML = '<div class="staff-list-state">Failed to reach the server.</div>';
-        }
-    }
-}
-
-function populateStaffFilterDropdowns(staff) {
-    const filterSelect = document.getElementById('logs-filter-name-select');
-    if (filterSelect) {
-        const currentVal = filterSelect.value;
-        filterSelect.innerHTML = '<option value="">All staff</option>' + staff.map(s => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('');
-        if (currentVal) filterSelect.value = currentVal;
-    }
-}
-
-async function handleAddStaff() {
-    const input = document.getElementById('new-staff-name');
-    const name = input.value.trim();
-    if (!name) { showToast('Enter a staff name first.', 'error'); return; }
-    if (name.length < 2) { showToast('Staff name must be at least 2 characters.', 'error'); return; }
-    if (name.length > 50) { showToast('Staff name must be less than 50 characters.', 'error'); return; }
-    if (!/^[a-zA-Z\s\-'.]+$/.test(name)) { showToast('Invalid characters in name.', 'error'); return; }
-    
-    const addBtn = document.getElementById('add-staff-btn');
-    addBtn.disabled = true;
-    try {
-        const response = await addStaff(name);
-        showToast(response.message || 'Staff added.', response.ok ? 'success' : 'error');
-        if (response.ok) { input.value = ''; await loadStaffList(); }
-    } catch (error) { showToast('Could not reach the server.', 'error'); }
-    finally { addBtn.disabled = false; }
-}
-
-async function handleRemoveStaff(name) {
-    const confirmed = await confirmDialog(`Remove ${name} from staff list? Cannot be undone.`, { danger: true, confirmLabel: 'Remove' });
-    if (!confirmed) return;
-    try {
-        const response = await removeStaffRecord(name);
-        showToast(response.message || 'Staff removed.', response.ok ? 'success' : 'error');
-        if (response.ok) await loadStaffList();
-    } catch (error) { showToast('Could not reach the server.', 'error'); }
-}
-
-async function handleResetStaffLock(name) {
-    const confirmed = await confirmDialog(`Clear device lock for ${name}? They can register a new device on next sign-in.`, { confirmLabel: 'Reset lock' });
-    if (!confirmed) return;
-    try {
-        const response = await resetStaffLock(name);
-        showToast(response.message || 'Lock cleared.', response.ok ? 'success' : 'error');
-        if (response.ok) await loadStaffList();
-    } catch (error) { showToast('Could not reach the server.', 'error'); }
-}
-
-async function handleResetAllLocks() {
-    const confirmed = await confirmDialog('Clear device locks for ALL staff? Everyone will need to register a new device on their next sign-in. This cannot be undone.', { danger: true, confirmLabel: 'Reset All' });
-    if (!confirmed) return;
-    try {
-        const response = await resetAllLocks();
-        showToast(response.message || 'All locks cleared.', response.ok ? 'success' : 'error');
-        if (response.ok) await loadStaffList();
-    } catch (error) { showToast('Could not reach the server.', 'error'); }
-}
-
-/* ============================================================
-   LOGS TAB
-   ============================================================ */
-
-let logsAllRecords = [];
-let logsCurrentPage = 1;
-let logsPageSize = 20;
-
-async function loadLogsViewer(isSilent = false) {
-    const host = document.getElementById('logs-list');
-    
-    // Check in-memory & localStorage cache for 0ms instant rendering
-    if (logsAllRecords && logsAllRecords.length) {
-        renderLogsTable();
-    } else {
-        try {
-            const stored = localStorage.getItem('admin_cache_logs');
-            if (stored) {
-                logsAllRecords = JSON.parse(stored);
-                renderLogsTable();
-            }
-        } catch (e) {}
-    }
-
-    if ((!logsAllRecords || !logsAllRecords.length) && host && !isSilent) {
-        host.innerHTML = `
-            <div class="skeleton-box skeleton-row"></div>
-            <div class="skeleton-box skeleton-row"></div>
-            <div class="skeleton-box skeleton-row"></div>
-        `;
-    }
-
-    const nameFilter = document.getElementById('logs-filter-name-select')?.value || '';
-    const fromInput = document.getElementById('logs-filter-from')?.value || '';
-    const toInput = document.getElementById('logs-filter-to')?.value || '';
-
-    try {
-        const response = await fetchLogs({
-            name: nameFilter || undefined,
-            fromDate: isoDateToDdMmYyyy(fromInput) || undefined,
-            toDate: isoDateToDdMmYyyy(toInput) || undefined,
-            limit: 200
-        });
-        if (response.ok && Array.isArray(response.logs)) {
-            logsAllRecords = response.logs;
-            try { localStorage.setItem('admin_cache_logs', JSON.stringify(response.logs)); } catch (e) {}
-            logsCurrentPage = 1;
-            renderLogsTable();
-        } else if (!logsAllRecords || !logsAllRecords.length) {
-            logsAllRecords = [];
-            if (host) host.innerHTML = `<div class="staff-list-state">${escapeHtml(response.message || 'No records found.')}</div>`;
-        }
-    } catch (error) {
-        if (!logsAllRecords || !logsAllRecords.length) {
-            logsAllRecords = [];
-            if (host) host.innerHTML = '<div class="staff-list-state">Failed to reach the server.</div>';
-        }
-    }
-}
-
-function normalizeAttendanceStatus(status = '') {
-    const value = (status || '').toString().trim().toLowerCase();
-    if (value.includes('late')) return 'late';
-    if (value.includes('early')) return 'early';
-    if (value.includes('miss')) return 'missed';
-    if (value.includes('on time') || value.includes('on-time') || value.includes('verified') || value.includes('normal') || value.includes('welcome')) return 'ontime';
-    return 'default';
-}
-
-function getStatusBadgeClass(status = '') {
-    switch (normalizeAttendanceStatus(status)) {
-        case 'late':
-        case 'early':
-            return 'late';
-        case 'missed':
-            return 'offline';
-        default:
-            return 'synced';
-    }
-}
-
-function getStatusLabel(status = '') {
-    const value = (status || '').toString().trim();
-    switch (normalizeAttendanceStatus(status)) {
-        case 'late':
-            return 'Late';
-        case 'early':
-            return 'Early Out';
-        case 'missed':
-            return 'Missed';
-        case 'ontime':
-            return 'On Time';
-        default:
-            return value || 'Unknown';
-    }
-}
-
-function renderLogsTable() {
-    const host = document.getElementById('logs-list');
-    if (!host) return;
-    const logs = logsAllRecords;
-    if (!logs.length) { host.innerHTML = '<div class="staff-list-state">No records match this filter.</div>'; return; }
-
-    const totalPages = Math.max(1, Math.ceil(logs.length / logsPageSize));
-    if (logsCurrentPage > totalPages) logsCurrentPage = totalPages;
-    const startIdx = (logsCurrentPage - 1) * logsPageSize;
-    const pageLogs = logs.slice(startIdx, startIdx + logsPageSize);
-
-    host.innerHTML = `
-        <div class="logs-table-wrapper">
-            <div class="logs-table">
-                <div class="logs-row logs-head">
-                    <span>Date</span><span>Name</span><span>Action</span><span>Time</span><span>Status</span><span>Distance</span>
-                </div>
-                ${pageLogs.map(entry => `
-                    <div class="logs-row">
-                        <span>${escapeHtml(entry.date)}</span>
-                        <span>${escapeHtml(entry.name)}</span>
-                        <span class="logs-action ${entry.action === 'IN' ? 'in' : 'out'}">${escapeHtml(entry.action)}</span>
-                        <span>${escapeHtml(entry.time)}</span>
-                        <span><span class="status-pill-small ${getStatusBadgeClass(entry.status)}">${escapeHtml(getStatusLabel(entry.status))}</span></span>
-                        <span>${escapeHtml(entry.distance ? entry.distance + ' meters' : '-')}</span>
-                    </div>
-                `).join('')}
-            </div>
-        </div>
-        <div class="logs-footer">
-            <span>${logs.length} records — page ${logsCurrentPage} of ${totalPages}</span>
-            <div class="pagination-controls">
-                <div class="page-size-select">
-                    <label for="logs-page-size">Show</label>
-                    <select id="logs-page-size" aria-label="Records per page">
-                        <option value="20" ${logsPageSize === 20 ? 'selected' : ''}>20</option>
-                        <option value="50" ${logsPageSize === 50 ? 'selected' : ''}>50</option>
-                    </select>
-                </div>
-                <button id="logs-prev-page-btn" class="admin-btn secondary small" type="button" ${logsCurrentPage <= 1 ? 'disabled' : ''}>‹ Prev</button>
-                <button id="logs-next-page-btn" class="admin-btn secondary small" type="button" ${logsCurrentPage >= totalPages ? 'disabled' : ''}>Next ›</button>
-            </div>
-            <button id="export-logs-btn" class="admin-btn secondary small" type="button">📥 Export CSV</button>
-        </div>
-    `;
-
-    document.getElementById('logs-page-size')?.addEventListener('change', (e) => {
-        logsPageSize = parseInt(e.target.value, 10) || 20;
-        logsCurrentPage = 1;
-        renderLogsTable();
-    });
-    document.getElementById('logs-prev-page-btn')?.addEventListener('click', () => {
-        if (logsCurrentPage > 1) { logsCurrentPage--; renderLogsTable(); }
-    });
-    document.getElementById('logs-next-page-btn')?.addEventListener('click', () => {
-        if (logsCurrentPage < totalPages) { logsCurrentPage++; renderLogsTable(); }
-    });
-    document.getElementById('export-logs-btn')?.addEventListener('click', () => exportToCSV(logs, 'attendance_logs'));
-}
-
-/* ============================================================
-   ANALYTICS TAB
-   ============================================================ */
-
-function isExemptFromAnalytics(name) {
-    const lower = String(name || '').toLowerCase();
-    return lower.includes('kenneth') || lower.includes('valentine');
-}
-
-function processAnalyticsData(logs, schedule, filterType = 'all', customFromDate = null, customToDate = null) {
-    if (!logs || !logs.length) return null;
-    
-    const now = new Date();
-    let startDate = null, endDate = null;
-
-    if (filterType === 'month') {
-        // 1st calendar day of current month to today
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-    } else if (filterType === 'week') {
-        // Monday of current week to today
-        const day = now.getDay();
-        const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-        startDate = new Date(now.getFullYear(), now.getMonth(), diff);
-        endDate = new Date(now.getFullYear(), now.getMonth(), diff + 6, 23, 59, 59);
-    } else if (filterType === 'custom' && customFromDate) {
-        const p1 = customFromDate.split('-');
-        startDate = parseDmyDate(customFromDate) || (p1.length === 3 ? new Date(parseInt(p1[0], 10), parseInt(p1[1], 10)-1, parseInt(p1[2], 10)) : new Date(customFromDate));
-        
-        const p2 = customToDate ? customToDate.split('-') : [];
-        endDate = customToDate ? (parseDmyDate(customToDate) || (p2.length === 3 ? new Date(parseInt(p2[0], 10), parseInt(p2[1], 10)-1, parseInt(p2[2], 10)) : new Date(customToDate))) : new Date();
-        
-        if (startDate) startDate.setHours(0, 0, 0, 0);
-        if (endDate) endDate.setHours(23, 59, 59, 999);
-        
-        if (startDate && endDate && startDate > endDate) {
-            const temp = new Date(startDate);
-            startDate = new Date(endDate);
-            endDate = temp;
-            startDate.setHours(0, 0, 0, 0);
-            endDate.setHours(23, 59, 59, 999);
-        }
-    }
-
-    const filteredLogs = logs.filter(entry => {
-        if (!startDate) return true;
-        const entryDate = parseDmyDate(entry.date) || new Date(entry.timestamp || entry.date);
-        if (isNaN(entryDate.getTime())) return true;
-        return entryDate >= startDate && entryDate <= endDate;
-    });
-
-    const staffCounts = {};
-    let lateCount = 0, earlyOutCount = 0;
-    const totalDays = new Set();
-    
-    filteredLogs.forEach(entry => {
-        const name = entry.name;
-        if (isExemptFromAnalytics(name)) return;
-        if (!staffCounts[name]) staffCounts[name] = { in: 0, out: 0, late: 0, earlyOut: 0, wfhDays: 0, daysPresent: new Set() };
-        if (entry.action === 'IN') staffCounts[name].in++;
-        if (entry.action === 'OUT') staffCounts[name].out++;
-        const statusType = normalizeAttendanceStatus(entry.status);
-        if (statusType === 'late') {
-            lateCount++;
-            if (entry.action === 'IN') staffCounts[name].late++;
-        }
-        if (statusType === 'early' && entry.action === 'OUT') {
-            earlyOutCount++;
-            staffCounts[name].earlyOut++;
-        }
-        if (entry.date) {
-            totalDays.add(entry.date);
-            staffCounts[name].daysPresent.add(entry.date);
-        }
-    });
-    
-    Object.entries(schedule).forEach(([name, days]) => {
-        if (isExemptFromAnalytics(name)) return;
-        if (!staffCounts[name]) {
-            staffCounts[name] = { in: 0, out: 0, late: 0, earlyOut: 0, wfhDays: 0, daysPresent: new Set() };
-        }
-        days.forEach(d => {
-            if (d.location === 'home') staffCounts[name].wfhDays++;
-        });
-    });
-    
-    const totalDaysInRange = totalDays.size;
-    
-    const staffBreakdown = Object.entries(staffCounts)
-        .map(([name, counts]) => ({
-            name,
-            signIns: counts.in,
-            signOuts: counts.out,
-            totalActions: counts.in + counts.out,
-            lateCount: counts.late,
-            earlyOutCount: counts.earlyOut,
-            wfhDays: counts.wfhDays,
-            daysPresent: counts.daysPresent.size,
-            expectedOfficeDays: totalDaysInRange - counts.wfhDays,
-            attendanceRate: totalDaysInRange > 0 
-                ? Math.round((counts.daysPresent.size / Math.max(totalDaysInRange - counts.wfhDays, 1)) * 100)
-                : 0
-        }))
-        .sort((a, b) => a.totalActions - b.totalActions);
-    
-    return {
-        totalEntries: filteredLogs.length,
-        uniqueStaff: Object.keys(staffCounts).length,
-        totalDays: totalDaysInRange,
-        lateCount,
-        earlyOutCount,
-        latePercentage: filteredLogs.length ? ((lateCount / filteredLogs.length) * 100).toFixed(1) : 0,
-        leastActive: staffBreakdown.slice(0, 3),
-        mostActive: [...staffBreakdown].reverse().slice(0, 3),
-        staffBreakdown
-    };
-}
-
-function renderAnalytics() {
-    const host = document.getElementById('analytics-content');
-    if (!host) return;
-    
-    if (!analyticsData) {
-        host.innerHTML = '<div class="staff-list-state">No data available for analytics. Load the Dashboard first.</div>';
-        return;
-    }
-    
-    const data = analyticsData;
-    const deviceEvents = deviceEventsAll;
-    const totalEventPages = Math.max(1, Math.ceil(deviceEvents.length / DEVICE_EVENTS_PAGE_SIZE));
-    if (deviceEventsPage > totalEventPages) deviceEventsPage = totalEventPages;
-    const eventsStart = (deviceEventsPage - 1) * DEVICE_EVENTS_PAGE_SIZE;
-    const pageEvents = deviceEvents.slice(eventsStart, eventsStart + DEVICE_EVENTS_PAGE_SIZE);
-    
-    if (!setHtmlIfChanged(host, `
-        <div class="analytics-grid">
-            <div class="analytics-card">
-                <span class="analytics-icon">📊</span>
-                <div><span class="analytics-number">${data.totalEntries}</span><span class="analytics-label">Records</span></div>
-            </div>
-            <div class="analytics-card">
-                <span class="analytics-icon">👥</span>
-                <div><span class="analytics-number">${data.uniqueStaff}</span><span class="analytics-label">Staff</span></div>
-            </div>
-            <div class="analytics-card">
-                <span class="analytics-icon">📅</span>
-                <div><span class="analytics-number">${data.totalDays}</span><span class="analytics-label">Active Days</span></div>
-            </div>
-            <div class="analytics-card ${data.latePercentage > 20 ? 'warning' : 'ok'}">
-                <span class="analytics-icon">⏰</span>
-                <div><span class="analytics-number">${data.latePercentage}%</span><span class="analytics-label">Late Rate</span></div>
-            </div>
-        </div>
-        
-        <div class="analytics-section">
-            <h4>⚠ Least Active Staff</h4>
-            <p class="admin-intro">Staff with lowest office attendance rate. Scheduled WFH days are excluded from requirements.</p>
-            <div class="analytics-table-wrapper">
-                <div class="analytics-table">
-                    <div class="breakdown-row breakdown-head">
-                        <span>Staff Name</span>
-                        <span>Progress</span>
-                        <span class="col-center">Sign In</span>
-                        <span class="col-center">Sign Out</span>
-                        <span class="col-center">Rate</span>
-                        <span class="col-center">WFH</span>
-                        <span class="col-center">Late</span>
-                    </div>
-                    ${data.leastActive.map(s => `
-                        <div class="breakdown-row">
-                            <span class="breakdown-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
-                            <span class="breakdown-bar-col">
-                                <div class="breakdown-bar"><span class="bar-in ${s.attendanceRate >= 80 ? 'bar-high' : s.attendanceRate >= 50 ? 'bar-mid' : 'bar-low'}" style="width: ${Math.max(4, Math.min(100, s.attendanceRate))}%"></span></div>
-                            </span>
-                            <span class="stat-cell stat-in">${s.signIns} in</span>
-                            <span class="stat-cell stat-out">${s.signOuts} out</span>
-                            <span class="stat-cell ${s.attendanceRate < 60 ? 'stat-late-val' : 'stat-in-val'}">${s.attendanceRate}%</span>
-                            <span class="stat-cell stat-wfh">${s.wfhDays}</span>
-                            <span class="stat-cell stat-late">${s.lateCount > 0 ? `⚠ ${s.lateCount}` : '-'}</span>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        </div>
-        
-        <div class="analytics-section">
-            <h4>⭐ Most Active Staff</h4>
-            <div class="analytics-table-wrapper">
-                <div class="analytics-table">
-                    <div class="breakdown-row breakdown-head">
-                        <span>Staff Name</span>
-                        <span>Progress</span>
-                        <span class="col-center">Sign In</span>
-                        <span class="col-center">Sign Out</span>
-                        <span class="col-center">Rate</span>
-                        <span class="col-center">WFH</span>
-                        <span class="col-center">Late</span>
-                    </div>
-                    ${data.mostActive.map(s => `
-                        <div class="breakdown-row">
-                            <span class="breakdown-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
-                            <span class="breakdown-bar-col">
-                                <div class="breakdown-bar"><span class="bar-in ${s.attendanceRate >= 80 ? 'bar-high' : s.attendanceRate >= 50 ? 'bar-mid' : 'bar-low'}" style="width: ${Math.max(4, Math.min(100, s.attendanceRate))}%"></span></div>
-                            </span>
-                            <span class="stat-cell stat-in">${s.signIns} in</span>
-                            <span class="stat-cell stat-out">${s.signOuts} out</span>
-                            <span class="stat-cell stat-in-val">${s.attendanceRate}%</span>
-                            <span class="stat-cell stat-wfh">${s.wfhDays}</span>
-                            <span class="stat-cell stat-late">${s.lateCount > 0 ? `⚠ ${s.lateCount}` : '-'}</span>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        </div>
-        
-        <div class="analytics-section">
-            <h4>📋 Full Staff Breakdown</h4>
-            <div class="analytics-table-wrapper">
-                <div class="analytics-table">
-                    <div class="breakdown-row breakdown-head">
-                        <span>Staff Name</span>
-                        <span>Progress</span>
-                        <span class="col-center">Sign In</span>
-                        <span class="col-center">Sign Out</span>
-                        <span class="col-center">Rate</span>
-                        <span class="col-center">WFH</span>
-                        <span class="col-center">Late</span>
-                    </div>
-                    ${data.staffBreakdown.map(s => `
-                        <div class="breakdown-row">
-                            <span class="breakdown-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
-                            <span class="breakdown-bar-col">
-                                <div class="breakdown-bar"><span class="bar-in ${s.attendanceRate >= 80 ? 'bar-high' : s.attendanceRate >= 50 ? 'bar-mid' : 'bar-low'}" style="width: ${Math.max(4, Math.min(100, s.attendanceRate))}%"></span></div>
-                            </span>
-                            <span class="stat-cell stat-in">${s.signIns} in</span>
-                            <span class="stat-cell stat-out">${s.signOuts} out</span>
-                            <span class="stat-cell ${s.attendanceRate < 60 ? 'stat-late-val' : 'stat-in-val'}">${s.attendanceRate}%</span>
-                            <span class="stat-cell stat-wfh">${s.wfhDays}</span>
-                            <span class="stat-cell stat-late">${s.lateCount > 0 ? `⚠ ${s.lateCount}` : '-'}</span>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        </div>
-        
-        <div class="logs-footer">
-            <button id="export-analytics-btn" class="admin-btn secondary small" type="button">📥 Export CSV</button>
-        </div>
-        
-        <div class="analytics-section">
-            <h4>🔴 Device & System Audit Events</h4>
-            <p class="admin-intro">Real-time log entries recorded from Google Sheets Audit Log, Distance Alerts, and device security events.</p>
-            ${deviceEvents.length > 0 ? `
-            <div class="logs-table-wrapper">
-                <div class="logs-table" style="min-width:500px">
-                    <div class="logs-row logs-head" style="grid-template-columns:1.2fr 1.4fr 2.4fr">
-                        <span>Time</span><span>Type</span><span>Details</span>
-                    </div>
-                    ${pageEvents.map(e => `
-                        <div class="logs-row" style="grid-template-columns:1.2fr 1.4fr 2.4fr">
-                            <span style="font-size:0.75rem">${escapeHtml(e.time || '')}</span>
-                            <span class="status-pill-small ${e.type.includes('error') || e.type.includes('geofence') || e.type.includes('VIOLATION') ? 'late' : 'synced'}">${escapeHtml(e.type)}</span>
-                            <span style="font-size:0.75rem;word-break:break-all">${escapeHtml(e.details || '')}</span>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-            <div class="logs-footer">
-                <span>${deviceEvents.length} events — page ${deviceEventsPage} of ${totalEventPages}</span>
-                <div class="pagination-controls">
-                    <button id="device-events-prev-btn" class="admin-btn secondary small" type="button" ${deviceEventsPage <= 1 ? 'disabled' : ''}>‹ Prev</button>
-                    <button id="device-events-next-btn" class="admin-btn secondary small" type="button" ${deviceEventsPage >= totalEventPages ? 'disabled' : ''}>Next ›</button>
-                </div>
-            </div>
-            ` : '<div class="staff-list-state">No device errors, distance alerts, or system audit events recorded.</div>'}
-        </div>
-    `)) return;
-    
-    document.getElementById('export-analytics-btn')?.addEventListener('click', () => {
-        const exportData = analyticsData.staffBreakdown.map(s => ({
-            Name: s.name, 'Sign Ins': s.signIns, 'Sign Outs': s.signOuts,
-            'Late': s.lateCount, 'WFH Days': s.wfhDays, 'Attendance Rate': s.attendanceRate + '%'
-        }));
-        exportToCSV(exportData, 'attendance_analytics');
-    });
-
-    document.getElementById('device-events-prev-btn')?.addEventListener('click', () => {
-        if (deviceEventsPage > 1) { deviceEventsPage--; renderAnalytics(); }
-    });
-    document.getElementById('device-events-next-btn')?.addEventListener('click', () => {
-        if (deviceEventsPage < totalEventPages) { deviceEventsPage++; renderAnalytics(); }
-    });
-}
-
-let analyticsData = null;
-let deviceEventsAll = [];
-let deviceEventsPage = 1;
-const DEVICE_EVENTS_PAGE_SIZE = 10;
-
-async function fetchDistanceAlerts(limit = 100) {
-    return callBackend({ mode: 'list-distance-alerts', limit });
-}
-
-async function fetchAuditLogs(limit = 100) {
-    return callBackend({ mode: 'list-audit-logs', limit });
-}
-
-function parseEventTimestamp(dateStr, timeStr) {
-    const dateParts = String(dateStr || '').split('/');
-    if (dateParts.length !== 3) return 0;
-    const day = parseInt(dateParts[0], 10), month = parseInt(dateParts[1], 10) - 1, year = parseInt(dateParts[2], 10);
-    if (!timeStr) return new Date(year, month, day).getTime();
-
-    const ampmMatch = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-    if (ampmMatch) {
-        let hour = parseInt(ampmMatch[1], 10) % 12;
-        if (/pm/i.test(ampmMatch[3])) hour += 12;
-        return new Date(year, month, day, hour, parseInt(ampmMatch[2], 10)).getTime();
-    }
-    const hmsMatch = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-    if (hmsMatch) {
-        return new Date(year, month, day, parseInt(hmsMatch[1], 10), parseInt(hmsMatch[2], 10), parseInt(hmsMatch[3] || '0', 10)).getTime();
-    }
-    return new Date(year, month, day).getTime();
-}
-
-let currentAnalyticsFilter = 'all';
-let currentAnalyticsFrom = null;
-let currentAnalyticsTo = null;
-
-async function loadAnalytics(filterType = null, customFrom = null, customTo = null, isSilent = false) {
-    if (filterType) {
-        currentAnalyticsFilter = filterType;
-        currentAnalyticsFrom = customFrom;
-        currentAnalyticsTo = customTo;
-    } else {
-        filterType = currentAnalyticsFilter;
-        customFrom = currentAnalyticsFrom;
-        customTo = currentAnalyticsTo;
-    }
-    
-    const host = document.getElementById('analytics-content');
-    
-    // Check in-memory or localStorage cache for 0ms instant rendering
-    if (analyticsData && filterType === 'all' && !customFrom) {
-        renderAnalytics();
-    } else {
-        try {
-            const stored = localStorage.getItem('admin_cache_analytics');
-            if (stored && filterType === 'all' && !customFrom) {
-                const parsed = JSON.parse(stored);
-                analyticsData = parsed.analyticsData;
-                deviceEventsAll = parsed.deviceEventsAll || [];
-                renderAnalytics();
-            }
-        } catch (e) {}
-    }
-
-    if (host && !isSilent) {
-        host.innerHTML = `
-            <div class="skeleton-box skeleton-card" style="margin-bottom:12px;"></div>
-            <div class="skeleton-box skeleton-row"></div>
-            <div class="skeleton-box skeleton-row"></div>
-        `;
-    }
-    
-    try {
-        const allSchedule = Object.values(cachedWeekData).reduce((acc, w) => ({ ...acc, ...(w.schedule || {}) }), {});
-        
-        const [attendanceLogs, analyticsResponse, alertsResponse, auditResponse] = await Promise.all([
-            fetchLogs({ limit: 1000 }).then(r => (r.ok && Array.isArray(r.logs)) ? r.logs : []),
-            callBackend({ mode: 'list-analytics', limit: 50 }).catch((err) => { console.warn('list-analytics fetch failed:', err); return { ok: false, events: [] }; }),
-            fetchDistanceAlerts(100).catch((err) => { console.warn('list-distance-alerts fetch failed:', err); return { ok: false, alerts: [] }; }),
-            fetchAuditLogs(100).catch((err) => { console.warn('list-audit-logs fetch failed:', err); return { ok: false, events: [] }; })
-        ]);
-
-        analyticsData = processAnalyticsData(attendanceLogs, allSchedule, filterType, customFrom, customTo);
-
-        const clientEvents = (analyticsResponse.ok && Array.isArray(analyticsResponse.events))
-            ? analyticsResponse.events.map(e => {
-                const [datePart, timePart] = String(e.time || '').split(' ');
-                return {
-                    type: e.type,
-                    details: typeof e.details === 'string' ? e.details : JSON.stringify(e.details || {}),
-                    time: e.time || '',
-                    sortValue: parseEventTimestamp(datePart, timePart)
-                };
-            })
-            : [];
-
-        const geofenceEvents = (alertsResponse.ok && Array.isArray(alertsResponse.alerts))
-            ? alertsResponse.alerts.map(a => ({
-                type: 'LOCATION_ALERT',
-                details: `${a.name} attempted ${a.action} from ~${a.distance}m away (outside office radius)`,
-                time: `${a.date} ${a.time}`,
-                sortValue: parseEventTimestamp(a.date, a.time)
-            }))
-            : [];
-
-        const auditEvents = (auditResponse.ok && Array.isArray(auditResponse.events))
-            ? auditResponse.events.map(a => ({
-                type: a.eventType || a.category || 'SYSTEM_AUDIT',
-                details: `${a.user ? a.user + ': ' : ''}${a.details || ''}`,
-                time: `${a.date || ''} ${a.time || ''}`.trim(),
-                sortValue: parseEventTimestamp(a.date, a.time)
-            }))
-            : [];
-
-        deviceEventsAll = [...clientEvents, ...geofenceEvents, ...auditEvents].sort((a, b) => b.sortValue - a.sortValue);
-        deviceEventsPage = 1;
-
-        renderAnalytics();
-        try { localStorage.setItem('admin_cache_analytics', JSON.stringify({ analyticsData, deviceEventsAll })); } catch (e) {}
-    } catch (error) {
-        if (host && !analyticsData) host.innerHTML = '<div class="staff-list-state">Failed to load analytics.</div>';
-        else if (host) showToast('Could not refresh analytics data (offline).', 'error');
-    }
-}
-
-/* ============================================================
-   RENDER ADMIN PANEL
-   ============================================================ */
-
-function renderAdminPanel() {
-    const panelHost = document.getElementById('admin-panel-host');
-    const isSuper = sessionStorage.getItem('is_superuser') === 'true';
-    const devBadgeHtml = isSuper ? `<span class="developer-badge" title="Elevated Developer Superuser Session" style="margin-left: auto; align-self: center;">👑 Developer Mode</span>` : '';
-
-    panelHost.innerHTML = `
-        <div class="admin-tabs">
-            <button class="tab-btn active" data-tab="dashboard" title="Dashboard"><span class="tab-icon">📊</span><span class="tab-label">Dashboard</span></button>
-            <button class="tab-btn" data-tab="staff" title="Staff"><span class="tab-icon">👥</span><span class="tab-label">Staff</span></button>
-            <button class="tab-btn" data-tab="logs" title="Logs"><span class="tab-icon">📋</span><span class="tab-label">Logs</span></button>
-            <button class="tab-btn" data-tab="analytics" title="Analytics"><span class="tab-icon">📈</span><span class="tab-label">Analytics</span></button>
-            <button class="tab-btn" data-tab="config" title="Config"><span class="tab-icon">⚙️</span><span class="tab-label">Config</span></button>
-            <button class="tab-btn" data-tab="account" title="Account"><span class="tab-icon">🔐</span><span class="tab-label">Account</span></button>
-            ${devBadgeHtml}
-        </div>
-        
-        <div id="tab-dashboard" class="tab-content active">
-            <div class="dashboard-header">
-                <div class="week-navigator">
-                    <button id="week-prev-btn" class="admin-btn secondary small" type="button">‹ Prev</button>
-                    <span id="week-label" class="week-label">📅 Loading...</span>
-                    <button id="week-next-btn" class="admin-btn secondary small" type="button">Next ›</button>
-                </div>
-                <div class="dashboard-actions">
-                    <span id="refresh-label" class="refresh-label"></span>
-                    <button id="refresh-today-btn" class="admin-btn secondary small" type="button">🔄</button>
-                    <a id="sheets-link-btn" class="icon-btn" href="https://docs.google.com/spreadsheets/d/1v9f0aL2tWK5HNk2TJrw5gntAjfZP2_vbXO3Ix85K6Pw/edit?gid=0#gid=0" target="_blank" rel="noopener" title="Open Google Sheets backend" aria-label="Open Google Sheets backend">📗</a>
-                </div>
-            </div>
-            <div id="today-attendance-list"><div class="staff-list-state">Loading this week...</div></div>
-            <div class="dashboard-section">
-                <h4>Weekly Attendance Matrix</h4>
-                <div id="attendance-matrix"><div class="staff-list-state">Loading matrix...</div></div>
-            </div>
-            <div class="dashboard-quick-actions">
-                <button id="dashboard-export-btn" class="admin-btn secondary small" type="button">📥 Export Week</button>
-                <a class="admin-btn secondary small" href="https://kayceeeasy.github.io/Hybrid-Scheduler/" target="_blank" rel="noopener" style="text-decoration:none;">📅 Hybrid Scheduler</a>
-            </div>
-        </div>
-        
-        <div id="tab-staff" class="tab-content">
-            <div class="section-header"><h3>Staff Management</h3></div>
-            <div class="staff-manager">
-                <input id="staff-admin-search" type="text" placeholder="🔍 Search staff by name..." style="width:100%; padding:9px 13px; border-radius:var(--radius); border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.86rem; margin-bottom:10px;" />
-                <div id="staff-list"><div class="staff-list-state">Loading staff list...</div></div>
-                <div class="add-staff-form">
-                    <input id="new-staff-name" type="text" placeholder="Enter staff name to add" />
-                    <div class="admin-actions compact">
-                        <button id="add-staff-btn" class="admin-btn" type="button">➕ Add Staff</button>
-                        <button id="reset-all-locks-btn" class="admin-btn danger" type="button">🔓 Reset All Locks</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div id="tab-logs" class="tab-content">
-            <div class="section-header"><h3>Attendance Records</h3></div>
-            <div class="logs-filters">
-                <select id="logs-filter-name-select" class="logs-filter-select" aria-label="Filter by name"><option value="">All staff</option></select>
-                <div class="date-filter-row">
-                    <div class="date-input-wrap">
-                        <span class="date-input-label">From:</span>
-                        <input id="logs-filter-from" type="date" aria-label="From date" placeholder="From" />
-                    </div>
-                    <div class="date-input-wrap">
-                        <span class="date-input-label">To:</span>
-                        <input id="logs-filter-to" type="date" aria-label="To date" placeholder="To" />
-                    </div>
-                </div>
-                <div class="filter-actions">
-                    <button id="logs-filter-btn" class="admin-btn secondary small" type="button">🔍 Filter</button>
-                    <button id="logs-clear-btn" class="admin-btn secondary small" type="button">✕ Clear</button>
-                </div>
-            </div>
-            <div id="logs-list"><div class="staff-list-state">Loading records...</div></div>
-        </div>
-        
-        <div id="tab-analytics" class="tab-content">
-            <div class="section-header">
-                <h3>Attendance Analytics</h3>
-                <p class="admin-intro">Hybrid days excluded from attendance rate calculations</p>
-            </div>
-            <div class="analytics-filter-bar" style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center;">
-                <button id="analytics-filter-all" class="admin-btn secondary small active" type="button">🌐 All Time</button>
-                <button id="analytics-filter-month" class="admin-btn secondary small" type="button">📆 This Month</button>
-                <button id="analytics-filter-week" class="admin-btn secondary small" type="button">📅 This Week</button>
-                <button id="analytics-filter-custom-toggle" class="admin-btn secondary small" type="button">📅 Custom Range</button>
-                <div id="analytics-custom-inputs" style="display:none; gap:6px; align-items:center;">
-                    <input id="analytics-from-date" type="date" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.8rem;" />
-                    <span style="font-size:0.8rem;">to</span>
-                    <input id="analytics-to-date" type="date" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.8rem;" />
-                    <button id="analytics-apply-custom" class="admin-btn small" type="button">Apply</button>
-                </div>
-            </div>
-            <div id="analytics-content"><div class="staff-list-state">Loading analytics...</div></div>
-        </div>
-        
-        <div id="tab-config" class="tab-content">
-            <div class="section-header"><h3>System Configuration</h3><p class="admin-intro">Office location, attendance schedule & geofence settings</p></div>
-            
-            <div class="config-section-group">
-                <h4>📍 Office Location</h4>
-                <div class="config-cards">
-                    <div class="config-card">
-                        <span class="config-icon">📍</span>
-                        <div class="config-info"><strong>Office Latitude</strong><span class="config-value" id="config-lat-current">6.4518631</span></div>
-                        <button id="config-office-lat-btn" class="admin-btn secondary small" type="button">Edit</button>
-                    </div>
-                    <div class="config-card">
-                        <span class="config-icon">📍</span>
-                        <div class="config-info"><strong>Office Longitude</strong><span class="config-value" id="config-lon-current">3.5277863</span></div>
-                        <button id="config-office-lon-btn" class="admin-btn secondary small" type="button">Edit</button>
-                    </div>
-                    <div class="config-card">
-                        <span class="config-icon">📏</span>
-                        <div class="config-info"><strong>Geofence Radius</strong><span class="config-value" id="config-radius-current">100 meters</span></div>
-                        <button id="config-radius-btn" class="admin-btn secondary small" type="button">Edit</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="config-section-group">
-                <h4>⏰ Attendance Schedule</h4>
-                <div class="config-cards">
-                    <div class="config-card">
-                        <span class="config-icon">⏰</span>
-                        <div class="config-info"><strong>Late Cutoff Time</strong><span class="config-value" id="config-late-cutoff-current">8:30 AM</span></div>
-                        <button id="config-late-cutoff-btn" class="admin-btn secondary small" type="button">Edit</button>
-                    </div>
-                    <div class="config-card">
-                        <span class="config-icon">🗓️</span>
-                        <div class="config-info"><strong>Working Days</strong><span class="config-value" id="config-workdays-current">Monday – Friday</span></div>
-                        <button id="config-workdays-btn" class="admin-btn secondary small" type="button">Edit</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="config-section-group">
-                <h4>🔧 Tools</h4>
-                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                    <button id="config-auto-location-btn" class="admin-btn secondary" type="button">🎯 Set Office to My Current Location</button>
-                    <button id="config-test-distance-btn" class="admin-btn secondary" type="button">📡 Test Current Distance from Office</button>
-                </div>
-            </div>
-        </div>
-
-        <div id="tab-account" class="tab-content">
-            <div class="section-header"><h3>Account Settings</h3></div>
-            <div class="account-actions">
-                <div class="account-card">
-                    <span class="account-icon">🔑</span>
-                    <div><strong>Change Password</strong><p class="admin-intro">Update your admin password</p></div>
-                    <button id="change-password-btn" class="admin-btn secondary small" type="button">Update</button>
-                </div>
-                <div class="account-card">
-                    <span class="account-icon">📧</span>
-                    <div>
-                        <strong>Recovery Email</strong>
-                        <p class="admin-intro" id="recovery-email-display">Active: Loading...</p>
-                    </div>
-                    <button id="set-recovery-email-btn" class="admin-btn secondary small" type="button">Set / Edit</button>
-                </div>
-                <div class="account-card">
-                    <span class="account-icon">🚪</span>
-                    <div><strong>Logout</strong><p class="admin-intro">End your admin session (auto-timeout after 15 min idle)</p></div>
-                    <button id="logout-btn" class="admin-btn secondary small danger" type="button">Logout</button>
-                </div>
-            </div>
-
-            <div id="admin-user-management-section" class="dashboard-section" style="margin-top:2rem;">
-                <h4>👥 Admin Users & Permission Tiers</h4>
-                <p class="admin-intro">Manage delegated admin accounts and access levels.</p>
-                <div id="admin-users-list" style="margin-bottom:1rem;"><div class="staff-list-state">Loading admin users...</div></div>
-                <button id="add-admin-user-btn" class="admin-btn secondary small" type="button">➕ Add Admin User</button>
-            </div>
-        </div>
-    `;
-
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-    });
-
-    document.getElementById('refresh-today-btn').addEventListener('click', async (e) => {
-        const btn = e.target.closest('button') || e.target;
-        const originalHtml = btn.innerHTML;
-        btn.innerHTML = '⏳';
-        await loadWeekData(false);
-        btn.innerHTML = originalHtml;
-    });
-    document.getElementById('week-prev-btn').addEventListener('click', () => navigateWeek('prev'));
-    document.getElementById('week-next-btn').addEventListener('click', () => navigateWeek('next'));
-    document.getElementById('dashboard-export-btn').addEventListener('click', () => {
-        const weekData = cachedWeekData[currentWeekStart];
-        if (!weekData) { showToast('No week data to export.', 'error'); return; }
-        exportWeekMatrixToCSV(weekData.logs || [], weekData.schedule || {}, currentWeekStart);
-    });
-
-    document.getElementById('add-staff-btn').addEventListener('click', handleAddStaff);
-    document.getElementById('new-staff-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') handleAddStaff(); });
-    document.getElementById('reset-all-locks-btn').addEventListener('click', handleResetAllLocks);
-    document.getElementById('staff-admin-search')?.addEventListener('input', () => renderStaffList(allStaffList));
-
-    callBackend({ mode: 'get-sheet-url' }).then((res) => {
-        const btn = document.getElementById('sheets-link-btn');
-        if (btn && res && res.ok && res.url) btn.href = res.url;
-    }).catch(() => {});
-
-    document.getElementById('logs-filter-btn').addEventListener('click', loadLogsViewer);
-    document.getElementById('logs-filter-name-select').addEventListener('change', loadLogsViewer);
-    document.getElementById('logs-filter-from').addEventListener('change', loadLogsViewer);
-    document.getElementById('logs-filter-to').addEventListener('change', loadLogsViewer);
-    document.getElementById('logs-clear-btn').addEventListener('click', () => {
-        document.getElementById('logs-filter-name-select').value = '';
-        document.getElementById('logs-filter-from').value = '';
-        document.getElementById('logs-filter-to').value = '';
-        loadLogsViewer();
-    });
-
-    document.getElementById('change-password-btn').addEventListener('click', async () => {
-        const result = await showInlineDialog({
-            title: 'Change Password',
-            message: 'Current password required, then new password.',
-            fields: [
-                { placeholder: 'Current password', type: 'password', autocomplete: 'current-password' },
-                { placeholder: 'New password', type: 'password', autocomplete: 'new-password' }
-            ],
-            confirmLabel: 'Update'
-        });
-        if (!result) return;
-        try {
-            const r = await changeAdminPassword(currentAdminUsername, result[0], result[1]);
-            showToast(r.message || 'Password updated.', r.ok ? 'success' : 'error');
-        } catch (e) { showToast('Server error.', 'error'); }
-    });
-
-    document.getElementById('set-recovery-email-btn').addEventListener('click', async () => {
-        const result = await showInlineDialog({
-            title: 'Set Recovery Email',
-            message: 'Password required to confirm identity.',
-            fields: [
-                { placeholder: 'Current password', type: 'password', autocomplete: 'current-password' },
-                { placeholder: 'Recovery email', type: 'email', autocomplete: 'email' }
-            ],
-            confirmLabel: 'Save'
-        });
-        if (!result) return;
-        try {
-            const r = await setRecoveryEmail(currentAdminUsername, result[0], result[1]);
-            showToast(r.message || 'Email saved.', r.ok ? 'success' : 'error');
-            if (r.ok) loadRecoveryEmailDisplay();
-        } catch (e) { showToast('Server error.', 'error'); }
-    });
-
-    document.getElementById('add-admin-user-btn')?.addEventListener('click', handleAddAdminUser);
-
-    document.getElementById('analytics-filter-all')?.addEventListener('click', (e) => {
-        document.querySelectorAll('.analytics-filter-bar button').forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-        document.getElementById('analytics-custom-inputs').style.display = 'none';
-        loadAnalytics('all');
-    });
-    document.getElementById('analytics-filter-month')?.addEventListener('click', (e) => {
-        document.querySelectorAll('.analytics-filter-bar button').forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-        document.getElementById('analytics-custom-inputs').style.display = 'none';
-        loadAnalytics('month');
-    });
-    document.getElementById('analytics-filter-week')?.addEventListener('click', (e) => {
-        document.querySelectorAll('.analytics-filter-bar button').forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-        document.getElementById('analytics-custom-inputs').style.display = 'none';
-        loadAnalytics('week');
-    });
-    document.getElementById('analytics-filter-custom-toggle')?.addEventListener('click', (e) => {
-        document.querySelectorAll('.analytics-filter-bar button').forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-        const customWrap = document.getElementById('analytics-custom-inputs');
-        if (customWrap) customWrap.style.display = customWrap.style.display === 'none' ? 'flex' : 'none';
-    });
-    document.getElementById('analytics-apply-custom')?.addEventListener('click', () => {
-        const fromVal = document.getElementById('analytics-from-date')?.value;
-        const toVal = document.getElementById('analytics-to-date')?.value;
-        if (!fromVal) { showToast('Select a "From" date first.', 'error'); return; }
-        loadAnalytics('custom', fromVal, toVal);
-    });
-
-    document.getElementById('config-workdays-btn')?.addEventListener('click', async () => {
-        const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-        const startOptions = dayNames.map((d, i) => `<option value="${i}"${i === 0 ? ' selected' : ''}>${d}</option>`).join('');
-        const endOptions = dayNames.map((d, i) => `<option value="${i}"${i === 4 ? ' selected' : ''}>${d}</option>`).join('');
-        const dialogHtml = `
-            <div style="display:flex; flex-direction:column; gap:12px; text-align:left; margin-top:10px;">
-                <div style="display:flex; gap:10px; align-items:center;">
-                    <label style="font-size:0.82rem; font-weight:600; min-width:50px;">From:</label>
-                    <select id="config-workdays-start" style="flex:1; padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text);">
-                        ${startOptions}
-                    </select>
-                </div>
-                <div style="display:flex; gap:10px; align-items:center;">
-                    <label style="font-size:0.82rem; font-weight:600; min-width:50px;">To:</label>
-                    <select id="config-workdays-end" style="flex:1; padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text);">
-                        ${endOptions}
-                    </select>
-                </div>
-            </div>
-        `;
-        const confirmed = await showInlineDialog({
-            title: 'Working Days Schedule',
-            message: 'Set the start and end days for office attendance.',
-            customContentHtml: dialogHtml,
-            confirmLabel: 'Save Schedule'
-        });
-        if (!confirmed) return;
-        const startIdx = window['_dialogVal_config-workdays-start'] || '0';
-        const endIdx = window['_dialogVal_config-workdays-end'] || '4';
-        delete window['_dialogVal_config-workdays-start'];
-        delete window['_dialogVal_config-workdays-end'];
-        const displayLabel = `${dayNames[+startIdx]} – ${dayNames[+endIdx]}`;
-        const val = `${startIdx}_${endIdx}`;
-        try {
-            const res = await callBackend({ mode: 'update-config', key: 'WORK_DAYS', value: val });
-            showToast(res.message || 'Workdays schedule updated.', res.ok ? 'success' : 'error');
-            if (res.ok) document.getElementById('config-workdays-current').textContent = displayLabel;
-        } catch (e) { showToast('Server error.', 'error'); }
-    });
-
-    loadRecoveryEmailDisplay();
-    loadAdminUsersList();
-
-    document.getElementById('logout-btn').addEventListener('click', async () => {
-        const confirmed = await confirmDialog('Are you sure you want to logout?', { confirmLabel: 'Logout' });
-        if (confirmed) handleLogout(false);
-    });
-
-    document.getElementById('config-office-lat-btn').addEventListener('click', async () => {
-        const r = await showInlineDialog({ title: 'Office Latitude', fields: [{ placeholder: 'Latitude' }], confirmLabel: 'Update' });
-        if (!r) return;
-        try { const res = await callBackend({ mode: 'update-config', key: 'OFFICE_LAT', value: r[0] }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-lat-current').textContent = r[0]; } catch (e) { showToast('Server error.', 'error'); }
-    });
-    document.getElementById('config-office-lon-btn').addEventListener('click', async () => {
-        const r = await showInlineDialog({ title: 'Office Longitude', fields: [{ placeholder: 'Longitude' }], confirmLabel: 'Update' });
-        if (!r) return;
-        try { const res = await callBackend({ mode: 'update-config', key: 'OFFICE_LON', value: r[0] }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-lon-current').textContent = r[0]; } catch (e) { showToast('Server error.', 'error'); }
-    });
-    document.getElementById('config-radius-btn').addEventListener('click', async () => {
-        const r = await showInlineDialog({ title: 'Geofence Radius (10-5000 meters)', fields: [{ placeholder: 'Meters' }], confirmLabel: 'Update' });
-        if (!r) return;
-        try { const res = await callBackend({ mode: 'update-config', key: 'RADIUS_METERS', value: r[0] }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-radius-current').textContent = r[0] + ' meters'; } catch (e) { showToast('Server error.', 'error'); }
-    });
-    document.getElementById('config-late-cutoff-btn').addEventListener('click', async () => {
-        const r = await showInlineDialog({ title: 'Late Cutoff Time', message: 'Sign-ins at or after this time are marked Late.', fields: [{ placeholder: 'Time', type: 'time' }], confirmLabel: 'Update' });
-        if (!r || !r[0]) return;
-        const [hh, mm] = r[0].split(':').map(Number);
-        if (isNaN(hh) || isNaN(mm)) { showToast('Invalid time.', 'error'); return; }
-        const totalMinutes = hh * 60 + mm;
-        try {
-            const res = await callBackend({ mode: 'update-config', key: 'LATE_CUTOFF_MINUTES', value: totalMinutes });
-            showToast(res.message, res.ok ? 'success' : 'error');
-            if (res.ok) document.getElementById('config-late-cutoff-current').textContent = formatMinutesAsTime(totalMinutes);
-        } catch (e) { showToast('Server error.', 'error'); }
-    });
-
-    document.getElementById('config-auto-location-btn').addEventListener('click', () => {
-        if (!navigator.geolocation) {
-            showToast('Geolocation is not supported by your browser.', 'error');
-            return;
-        }
-        showToast('Acquiring current GPS location...', 'info');
-        navigator.geolocation.getCurrentPosition(
-            async (pos) => {
-                const lat = pos.coords.latitude.toFixed(7);
-                const lon = pos.coords.longitude.toFixed(7);
-                const confirmed = await confirmDialog(
-                    `Set office coordinates to your current GPS position?\n\nLatitude: ${lat}\nLongitude: ${lon}`,
-                    { confirmLabel: 'Set Coordinates' }
-                );
-                if (!confirmed) return;
-                try {
-                    const resLat = await callBackend({ mode: 'update-config', key: 'OFFICE_LAT', value: lat });
-                    const resLon = await callBackend({ mode: 'update-config', key: 'OFFICE_LON', value: lon });
-                    if (resLat.ok && resLon.ok) {
-                        showToast('Office coordinates updated successfully!', 'success');
-                        document.getElementById('config-lat-current').textContent = lat;
-                        document.getElementById('config-lon-current').textContent = lon;
-                    } else {
-                        showToast('Failed to update office location.', 'error');
-                    }
-                } catch (e) {
-                    showToast('Server error during update.', 'error');
-                }
-            },
-            (err) => {
-                showToast('Could not acquire location: ' + err.message, 'error');
-            },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-        );
-    });
-
-    document.getElementById('config-test-distance-btn').addEventListener('click', () => {
-        if (!navigator.geolocation) {
-            showToast('Geolocation is not supported by your browser.', 'error');
-            return;
-        }
-        const officeLat = parseFloat(document.getElementById('config-lat-current').textContent);
-        const officeLon = parseFloat(document.getElementById('config-lon-current').textContent);
-        const radiusStr = document.getElementById('config-radius-current').textContent;
-        const radius = parseFloat(radiusStr) || 100;
-
-        if (isNaN(officeLat) || isNaN(officeLon)) {
-            showToast('Office coordinates are invalid.', 'error');
-            return;
-        }
-
-        showToast('Acquiring GPS fix for distance test...', 'info');
-        navigator.geolocation.getCurrentPosition(
-            (pos) => {
-                const curLat = pos.coords.latitude;
-                const curLon = pos.coords.longitude;
-                const R = 6371e3;
-                const dLat = (curLat - officeLat) * Math.PI / 180;
-                const dLon = (curLon - officeLon) * Math.PI / 180;
-                const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(officeLat * Math.PI / 180) * Math.cos(curLat * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-                const dist = R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-
-                const isInside = dist <= radius;
-                const statusMsg = isInside ? '✅ INSIDE GEOFENCE' : '❌ OUTSIDE GEOFENCE';
-
-                showInlineDialog({
-                    title: 'Distance Test Results',
-                    message: `Current Position:\nLat: ${curLat.toFixed(6)}, Lon: ${curLon.toFixed(6)}\n\nCalculated Distance: ${dist.toFixed(1)} meters\nGeofence Radius: ${radius} meters\n\nResult: ${statusMsg}`,
-                    fields: [],
-                    confirmLabel: 'OK'
-                });
-            },
-            (err) => {
-                showToast('Could not acquire current location: ' + err.message, 'error');
-            },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-        );
-    });
-
-    switchTab('dashboard');
-    startAutoRefresh();
-}
-
-/* ============================================================
-   FORGOT PASSWORD
-   ============================================================ */
-
-async function runForgotPasswordFlow() {
-    const userStep = await showInlineDialog({ title: 'Forgot Password', message: 'Enter your admin username.', fields: [{ placeholder: 'Username' }], confirmLabel: 'Send Code' });
-    if (!userStep) return;
-    try {
-        const res = await requestPasswordResetCode(userStep[0]);
-        showToast(res.message, res.ok ? 'success' : 'error');
-        if (!res.ok) return;
-    } catch (e) { showToast('Server error.', 'error'); return; }
-
-    const codeStep = await showInlineDialog({ title: 'Enter Reset Code', message: '6-digit code sent to your email.', fields: [{ placeholder: '6-digit code' }, { placeholder: 'New password', type: 'password' }], confirmLabel: 'Reset' });
-    if (!codeStep) return;
-    try {
-        const res = await confirmPasswordReset(userStep[0], codeStep[0], codeStep[1]);
-        showToast(res.message, res.ok ? 'success' : 'error');
-    } catch (e) { showToast('Server error.', 'error'); }
-}
-
-/* ============================================================
-   LOGIN
-   ============================================================ */
-
-async function checkPendingDeviceTransferRequests() {
-    try {
-        const response = await callBackend({ mode: 'list-audit-logs', limit: 20 });
-        if (!response.ok || !Array.isArray(response.events)) return;
-
-        const pendingRequests = response.events.filter(e => 
-            (e.type === 'DEVICE_TRANSFER_REQUEST' || e.action === 'DEVICE_TRANSFER_REQUEST') && e.status === 'PENDING'
-        );
-
-        if (!pendingRequests.length) return;
-
-        const req = pendingRequests[0];
-        const dialog = document.createElement('div');
-        dialog.className = 'dialog-overlay confirm-dialog-overlay active';
-        dialog.innerHTML = `
-            <div class="dialog-box confirm-dialog-card" style="max-width: 440px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-color, #f8fafc);">📱 Device Transfer Request</h3>
-                    <button id="device-req-close-btn" style="background: none; border: none; color: var(--text-muted, #94a3b8); font-size: 1.2rem; cursor: pointer; padding: 2px 6px;">✕</button>
-                </div>
-                <p style="font-size: 0.88rem; color: var(--text-color, #cbd5e1); line-height: 1.5; margin-bottom: 16px;">
-                    <strong>${escapeHtml(req.staffName || req.name || 'A staff member')}</strong> has requested to bind their attendance account to a new phone.
-                    <br><small style="color: var(--text-muted, #94a3b8);">Requested at: ${escapeHtml(req.time || 'Recently')}</small>
-                </p>
-                <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                    <button id="device-req-reject-btn" class="admin-btn secondary small danger" type="button">❌ Reject</button>
-                    <button id="device-req-approve-btn" class="admin-btn small" type="button">✅ Approve Transfer</button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(dialog);
-
-        document.getElementById('device-req-close-btn').addEventListener('click', () => dialog.remove());
-        
-        document.getElementById('device-req-reject-btn').addEventListener('click', async () => {
-            showToast('Transfer request rejected.', 'info');
-            dialog.remove();
-        });
-
-        document.getElementById('device-req-approve-btn').addEventListener('click', async () => {
-            try {
-                const res = await handleResetStaffLock(req.staffName || req.name);
-                showToast('Device transfer approved and lock reset!', 'success');
-            } catch (e) {
-                showToast('Could not process approval.', 'error');
-            } finally {
-                dialog.remove();
-            }
-        });
-
-    } catch (err) {
-        console.warn('Could not check pending device transfer requests:', err);
-    }
-}
-
-function setLoginLoading(isLoading) {
-    const loginBtn = document.getElementById('admin-login-btn');
-    const form = document.getElementById('admin-login-form');
-    const messageEl = document.getElementById('admin-message');
-    if (loginBtn) { loginBtn.disabled = isLoading; loginBtn.textContent = isLoading ? '⏳ Logging in...' : '🔐 Log in'; }
-    if (form) form.querySelectorAll('input').forEach(i => i.disabled = isLoading);
-    if (messageEl && isLoading) { messageEl.textContent = 'Checking admin credentials...'; messageEl.className = 'admin-message'; }
-}
-
-async function handleAdminLogin(event) {
-    if (event) {
-        event.preventDefault();
-        event.stopPropagation();
-    }
-    const username = document.getElementById('admin-username').value.trim();
-    const password = document.getElementById('admin-password').value;
-    const messageEl = document.getElementById('admin-message');
-
-    if (!username || !password) { messageEl.textContent = 'Username and password are required.'; messageEl.className = 'admin-message error'; return; }
-
-    setLoginLoading(true);
-    try {
-        const response = await authenticateAdmin(username, password);
-        setLoginLoading(false);
-        if (response.ok) {
-            isAdminLoggedIn = true;
-            currentAdminUsername = username;
-            sessionStorage.setItem('admin_session', JSON.stringify({ 
-                username, 
-                adminToken: response.adminToken || '', 
-                csrfToken: response.csrfToken || '', 
-                timestamp: Date.now() 
-            }));
-            if (response.csrfToken) sessionStorage.setItem('admin_csrf_token', response.csrfToken);
-            if (response.adminToken) sessionStorage.setItem('admin_token', response.adminToken);
-            if (response.isSuperuser) sessionStorage.setItem('is_superuser', 'true');
-            else sessionStorage.removeItem('is_superuser');
-            sessionStorage.setItem('admin_username', username);
-            
-            document.getElementById('admin-login-form').style.display = 'none';
-            document.getElementById('forgot-password-link').style.display = 'none';
-            const hero = document.querySelector('.admin-hero');
-            if (hero) hero.style.display = 'none';
-            renderAdminPanel();
-            checkPendingDeviceTransferRequests();
-            resetInactivityTimer();
-            
-            document.addEventListener('click', resetInactivityTimer);
-            document.addEventListener('keydown', resetInactivityTimer);
-            document.addEventListener('touchstart', resetInactivityTimer);
-        } else {
-            messageEl.textContent = response.message || 'Invalid admin credentials.';
-            messageEl.className = 'admin-message error';
-        }
-    } catch (error) {
-        setLoginLoading(false);
-        messageEl.textContent = 'Could not reach the server.';
-        messageEl.className = 'admin-message error';
-    }
-}
-
-/* ============================================================
-   INIT
-   ============================================================ */
-
-function initAdminApp() {
-    initTheme();
-    initRefreshButton();
-    initAllPasswordToggles();
-    
-    const savedSession = sessionStorage.getItem('admin_session');
-    if (savedSession) {
-        try {
-            const session = JSON.parse(savedSession);
-            if (session.username && session.timestamp && (Date.now() - session.timestamp < 3600000)) {
-                isAdminLoggedIn = true;
-                currentAdminUsername = session.username;
-                if (session.adminToken) sessionStorage.setItem('admin_token', session.adminToken);
-                if (session.csrfToken) sessionStorage.setItem('admin_csrf_token', session.csrfToken);
-                sessionStorage.setItem('admin_username', session.username);
-                const form = document.getElementById('admin-login-form');
-                if (form) form.style.display = 'none';
-                const forgot = document.getElementById('forgot-password-link');
-                if (forgot) forgot.style.display = 'none';
-                const hero = document.querySelector('.admin-hero');
-                if (hero) hero.style.display = 'none';
-                renderAdminPanel();
-                resetInactivityTimer();
-                document.addEventListener('click', resetInactivityTimer);
-                document.addEventListener('keydown', resetInactivityTimer);
-                document.addEventListener('touchstart', resetInactivityTimer);
-            } else {
-                handleLogout(false);
-            }
-        } catch (e) { handleLogout(false); }
-    }
-    
-    const form = document.getElementById('admin-login-form');
-    if (form) {
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            handleAdminLogin(e);
-        });
-    }
-    const loginBtn = document.getElementById('admin-login-btn');
-    if (loginBtn) {
-        loginBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            handleAdminLogin(e);
-        });
-    }
-    const forgotLink = document.getElementById('forgot-password-link');
-    if (forgotLink) {
-        forgotLink.addEventListener('click', (e) => { e.preventDefault(); runForgotPasswordFlow(); });
-    }
-
-    setTimeout(() => {
-        try {
-            const overlays = document.querySelectorAll('.dialog-overlay, .session-timeout-overlay, #faq-modal.active');
-            if (!overlays || overlays.length === 0) document.body.style.overflow = '';
-        } catch (e) {}
-    }, 120);
-}
-
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initAdminApp);
-} else {
-    initAdminApp();
-}
+畦据楴湯猠瑥瑈汭晉桃湡敧⡤汥浥湥ⱴ渠睥瑈汭 ⁻晩⠠攡敬敭瑮 敲畴湲映污敳※晩⠠汥浥湥⹴湩敮䡲䵔⁌㴡‽敮䡷浴⥬笠攠敬敭瑮椮湮牥呈䱍㴠渠睥瑈汭※敲畴湲琠畲㭥素爠瑥牵⁮慦獬㭥素਍਍⨯പ ‪摁業⁮潣獮汯⁥潬楧⹣਍⨠吠扡敢⁤湩整晲捡⁥楷桴眠敥汫⁹慮楶慧楴湯‬敳獳潩⁮楴敭畯ⱴ栠批楲⁤捳敨畤敬മ ‪敄数摮⁳湯⸠⼮潣浭湯樮⁳敢湩⁧潬摡摥映物瑳മ ⼪਍਍敬⁴獩摁業䱮杯敧䥤⁮‽慦獬㭥਍敬⁴畣牲湥䅴浤湩獕牥慮敭㴠✠㬧਍敬⁴畣牲湥呴扡㴠✠慤桳潢牡❤഻氊瑥愠瑵副晥敲桳楔敭⁲‽畮汬഻氊瑥愠汬瑓晡䱦獩⁴‽嵛഻氊瑥挠捡敨坤敥䑫瑡⁡‽絻഻氊瑥挠牵敲瑮敗步瑓牡⁴‽畮汬഻氊瑥栠批楲卤档摥汵䍥捡敨㴠笠㭽਍਍⼯匠獥楳湯琠浩潥瑵⠠㔱洠湩椠汤⁥汳摩湩⁧楷摮睯椠慮瑣癩瑩⁹蛢ₒ〶⁳潣湵摴睯⥮਍敬⁴湩捡楴楶祴楔敭⁲‽畮汬഻氊瑥猠獥楳湯潃湵摴睯呮浩牥㴠渠汵㭬਍潣獮⁴䕓卓佉彎䥔䕍問彔卍㴠ㄠ‵‪〶⨠ㄠ〰㬰਍潣獮⁴䕓卓佉彎佃乕䑔坏彎卍㴠㘠‰‪〱〰഻ഊ⼊‪ⴭⴭⴭⴭⴭ䄠瑵⁨ⴭⴭⴭⴭⴭ⨠യഊ愊祳据映湵瑣潩⁮畡桴湥楴慣整摁業⡮獵牥慮敭‬慰獳潷摲 ൻ †挠湯瑳瀠獡睳牯䡤獡⁨‽睡楡⁴桳㉡㘵效⡸慰獳潷摲㬩਍††敲畴湲挠污䉬捡敫摮笨洠摯㩥✠摡業⵮潬楧❮‬獵牥慮敭‬慰獳潷摲慈桳素㬩਍ൽഊ愊祳据映湵瑣潩⁮档湡敧摁業偮獡睳牯⡤獵牥慮敭‬畣牲湥側獡睳牯Ɽ渠睥慐獳潷摲 ൻ †挠湯瑳挠牵敲瑮慐獳潷摲慈桳㴠愠慷瑩猠慨㔲䠶硥挨牵敲瑮慐獳潷摲㬩਍††潣獮⁴敮偷獡睳牯䡤獡⁨‽睡楡⁴桳㉡㘵效⡸敮偷獡睳牯⥤഻ †挠湯瑳愠浤湩潔敫⁮‽敳獳潩卮潴慲敧朮瑥瑉浥✨摡業彮潴敫❮ 籼挠牵敲瑮慐獳潷摲慈桳഻ †挠湯瑳挠牳呦歯湥㴠猠獥楳湯瑓牯条⹥敧䥴整⡭愧浤湩损牳彦潴敫❮ 籼✠㬧਍††敲畴湲挠污䉬捡敫摮笨洠摯㩥✠摡業⵮档湡敧瀭獡睳牯❤‬獵牥慮敭‬畣牲湥側獡睳牯䡤獡ⱨ渠睥慐獳潷摲慈桳‬摡業呮歯湥‬獣晲潔敫⁮⥽഻紊਍਍獡湹⁣畦据楴湯猠瑥敒潣敶祲浅楡⡬獵牥慮敭‬畣牲湥側獡睳牯Ɽ攠慭汩 ൻ †挠湯瑳挠牵敲瑮慐獳潷摲慈桳㴠愠慷瑩猠慨㔲䠶硥挨牵敲瑮慐獳潷摲㬩਍††潣獮⁴摡業呮歯湥㴠猠獥楳湯瑓牯条⹥敧䥴整⡭愧浤湩瑟歯湥⤧簠⁼畣牲湥側獡睳牯䡤獡㭨਍††潣獮⁴獣晲潔敫⁮‽敳獳潩卮潴慲敧朮瑥瑉浥✨摡業彮獣晲瑟歯湥⤧簠⁼✧഻ †爠瑥牵⁮慣汬慂正湥⡤⁻潭敤›愧浤湩猭瑥爭捥癯牥⵹浥楡❬‬獵牥慮敭‬畣牲湥側獡睳牯䡤獡ⱨ攠慭汩‬摡業呮歯湥‬獣晲潔敫⁮⥽഻紊਍਍獡湹⁣畦据楴湯爠煥敵瑳慐獳潷摲敒敳䍴摯⡥獵牥慮敭 ൻ †爠瑥牵⁮慣汬慂正湥⡤⁻潭敤›愧浤湩昭牯潧⵴慰獳潷摲爭煥敵瑳Ⱗ甠敳湲浡⁥⥽഻紊਍਍獡湹⁣畦据楴湯挠湯楦浲慐獳潷摲敒敳⡴獵牥慮敭‬潣敤‬敮偷獡睳牯⥤笠਍††潣獮⁴敮偷獡睳牯䡤獡⁨‽睡楡⁴桳㉡㘵效⡸敮偷獡睳牯⥤഻ †爠瑥牵⁮慣汬慂正湥⡤⁻潭敤›愧浤湩昭牯潧⵴慰獳潷摲挭湯楦浲Ⱗ甠敳湲浡ⱥ挠摯ⱥ渠睥慐獳潷摲慈桳素㬩਍ൽഊ⼊‪ⴭⴭⴭⴭⴭ䄠䥐ⴠⴭⴭⴭⴭ‭⼪਍਍獡湹⁣畦据楴湯氠獩却慴晦⤨笠਍††敲畴湲挠污䉬捡敫摮笨洠摯㩥✠楬瑳猭慴晦‧⥽഻紊਍਍獡湹⁣畦据楴湯愠摤瑓晡⡦慮敭 ൻ †爠瑥牵⁮慣汬慂正湥⡤⁻潭敤›愧摤猭慴晦Ⱗ渠浡⁥⥽഻紊਍਍獡湹⁣畦据楴湯爠浥癯卥慴晦敒潣摲渨浡⥥笠਍††敲畴湲挠污䉬捡敫摮笨洠摯㩥✠敲潭敶猭慴晦Ⱗ渠浡⁥⥽഻紊਍਍獡湹⁣畦据楴湯爠獥瑥瑓晡䱦捯⡫慮敭 ൻ †爠瑥牵⁮慣汬慂正湥⡤⁻潭敤›爧獥瑥猭慴晦氭捯❫‬慮敭素㬩਍ൽഊ愊祳据映湵瑣潩⁮敲敳䅴汬潌正⡳ ൻ †爠瑥牵⁮慣汬慂正湥⡤⁻潭敤›爧獥瑥愭汬氭捯獫‧⥽഻紊਍਍獡湹⁣畦据楴湯映瑥档潌獧昨汩整獲㴠笠⥽笠਍††敲畴湲挠污䉬捡敫摮笨洠摯㩥✠楬瑳氭杯❳‬⸮昮汩整獲素㬩਍ൽഊ愊祳据映湵瑣潩⁮敦捴䡨批楲卤档摥汵⡥敷步瑓牡ⱴ映牯散敒牦獥⁨‽慦獬⥥笠਍††晩⠠昡牯散敒牦獥⁨☦栠批楲卤档摥汵䍥捡敨睛敥卫慴瑲⁝☦传橢捥⹴敫獹栨批楲卤档摥汵䍥捡敨睛敥卫慴瑲⥝氮湥瑧⥨笠਍††††敲畴湲栠批楲卤档摥汵䍥捡敨睛敥卫慴瑲㭝਍††ൽഊ †琠祲笠਍††††潣獮⁴敲灳湯敳㴠愠慷瑩挠污䉬捡敫摮笨洠摯㩥✠敧⵴票牢摩猭档摥汵❥‬敷步瑓牡⁴⥽഻ †††氠瑥猠档摥汵⁥‽畮汬഻ †††ഠ †††椠⁦爨獥潰獮⁥☦爠獥潰獮⹥歯☠…敲灳湯敳献档摥汵⁥☦传橢捥⹴敫獹爨獥潰獮⹥捳敨畤敬⸩敬杮桴 ൻ †††††猠档摥汵⁥‽敲灳湯敳献档摥汵㭥਍††††⁽汥敳笠਍††††††潣獮⁴潰獳扩敬楆汥獤㴠嬠猧档摥汵❥‬爧獥汵❴‬搧瑡❡‬爧睡Ⱗ✠慰汹慯❤‬猧档摥汵䩥潳❮㭝਍††††††潦⁲挨湯瑳映漠⁦潰獳扩敬楆汥獤 ൻ †††††††挠湯瑳挠湡楤慤整㴠爠獥潰獮⁥☦爠獥潰獮孥嵦഻ †††††††椠⁦ℨ慣摮摩瑡⥥挠湯楴畮㭥਍††††††††晩⠠祴数景挠湡楤慤整㴠㴽✠扯敪瑣‧☦传橢捥⹴敫獹挨湡楤慤整⸩敬杮桴 ൻ †††††††††猠档摥汵⁥‽慣摮摩瑡㭥਍††††††††††牢慥㭫਍††††††††ൽ †††††††椠⁦琨灹潥⁦慣摮摩瑡⁥㴽‽猧牴湩❧ ൻ †††††††††琠祲笠਍††††††††††††潣獮⁴慰獲摥㴠䨠体⹎慰獲⡥慣摮摩瑡⥥഻ †††††††††††椠⁦瀨牡敳⁤☦琠灹潥⁦慰獲摥㴠㴽✠扯敪瑣‧☦传橢捥⹴敫獹瀨牡敳⥤氮湥瑧⥨笠਍††††††††††††††捳敨畤敬㴠瀠牡敳㭤਍††††††††††††††牢慥㭫਍††††††††††††ൽ †††††††††素挠瑡档⠠⥥笠ൽ †††††††素਍††††††ൽ †††素਍††††਍††††晩⠠捳敨畤敬☠…扏敪瑣欮祥⡳捳敨畤敬⸩敬杮桴 ൻ †††††栠批楲卤档摥汵䍥捡敨睛敥卫慴瑲⁝‽捳敨畤敬഻ †††素攠獬⁥晩⠠票牢摩捓敨畤敬慃档孥敷步瑓牡嵴 ൻ †††††猠档摥汵⁥‽票牢摩捓敨畤敬慃档孥敷步瑓牡嵴഻ †††素਍††††਍††††敲畴湲猠档摥汵⁥籼笠㭽਍††⁽慣捴⁨攨 ൻ †††挠湯潳敬眮牡⡮䌧畯摬渠瑯映瑥档栠批楲⁤捳敨畤敬✺‬⥥഻ †††椠⁦栨批楲卤档摥汵䍥捡敨睛敥卫慴瑲⁝☦传橢捥⹴敫獹栨批楲卤档摥汵䍥捡敨睛敥卫慴瑲⥝氮湥瑧⥨笠਍††††††敲畴湲栠批楲卤档摥汵䍥捡敨睛敥卫慴瑲㭝਍††††ൽ †††爠瑥牵⁮絻഻ †素਍ൽഊ挊湯瑳䄠呕彏䕒剆卅彈卍㴠㘠〰〰഻ഊ昊湵瑣潩⁮瑳牡䅴瑵副晥敲桳⤨笠਍††汣慥䅲瑵副晥敲桳⤨഻ †愠瑵副晥敲桳楔敭⁲‽敳䥴瑮牥慶⡬⤨㴠‾ൻ †††椠⁦ℨ獩摁業䱮杯敧䥤⥮笠挠敬牡畁潴敒牦獥⡨㬩爠瑥牵㭮素਍††††潣獮⁴楴敭畯佴敶汲祡㴠搠捯浵湥⹴畱牥卹汥捥潴⡲⸧敳獳潩⵮楴敭畯⵴癯牥慬❹㬩਍††††晩⠠楴敭畯佴敶汲祡 敲畴湲഻ †††ഠ †††爠晥敲桳畃牲湥呴扡⤨഻ †素‬啁佔剟䙅䕒䡓䵟⥓഻紊਍਍畦据楴湯挠敬牡畁潴敒牦獥⡨ ൻ †椠⁦愨瑵副晥敲桳楔敭⥲笠਍††††汣慥䥲瑮牥慶⡬畡潴敒牦獥周浩牥㬩਍††††畡潴敒牦獥周浩牥㴠渠汵㭬਍††ൽ紊਍਍畦据楴湯爠晥敲桳畃牲湥呴扡⤨笠਍††晩⠠椡䅳浤湩潌杧摥湉 敲畴湲഻ †挠湯瑳愠瑣癩呥扡瑂⁮‽潤畣敭瑮焮敵祲敓敬瑣牯✨愮浤湩琭扡⁳琮扡戭湴愮瑣癩❥㬩਍††潣獮⁴捡楴敶慔⁢‽捡楴敶慔䉢湴㼠愠瑣癩呥扡瑂⹮慤慴敳⹴慴⁢›搧獡扨慯摲㬧਍††晩⠠捡楴敶慔⁢㴽‽搧獡扨慯摲⤧笠਍††††潬摡敗步慄慴琨畲⥥഻ †素攠獬⁥晩⠠捡楴敶慔⁢㴽‽氧杯❳ ൻ †††氠慯䱤杯噳敩敷⡲牴敵㬩਍††⁽汥敳椠⁦愨瑣癩呥扡㴠㴽✠湡污瑹捩❳ ൻ †††氠慯䅤慮祬楴獣渨汵ⱬ渠汵ⱬ渠汵ⱬ琠畲⥥഻ †素攠獬⁥晩⠠捡楴敶慔⁢㴽‽猧慴晦⤧笠਍††††潬摡瑓晡䱦獩⡴牴敵㬩਍††ൽ紊਍਍畦据楴湯爠獥瑥湉捡楴楶祴楔敭⡲ ൻ †挠敬牡楔敭畯⡴湩捡楴楶祴楔敭⥲഻ †挠敬牡湉整癲污猨獥楳湯潃湵摴睯呮浩牥㬩਍††਍††潣獮⁴硥獩楴杮癏牥慬⁹‽潤畣敭瑮焮敵祲敓敬瑣牯✨献獥楳湯琭浩潥瑵漭敶汲祡⤧഻ †椠⁦攨楸瑳湩佧敶汲祡 硥獩楴杮癏牥慬⹹敲潭敶⤨഻ †ഠ †椠慮瑣癩瑩呹浩牥㴠猠瑥楔敭畯⡴桳睯敓獳潩呮浩潥瑵慗湲湩Ⱨ匠卅䥓乏呟䵉佅呕䵟⥓഻紊਍਍畦据楴湯猠潨卷獥楳湯楔敭畯坴牡楮杮⤨笠਍††潣獮⁴癯牥慬⁹‽潤畣敭瑮挮敲瑡䕥敬敭瑮✨楤❶㬩਍††癯牥慬⹹汣獡乳浡⁥‽搧慩潬ⵧ癯牥慬⁹敳獳潩⵮楴敭畯⵴癯牥慬❹഻ †漠敶汲祡椮湮牥呈䱍㴠怠਍††††搼癩挠慬獳∽楤污杯戭硯猠獥楳湯琭浩潥瑵搭慩潬≧ാ †††††㰠㍨낏䄠敲礠畯猠楴汬琠敨敲㰿栯㸳਍††††††瀼吾楨⁳敳獳潩⁮楷汬琠浩潥瑵椠⁮猼牴湯⁧摩∽敳獳潩⵮潣湵摴睯≮㌾㰰猯牴湯㹧猠捥湯獤搠敵琠⁯湩捡楴楶祴㰮瀯ാ †††††㰠楤⁶汣獡㵳搢慩潬ⵧ捡楴湯≳猠祴敬∽牧摩琭浥汰瑡ⵥ潣畬湭㩳ㄠ牦∻ാ †††††††㰠畢瑴湯椠㵤猢獥楳湯栭牥ⵥ瑢≮挠慬獳∽瑢⵮湩•祴数∽畢瑴湯㸢鳢₅❉⁭敨敲⼼畢瑴湯ാ †††††㰠搯癩ാ †††㰠搯癩ാ †怠഻ †搠捯浵湥⹴潢祤愮灰湥䍤楨摬漨敶汲祡㬩਍††਍††潣獮⁴潣湵摴睯䕮⁬‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤猧獥楳湯挭畯瑮潤湷⤧഻ †氠瑥猠捥湯獤敌瑦㴠㌠㬰਍††਍††敳獳潩䍮畯瑮潤湷楔敭⁲‽敳䥴瑮牥慶⡬⤨㴠‾ൻ †††猠捥湯獤敌瑦ⴭ഻ †††椠⁦挨畯瑮潤湷汅 潣湵摴睯䕮⹬整瑸潃瑮湥⁴‽敳潣摮䱳晥㭴਍††††晩⠠敳潣摮䱳晥⁴㴼〠 ൻ †††††挠敬牡湉整癲污猨獥楳湯潃湵摴睯呮浩牥㬩਍††††††慨摮敬潌潧瑵琨畲⥥഻ †††素਍††ⱽㄠ〰⤰഻ †ഠ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨敳獳潩⵮敨敲戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠ 㸽笠਍††††汣慥䥲瑮牥慶⡬敳獳潩䍮畯瑮潤湷楔敭⥲഻ †††漠敶汲祡爮浥癯⡥㬩਍††††敲敳䥴慮瑣癩瑩呹浩牥⤨഻ †素㬩਍ൽഊ昊湵瑣潩⁮汣慥䅲浤湩潌楧䙮牯⡭ ൻ †挠湯瑳映牯⁭‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧浤湩氭杯湩昭牯❭㬩਍††潣獮⁴獵牥慮敭湉異⁴‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧浤湩甭敳湲浡❥㬩਍††潣獮⁴慰獳潷摲湉異⁴‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧浤湩瀭獡睳牯❤㬩਍††潣獮⁴敭獳条䕥⁬‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧浤湩洭獥慳敧⤧഻ഊ †椠⁦昨牯⥭映牯⹭敲敳⡴㬩਍††晩⠠獵牥慮敭湉異⥴甠敳湲浡䥥灮瑵瘮污敵㴠✠㬧਍††晩⠠慰獳潷摲湉異⥴笠਍††††慰獳潷摲湉異⹴慶畬⁥‽✧഻ †††瀠獡睳牯䥤灮瑵琮灹⁥‽瀧獡睳牯❤഻ †素਍††晩⠠敭獳条䕥⥬笠਍††††敭獳条䕥⹬整瑸潃瑮湥⁴‽✧഻ †††洠獥慳敧汅挮慬獳慎敭㴠✠摡業⵮敭獳条❥഻ †素਍ൽഊ昊湵瑣潩⁮慨摮敬潌潧瑵椨味浩潥瑵㴠映污敳 ൻ †挠敬牡楔敭畯⡴湩捡楴楶祴楔敭⥲഻ †挠敬牡湉整癲污猨獥楳湯潃湵摴睯呮浩牥㬩਍††汣慥䅲瑵副晥敲桳⤨഻ †猠獥楳湯瑓牯条⹥敲潭敶瑉浥✨摡業彮敳獳潩❮㬩਍††敳獳潩卮潴慲敧爮浥癯䥥整⡭愧浤湩损牳彦潴敫❮㬩਍††敳獳潩卮潴慲敧爮浥癯䥥整⡭愧浤湩瑟歯湥⤧഻ †猠獥楳湯瑓牯条⹥敲潭敶瑉浥✨摡業彮獵牥慮敭⤧഻ †椠䅳浤湩潌杧摥湉㴠映污敳഻ †挠牵敲瑮摁業啮敳湲浡⁥‽✧഻ †挠捡敨坤敥䑫瑡⁡‽絻഻ †栠批楲卤档摥汵䍥捡敨㴠笠㭽਍††汣慥䅲浤湩潌楧䙮牯⡭㬩਍††਍††潣獮⁴楴敭畯佴敶汲祡㴠搠捯浵湥⹴畱牥卹汥捥潴⡲⸧敳獳潩⵮楴敭畯⵴癯牥慬❹㬩਍††晩⠠楴敭畯佴敶汲祡 楴敭畯佴敶汲祡爮浥癯⡥㬩਍††਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧浤湩瀭湡汥栭獯❴⸩湩敮䡲䵔⁌‽✧഻ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨摡業⵮潬楧⵮潦浲⤧献祴敬搮獩汰祡㴠✠牧摩㬧਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤昧牯潧⵴慰獳潷摲氭湩❫⸩瑳汹⹥楤灳慬⁹‽戧潬正㬧਍††潣獮⁴敨潲㴠搠捯浵湥⹴畱牥卹汥捥潴⡲⸧摡業⵮敨潲⤧഻ †椠⁦栨牥⥯栠牥⹯瑳汹⹥楤灳慬⁹‽昧敬❸഻ †ഠ †椠⁦椨味浩潥瑵 ൻ †††猠潨呷慯瑳✨敓獳潩⁮楴敭⁤畯⁴畤⁥潴椠慮瑣癩瑩⹹Ⱗ✠牥潲❲㬩਍††ൽ紊਍਍⨯ⴠⴭⴭⴭⴭ‭敗步丠癡杩瑡潩⁮ⴭⴭⴭⴭⴭ⨠യഊ昊湵瑣潩⁮敧坴敥剫湡敧洨湯慤䑹瑡⥥笠਍††晩⠠洡湯慤䑹瑡⥥笠਍††††潭摮祡慄整㴠渠睥䐠瑡⡥㬩਍††††潣獮⁴慤⁹‽潭摮祡慄整朮瑥慄⡹㬩਍††††潣獮⁴楤晦㴠洠湯慤䑹瑡⹥敧䑴瑡⡥ ‭慤⁹‫搨祡㴠㴽〠㼠ⴠ‶›⤱഻ †††洠湯慤䑹瑡⁥‽敮⁷慄整洨湯慤䑹瑡⹥敧䙴汵奬慥⡲Ⱙ洠湯慤䑹瑡⹥敧䵴湯桴⤨‬楤晦㬩਍††ൽ †挠湯瑳映楲慤⁹‽敮⁷慄整洨湯慤䑹瑡⥥഻ †映楲慤⹹敳䑴瑡⡥潭摮祡慄整朮瑥慄整⤨⬠㐠㬩਍††敲畴湲笠洠湯慤㩹洠湯慤䑹瑡ⱥ映楲慤㩹映楲慤⁹㭽਍ൽഊ昊湵瑣潩⁮潦浲瑡慄整䵄⡙慤整 ൻ †挠湯瑳搠⁤‽瑓楲杮搨瑡⹥敧䑴瑡⡥⤩瀮摡瑓牡⡴ⰲ✠✰㬩਍††潣獮⁴浭㴠匠牴湩⡧慤整朮瑥潍瑮⡨ ‫⤱瀮摡瑓牡⡴ⰲ✠✰㬩਍††潣獮⁴祹祹㴠搠瑡⹥敧䙴汵奬慥⡲㬩਍††敲畴湲怠笤摤⽽笤浭⽽笤祹祹恽഻紊਍਍畦据楴湯映牯慭䵴湩瑵獥獁楔敭洨湩瑵獥 ൻ †椠⁦洨湩瑵獥㴠㴽甠摮晥湩摥簠⁼業畮整⁳㴽‽畮汬 敲畴湲✠㬧਍††敬⁴桨㴠䴠瑡⹨汦潯⡲業畮整⁳ 〶㬩਍††潣獮⁴浭㴠匠牴湩⡧業畮整⁳‥〶⸩慰卤慴瑲㈨‬〧⤧഻ †挠湯瑳愠灭⁭‽桨㸠‽㈱㼠✠䵐‧›䄧❍഻ †栠⁨‽桨┠ㄠ㬲਍††晩⠠桨㴠㴽〠 桨㴠ㄠ㬲਍††敲畴湲怠笤桨㩽笤浭⁽笤浡浰恽഻紊਍਍畦据楴湯朠瑥潍摮祡牆浯慄整搨瑡⥥笠਍††潣獮⁴⁤‽敮⁷慄整搨瑡⥥഻ †挠湯瑳搠祡㴠搠朮瑥慄⡹㬩਍††潣獮⁴楤晦㴠搠朮瑥慄整⤨ⴠ搠祡⬠⠠慤⁹㴽‽‰‿㘭㨠ㄠ㬩਍††敲畴湲渠睥䐠瑡⡥⹤敧䙴汵奬慥⡲Ⱙ搠朮瑥潍瑮⡨Ⱙ搠晩⥦഻紊਍਍畦据楴湯渠癡杩瑡坥敥⡫楤敲瑣潩⥮笠਍††晩⠠挡牵敲瑮敗步瑓牡⥴笠਍††††潣獮⁴潴慤⁹‽敮⁷慄整⤨഻ †††挠牵敲瑮敗步瑓牡⁴‽敧䵴湯慤䙹潲䑭瑡⡥潴慤⥹഻ †素攠獬⁥ൻ †††挠湯瑳瀠牡敳⁤‽慰獲䑥祭慄整挨牵敲瑮敗步瑓牡⥴഻ †††椠⁦搨物捥楴湯㴠㴽✠牰癥⤧瀠牡敳⹤敳䑴瑡⡥慰獲摥朮瑥慄整⤨ⴠ㜠㬩਍††††汥敳瀠牡敳⹤敳䑴瑡⡥慰獲摥朮瑥慄整⤨⬠㜠㬩਍††††畣牲湥坴敥卫慴瑲㴠瀠牡敳㭤਍††ൽ †挠牵敲瑮敗步瑓牡⁴‽潦浲瑡慄整䵄⡙畣牲湥坴敥卫慴瑲㬩਍††潬摡敗步慄慴⤨഻紊਍਍畦据楴湯瀠牡敳浄䑹瑡⡥瑳⥲笠਍††潣獮⁴慰瑲⁳‽瑓楲杮猨牴簠⁼✧⸩灳楬⡴⼧⤧洮灡瀨㴠‾⹰牴浩⤨㬩਍††晩⠠慰瑲⹳敬杮桴㴠㴽㌠ ൻ †††爠瑥牵⁮敮⁷慄整瀨牡敳湉⡴慰瑲孳崲‬〱Ⱙ瀠牡敳湉⡴慰瑲孳崱‬〱 ‭ⰱ瀠牡敳湉⡴慰瑲孳崰‬〱⤩഻ †素਍††敲畴湲渠汵㭬਍ൽഊ昊湵瑣潩⁮獩䑯瑡呥䑯䵤奭祹⡹獩卯牴 ൻ †椠⁦ℨ獩卯牴 敲畴湲✠㬧਍††潣獮⁴慰瑲⁳‽獩卯牴献汰瑩✨✭㬩਍††晩⠠慰瑲⹳敬杮桴㴠㴽㌠ 敲畴湲怠笤慰瑲孳崲⽽笤慰瑲孳崱⽽笤慰瑲孳崰恽഻ †爠瑥牵⁮獩卯牴഻紊਍਍畦据楴湯渠牯慭楬敺慄整敋⡹慶畬⥥笠਍††晩⠠瘡污敵 敲畴湲✠㬧਍††晩⠠慶畬⁥湩瑳湡散景䐠瑡⁥☦℠獩慎⡎慶畬⥥ ൻ †††爠瑥牵⁮①登污敵朮瑥畆汬教牡⤨⵽笤瑓楲杮瘨污敵朮瑥潍瑮⡨ ‫⤱瀮摡瑓牡⡴ⰲ✠✰紩␭卻牴湩⡧慶畬⹥敧䑴瑡⡥⤩瀮摡瑓牡⡴ⰲ✠✰紩㭠਍††ൽ †挠湯瑳琠楲浭摥㴠匠牴湩⡧慶畬⥥琮楲⡭㬩਍††晩⠠琡楲浭摥 敲畴湲✠㬧਍††潣獮⁴浤䵹瑡档㴠琠楲浭摥洮瑡档⼨⡞摜ㅻ㈬⥽⽜尨筤ⰱ紲尩⠯摜㑻⥽⼤㬩਍††晩⠠浤䵹瑡档 ൻ †††爠瑥牵⁮①摻祭慍捴孨崳⵽笤浤䵹瑡档㉛⹝慰卤慴瑲㈨‬〧⤧⵽笤浤䵹瑡档ㅛ⹝慰卤慴瑲㈨‬〧⤧恽഻ †素਍††潣獮⁴獩䵯瑡档㴠琠楲浭摥洮瑡档⼨⡞摜㑻⥽⠭摜ㅻ㈬⥽⠭摜ㅻ㈬⥽⤯഻ †椠⁦椨潳慍捴⥨笠਍††††敲畴湲怠笤獩䵯瑡档ㅛ絝␭楻潳慍捴孨崲瀮摡瑓牡⡴ⰲ✠✰紩␭楻潳慍捴孨崳瀮摡瑓牡⡴ⰲ✠✰紩㭠਍††ൽ †挠湯瑳瀠牡敳⁤‽敮⁷慄整琨楲浭摥㬩਍††晩⠠椡乳乡瀨牡敳⥤ ൻ †††爠瑥牵⁮①灻牡敳⹤敧䙴汵奬慥⡲紩␭卻牴湩⡧慰獲摥朮瑥潍瑮⡨ ‫⤱瀮摡瑓牡⡴ⰲ✠✰紩␭卻牴湩⡧慰獲摥朮瑥慄整⤨⸩慰卤慴瑲㈨‬〧⤧恽഻ †素਍††敲畴湲✠㬧਍ൽഊ昊湵瑣潩⁮畢汩卤档摥汵乥浡䥥摮硥猨档摥汵⥥笠਍††潣獮⁴湩敤⁸‽絻഻ †椠⁦ℨ捳敨畤敬簠⁼祴数景猠档摥汵⁥㴡‽漧橢捥❴ 敲畴湲椠摮硥഻ †传橢捥⹴敫獹猨档摥汵⥥昮牯慅档⠨慲⥷㴠‾ൻ †††挠湯瑳欠祥㴠匠牴湩⡧慲⁷籼✠⤧琮楲⡭⸩潴潌敷䍲獡⡥㬩਍††††晩⠠敫⥹椠摮硥歛祥⁝‽慲㭷਍††⥽഻ †爠瑥牵⁮湩敤㭸਍ൽഊ⼊‪ⴭⴭⴭⴭⴭ吠扡丠癡杩瑡潩⁮ⴭⴭⴭⴭⴭ⨠യഊ昊湵瑣潩⁮睳瑩档慔⡢慴䥢⥤笠਍††畣牲湥呴扡㴠琠扡摉഻ †搠捯浵湥⹴畱牥卹汥捥潴䅲汬✨琮扡戭湴⤧昮牯慅档戨湴㴠‾瑢⹮汣獡䱳獩⹴潴杧敬✨捡楴敶Ⱗ戠湴搮瑡獡瑥琮扡㴠㴽琠扡摉⤩഻ †搠捯浵湥⹴畱牥卹汥捥潴䅲汬✨琮扡挭湯整瑮⤧昮牯慅档挨湯整瑮㴠‾潣瑮湥⹴汣獡䱳獩⹴敲潭敶✨捡楴敶⤧㬩਍††潣獮⁴捡楴敶潃瑮湥⁴‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤瑠扡␭瑻扡摉恽㬩਍††晩⠠捡楴敶潃瑮湥⥴愠瑣癩䍥湯整瑮挮慬獳楌瑳愮摤✨捡楴敶⤧഻ †ഠ †椠⁦琨扡摉㴠㴽✠慤桳潢牡❤ ⁻潬摡敗步慄慴⤨※瑳牡䅴瑵副晥敲桳⤨※ൽ †攠獬⁥晩⠠慴䥢⁤㴽‽猧慴晦⤧氠慯卤慴晦楌瑳⤨഻ †攠獬⁥晩⠠慴䥢⁤㴽‽氧杯❳ 潬摡潌獧楖睥牥⤨഻ †攠獬⁥晩⠠慴䥢⁤㴽‽愧慮祬楴獣⤧氠慯䅤慮祬楴獣⤨഻ †攠獬⁥晩⠠慴䥢⁤㴽‽挧湯楦❧ 潬摡潃普杩慖畬獥⤨഻ †攠獬⁥⁻汣慥䅲瑵副晥敲桳⤨※ൽ †ഠ †爠獥瑥湉捡楴楶祴楔敭⡲㬩਍ൽഊ愊祳据映湵瑣潩⁮潬摡潃普杩慖畬獥⤨笠਍††汣慥䅲瑵副晥敲桳⤨഻ †琠祲笠਍††††潣獮⁴敲⁳‽睡楡⁴慣汬慂正湥⡤⁻潭敤›朧瑥挭湯楦❧素㬩਍††††晩⠠敲⁳☦爠獥漮⁫☦爠獥挮湯楦⥧笠਍††††††潣獮⁴晣⁧‽敲⹳潣普杩഻ †††††挠湯瑳氠瑡汅㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潣普杩氭瑡挭牵敲瑮⤧഻ †††††挠湯瑳氠湯汅㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潣普杩氭湯挭牵敲瑮⤧഻ †††††挠湯瑳爠摡畩䕳⁬‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤挧湯楦ⵧ慲楤獵挭牵敲瑮⤧഻ †††††挠湯瑳挠瑵景䕦⁬‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤挧湯楦ⵧ慬整挭瑵景ⵦ畣牲湥❴㬩਍਍††††††晩⠠慬䕴⁬☦挠杦漮晦捩䱥瑡℠㴽甠摮晥湩摥 慬䕴⹬整瑸潃瑮湥⁴‽晣⹧景楦散慌㭴਍††††††晩⠠潬䕮⁬☦挠杦漮晦捩䱥湯℠㴽甠摮晥湩摥 潬䕮⹬整瑸潃瑮湥⁴‽晣⹧景楦散潌㭮਍††††††晩⠠慲楤獵汅☠…晣⹧慲楤獵敍整獲℠㴽甠摮晥湩摥 慲楤獵汅琮硥䍴湯整瑮㴠挠杦爮摡畩䵳瑥牥⁳‫‧敭整獲㬧਍††††††晩⠠畣潴晦汅☠…晣⹧慬整畃潴晦楍畮整⁳㴡‽湵敤楦敮⥤挠瑵景䕦⹬整瑸潃瑮湥⁴‽潦浲瑡楍畮整䅳味浩⡥晣⹧慬整畃潴晦楍畮整⥳഻ഊ †††††椠⁦挨杦眮牯䑫祡⁳㴡‽湵敤楦敮⥤笠਍††††††††潣獮⁴慤乹浡獥㴠嬠䴧湯慤❹‬吧敵摳祡Ⱗ✠敗湤獥慤❹‬吧畨獲慤❹‬䘧楲慤❹‬匧瑡牵慤❹‬匧湵慤❹㭝਍††††††††潣獮⁴慰瑲⁳‽晣⹧潷歲慄獹献汰瑩✨❟⸩慭⡰畎扭牥㬩਍††††††††晩⠠慰瑲⹳敬杮桴㴠㴽㈠☠…椡乳乡瀨牡獴せ⥝☠…椡乳乡瀨牡獴ㅛ⥝ ൻ †††††††††挠湯瑳氠扡汥汅㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潣普杩眭牯摫祡⵳畣牲湥❴㬩਍††††††††††晩⠠慬敢䕬⥬氠扡汥汅琮硥䍴湯整瑮㴠怠笤慤乹浡獥灛牡獴せ嵝⁽胢ₓ笤慤乹浡獥灛牡獴ㅛ嵝恽഻ †††††††素਍††††††ൽ †††素਍††⁽慣捴⁨攨 ൻ †††挠湯潳敬眮牡⡮䌧畯摬渠瑯映瑥档戠捡敫摮挠湯楦㩧Ⱗ攠㬩਍††ൽ紊਍਍畦据楴湯洠獡䕫慭汩攨慭汩 ൻ †椠⁦ℨ浥楡⁬籼琠灹潥⁦浥楡⁬㴡‽猧牴湩❧簠⁼攡慭汩椮据畬敤⡳䀧⤧ 敲畴湲✠潎⁴潣普杩牵摥㬧਍††潣獮⁴慰瑲⁳‽浥楡⹬灳楬⡴䀧⤧഻ †挠湯瑳甠敳⁲‽慰瑲孳崰഻ †挠湯瑳搠浯楡⁮‽慰瑲孳崱഻ †挠湯瑳洠獡敫啤敳⁲‽獵牥氮湥瑧⁨㴼㈠㼠甠敳孲崰⬠✠⨪✪㨠甠敳孲崰⬠✠⨪✪⬠甠敳孲獵牥氮湥瑧⁨‭崱഻ †挠湯瑳洠獡敫䑤浯楡⁮‽潤慭湩氮湥瑧⁨㴼㐠㼠搠浯楡⁮›潤慭湩せ⁝‫⨧⨪‧‫潤慭湩献楬散搨浯楡⹮慬瑳湉敤佸⡦⸧⤧㬩਍††敲畴湲怠笤慭歳摥獕牥䁽笤慭歳摥潄慭湩恽഻紊਍਍獡湹⁣畦据楴湯氠慯剤捥癯牥䕹慭汩楄灳慬⡹ ൻ †挠湯瑳攠⁬‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤爧捥癯牥⵹浥楡⵬楤灳慬❹㬩਍††晩⠠攡⥬爠瑥牵㭮਍††牴⁹ൻ †††挠湯瑳爠獥㴠愠慷瑩挠污䉬捡敫摮笨洠摯㩥✠敧⵴敲潣敶祲攭慭汩‧⥽഻ †††椠⁦爨獥☠…敲⹳歯☠…敲⹳浥楡⥬笠਍††††††汥琮硥䍴湯整瑮㴠怠捁楴敶›笤慭歳浅楡⡬敲⹳浥楡⥬恽഻ †††素攠獬⁥ൻ †††††攠⹬整瑸潃瑮湥⁴‽丧瑯挠湯楦畧敲❤഻ †††素਍††⁽慣捴⁨攨 ൻ †††攠⹬整瑸潃瑮湥⁴‽䄧瑣癩㩥⠠潃普杩牵摥✩഻ †素਍ൽഊ愊祳据映湵瑣潩⁮潬摡摁業啮敳獲楌瑳⤨笠਍††潣獮⁴敳瑣潩⁮‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧浤湩甭敳⵲慭慮敧敭瑮猭捥楴湯⤧഻ †挠湯瑳挠湯慴湩牥㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨摡業⵮獵牥⵳楬瑳⤧഻ †椠⁦ℨ潣瑮楡敮⥲爠瑥牵㭮਍਍††潣獮⁴獩畓数⁲‽敳獳潩卮潴慲敧朮瑥瑉浥✨獩獟灵牥獵牥⤧㴠㴽✠牴敵㬧਍††潣獮⁴潲敬楔牥㴠猠獥楳湯瑓牯条⹥敧䥴整⡭愧浤湩牟汯彥楴牥⤧簠⁼椨即灵牥㼠✠敤敶潬数❲㨠✠摡業❮㬩਍਍††⼯匠扵愭浤湩⁳湡⁤敔浡䰠慥獤挠湡潮⁴慭慮敧漠桴牥愠浤湩൳ †椠⁦爨汯呥敩⁲㴽‽猧扵慟浤湩‧籼爠汯呥敩⁲㴽‽琧慥彭敬摡⤧笠਍††††晩⠠敳瑣潩⥮猠捥楴湯献祴敬搮獩汰祡㴠✠潮敮㬧਍††††敲畴湲഻ †素਍਍††牴⁹ൻ †††挠湯瑳爠獥㴠愠慷瑩挠污䉬捡敫摮笨洠摯㩥✠楬瑳愭浤湩甭敳獲‧⥽഻ †††氠瑥甠敳獲㴠⠠敲⁳☦爠獥漮⁫☦䄠牲祡椮䅳牲祡爨獥甮敳獲⤩㼠爠獥甮敳獲㨠嬠㭝਍਍††††晩⠠甡敳獲氮湥瑧⥨笠਍††††††獵牥⁳‽൛ †††††††笠甠敳湲浡㩥挠牵敲瑮摁業啮敳湲浡⁥籼✠摡業❮‬潲敬›獩畓数⁲‿搧癥汥灯牥‧›愧浤湩‧ൽ †††††崠഻ †††素਍਍††††潣獮⁴潲敬慌敢獬㴠笠਍††††††敤敶潬数㩲✠鿰醑匠灵牥獵牥Ⱗ਍††††††摡業㩮✠鿰ꊏ匠灵牥䄠浤湩Ⱗ਍††††††畳形摡業㩮✠鿰ꆛ룯₏畓ⵢ摁業❮ബ †††††琠慥彭敬摡›醟₥敔浡䰠慥❤਍††††㭽਍਍††††潣獮⁴潲獷瑈汭㴠甠敳獲洮灡用㴠‾ൻ †††††⼠ 楈敤搠癥汥灯牥猠灵牥獵牥爠睯映潲⁭潮⵮敤敶潬数⁲摡業獮਍††††††晩⠠⹵潲敬㴠㴽✠敤敶潬数❲☠…椡即灵牥 敲畴湲✠㬧਍††††††਍††††††潣獮⁴獩敓晬㴠甠甮敳湲浡⁥㴽‽畣牲湥䅴浤湩獕牥慮敭഻ †††††挠湯瑳椠䑳癥捁潣湵⁴‽⹵潲敬㴠㴽✠敤敶潬数❲഻ †††††挠湯瑳挠湡慍慮敧㴠℠獩敓晬☠…椡䑳癥捁潣湵㭴਍਍††††††敲畴湲怠਍††††††††搼癩挠慬獳∽瑳晡ⵦ慣摲•瑳汹㵥洢牡楧⵮潢瑴浯㠺硰※慰摤湩㩧㈱硰ㄠ瀴㭸㸢਍††††††††††搼癩挠慬獳∽瑳晡ⵦ湩潦•瑳汹㵥昢敬㩸㬱㸢਍††††††††††††猼牴湯㹧笤獥慣数瑈汭用甮敳湲浡⥥㱽猯牴湯㹧਍††††††††††††猼慰⁮汣獡㵳猢慴晦搭癥捩≥猠祴敬∽慭杲湩氭晥㩴〱硰※潦瑮眭楥桧㩴〶㬰映湯⵴楳敺〺㜮爸浥∻␾牻汯䱥扡汥孳⹵潲敬⁝籼甠爮汯絥⼼灳湡ാ †††††††††††␠楻即汥⁦‿㰧灳湡猠祴敬∽慭杲湩氭晥㩴瀶㭸映湯⵴楳敺〺㜮敲㭭挠汯牯瘺牡⴨瀭楲慭祲㬩映湯⵴敷杩瑨㘺〰∻⠾潙⥵⼼灳湡✾㨠✠紧਍††††††††††⼼楤㹶਍††††††††††笤慣䵮湡条⁥‿ൠ †††††††††††㰠楤⁶汣獡㵳猢慴晦愭瑣潩獮•瑳汹㵥搢獩汰祡昺敬㭸朠灡㘺硰∻ാ †††††††††††††㰠畢瑴湯挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮搠瑡ⵡ敲敳⵴摡業⵮睰∽笤獥慣数瑈汭用甮敳湲浡⥥≽琠瑩敬∽敒敳⁴慐獳潷摲㸢鿰醔删獥瑥⼼畢瑴湯ാ †††††††††††††㰠畢瑴湯挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污⁬慤杮牥•祴数∽畢瑴湯•慤慴爭浥癯ⵥ摡業㵮␢敻捳灡䡥浴⡬⹵獵牥慮敭紩•楴汴㵥刢浥癯⁥摁業≮鞟ₑ敒潭敶⼼畢瑴湯ാ †††††††††††㰠搯癩ാ †††††††††怠㨠✠紧਍††††††††⼼楤㹶਍††††††㭠਍††††⥽樮楯⡮✧㬩਍਍††††潣瑮楡敮⹲湩敮䡲䵔⁌‽潲獷瑈汭簠⁼㰧楤⁶汣獡㵳猢慴晦氭獩⵴瑳瑡≥举⁯敤敬慧整⁤摡業⁮獵牥⹳⼼楤㹶㬧਍਍††††⼯䈠湩⁤敲潭敶戠瑵潴獮਍††††潣瑮楡敮⹲畱牥卹汥捥潴䅲汬✨摛瑡ⵡ敲潭敶愭浤湩❝⸩潦䕲捡⡨瑢⁮㸽笠਍††††††瑢⹮摡䕤敶瑮楌瑳湥牥✨汣捩❫‬獡湹⁣⤨㴠‾ൻ †††††††挠湯瑳琠牡敧⁴‽瑢⹮敧䅴瑴楲畢整✨慤慴爭浥癯ⵥ摡業❮㬩਍††††††††潣獮⁴潣普物敭⁤‽睡楡⁴潣普物䑭慩潬⡧剠浥癯⁥摡業⁮牰癩汩来獥映牯∠笤慴杲瑥≽‿桔獩挠湡潮⁴敢甠摮湯⹥Ⱡ笠搠湡敧㩲琠畲ⱥ挠湯楦浲慌敢㩬✠敒潭敶‧⥽഻ †††††††椠⁦挨湯楦浲摥 ൻ †††††††††挠湯瑳爠獥㴠愠慷瑩挠污䉬捡敫摮笨洠摯㩥✠敲潭敶愭浤湩甭敳❲‬慴杲瑥獕牥慮敭›慴杲瑥素㬩਍††††††††††桳睯潔獡⡴敲⹳敭獳条⁥籼✠摁業⁮獵牥爠浥癯摥✮‬敲⹳歯㼠✠畳捣獥❳㨠✠牥潲❲㬩਍††††††††††晩⠠敲⹳歯 潬摡摁業啮敳獲楌瑳⤨഻ †††††††素਍††††††⥽഻ †††素㬩਍਍††††⼯䈠湩⁤敲敳⁴慰獳潷摲戠瑵潴獮਍††††潣瑮楡敮⹲畱牥卹汥捥潴䅲汬✨摛瑡ⵡ敲敳⵴摡業⵮睰❝⸩潦䕲捡⡨瑢⁮㸽笠਍††††††瑢⹮摡䕤敶瑮楌瑳湥牥✨汣捩❫‬獡湹⁣⤨㴠‾ൻ †††††††挠湯瑳琠牡敧⁴‽瑢⹮敧䅴瑴楲畢整✨慤慴爭獥瑥愭浤湩瀭❷㬩਍††††††††潣獮⁴敲畳瑬㴠愠慷瑩猠潨䥷汮湩䑥慩潬⡧ൻ †††††††††琠瑩敬›剠獥瑥倠獡睳牯㩤␠瑻牡敧絴Ⱡ਍††††††††††敭獳条㩥✠湅整⁲⁡敮⁷慰獳潷摲映牯琠楨⁳摡業⁮獵牥✮ബ †††††††††映敩摬㩳嬠਍††††††††††††⁻汰捡桥汯敤㩲✠敎⁷慰獳潷摲Ⱗ琠灹㩥✠慰獳潷摲Ⱗ愠瑵捯浯汰瑥㩥✠敮⵷慰獳潷摲‧ⱽ਍††††††††††††⁻汰捡桥汯敤㩲✠潃普物⁭慰獳潷摲Ⱗ琠灹㩥✠慰獳潷摲Ⱗ愠瑵捯浯汰瑥㩥✠敮⵷慰獳潷摲‧ൽ †††††††††崠ബ †††††††††挠湯楦浲慌敢㩬✠敒敳⁴慐獳潷摲ധ †††††††素㬩਍††††††††晩⠠爡獥汵⥴爠瑥牵㭮਍††††††††晩⠠敲畳瑬せ⁝㴡‽敲畳瑬ㅛ⥝笠਍††††††††††桳睯潔獡⡴倧獡睳牯獤搠⁯潮⁴慭捴⹨Ⱗ✠牥潲❲㬩਍††††††††††敲畴湲഻ †††††††素਍††††††††潣獮⁴慰獳慈桳㴠愠慷瑩猠慨㔲䠶硥爨獥汵孴崰㬩਍††††††††潣獮⁴敲⁳‽睡楡⁴慣汬慂正湥⡤⁻潭敤›愧浤湩爭獥瑥甭敳⵲慰獳潷摲Ⱗ琠牡敧啴敳湲浡㩥琠牡敧ⱴ渠睥慐獳潷摲慈桳›慰獳慈桳素㬩਍††††††††桳睯潔獡⡴敲⹳敭獳条⁥籼✠慐獳潷摲爠獥瑥猠捵散獳畦汬⹹Ⱗ爠獥漮⁫‿猧捵散獳‧›攧牲牯⤧഻ †††††素㬩਍††††⥽഻ †素挠瑡档⠠⥥笠਍††††潣瑮楡敮⹲湩敮䡲䵔⁌‽㰧楤⁶汣獡㵳猢慴晦氭獩⵴瑳瑡≥䐾晥畡瑬匠灵牥䄠浤湩挠湯楦畧敲⹤⼼楤㹶㬧਍††ൽ紊਍਍獡湹⁣畦据楴湯栠湡汤䅥摤摁業啮敳⡲ ൻ †挠湯瑳椠即灵牥㴠猠獥楳湯瑓牯条⹥敧䥴整⡭椧彳畳数畲敳❲ 㴽‽琧畲❥഻ †ഠ †⼠ 畂汩⁤瑳慥瑬敨⁤潲敬漠瑰潩獮钀匠灵牥獵牥挠湡挠敲瑡⁥瑯敨⁲畓数畲敳獲਍††敬⁴潲敬灏楴湯䡳浴⁬‽✧഻ †椠⁦椨即灵牥 ൻ †††爠汯佥瑰潩獮瑈汭㴠怠਍††††††漼瑰潩⁮慶畬㵥搢癥汥灯牥㸢鿰醑匠灵牥獵牥⼼灯楴湯ാ †††††㰠灯楴湯瘠污敵∽摡業≮猠汥捥整㹤鿰ꊏ匠灵牥䄠浤湩⼼灯楴湯ാ †††††㰠灯楴湯瘠污敵∽畳形摡業≮鮟辸匠扵䄭浤湩⼼灯楴湯ാ †††††㰠灯楴湯瘠污敵∽整浡江慥≤醟₥敔浡䰠慥㱤漯瑰潩㹮਍††††㭠਍††⁽汥敳笠਍††††⼯删来汵牡愠浤湩挠湡漠汮⁹牣慥整氠睯牥琠敩獲਍††††潲敬灏楴湯䡳浴⁬‽ൠ †††††㰠灯楴湯瘠污敵∽畳形摡業≮猠汥捥整㹤鿰ꆛ룯₏畓ⵢ摁業㱮漯瑰潩㹮਍††††††漼瑰潩⁮慶畬㵥琢慥彭敬摡㸢鿰ꖑ吠慥⁭敌摡⼼灯楴湯ാ †††怠഻ †素਍਍††潣獮⁴畣瑳浯瑈汭㴠怠਍††††搼癩猠祴敬∽楤灳慬㩹汦硥※汦硥搭物捥楴湯挺汯浵㭮朠灡ㄺ瀰㭸琠硥⵴污杩㩮敬瑦※慭杲湩琭灯㠺硰∻ാ †††††㰠慬敢⁬瑳汹㵥昢湯⵴楳敺〺㠮爲浥※潦瑮眭楥桧㩴〶㬰挠汯牯瘺牡⴨琭硥⥴∻倾牥業獳潩⁮楔牥⼼慬敢㹬਍††††††猼汥捥⁴摩∽摡ⵤ摡業⵮潲敬猭汥捥≴猠祴敬∽慰摤湩㩧瀸⁸㈱硰※潢摲牥爭摡畩㩳瀶㭸戠牯敤㩲瀱⁸潳楬⁤慶⡲ⴭ潢摲牥㬩戠捡杫潲湵㩤慶⡲ⴭ畳晲捡ⵥ⤲※潣潬㩲慶⡲ⴭ整瑸㬩映湯⵴楳敺〺㠮爸浥∻ാ †††††††␠牻汯佥瑰潩獮瑈汭ൽ †††††㰠猯汥捥㹴਍††††⼼楤㹶਍††㭠਍਍††潣獮⁴敲畳瑬㴠愠慷瑩猠潨䥷汮湩䑥慩潬⡧ൻ †††琠瑩敬›䄧摤䄠浤湩唠敳❲ബ †††洠獥慳敧›䌧敲瑡⁥⁡敮⁷摡業⁮捡潣湵⁴潦⁲桴獩琠湥湡⹴Ⱗ਍††††楦汥獤›൛ †††††笠瀠慬散潨摬牥›唧敳湲浡⁥攨朮‮潪湨桟⥲‧ⱽ਍††††††⁻汰捡桥汯敤㩲✠慐獳潷摲Ⱗ琠灹㩥✠慰獳潷摲‧ൽ †††崠ബ †††挠獵潴䍭湯整瑮瑈汭›畣瑳浯瑈汭ബ †††挠湯楦浲慌敢㩬✠牃慥整䄠浤湩ധ †素㬩਍਍††晩⠠爡獥汵⁴籼℠敲畳瑬せ⁝籼℠敲畳瑬ㅛ⥝爠瑥牵㭮਍††潣獮⁴敮啷敳湲浡⁥‽敲畳瑬せ⹝牴浩⤨഻ †挠湯瑳渠睥慐獳㴠爠獥汵孴崱഻ഊ †⼠ 敒摡琠敨爠汯⁥牦浯琠敨挠灡畴敲⁤畣瑳浯猠汥捥⁴慶畬⁥猨癡摥戠⁹桳睯湉楬敮楄污杯戠晥牯⁥癯牥慬⁹敲潭慶⥬਍††敬⁴敳敬瑣摥潒敬㴠眠湩潤孷弧楤污杯慖彬摡ⵤ摡業⵮潲敬猭汥捥❴⁝籼⠠獩畓数⁲‿愧浤湩‧›猧扵慟浤湩⤧഻ †搠汥瑥⁥楷摮睯❛摟慩潬噧污慟摤愭浤湩爭汯ⵥ敳敬瑣崧഻ഊ †挠湯瑳瀠獡䡳獡⁨‽睡楡⁴桳㉡㘵效⡸敮偷獡⥳഻ †挠湯瑳爠獥㴠愠慷瑩挠污䉬捡敫摮笨਍††††潭敤›愧摤愭浤湩甭敳❲ബ †††渠睥獕牥慮敭ബ †††瀠獡睳牯䡤獡㩨瀠獡䡳獡ⱨ਍††††潲敬›敳敬瑣摥潒敬਍††⥽഻ഊ †猠潨呷慯瑳爨獥洮獥慳敧簠⁼䄧浤湩甠敳⁲牣慥整⁤畳捣獥晳汵祬✡‬敲⹳歯㼠✠畳捣獥❳㨠✠牥潲❲㬩਍††晩⠠敲⹳歯 潬摡摁業啮敳獲楌瑳⤨഻紊਍਍⨯ⴠⴭⴭⴭⴭ‭硅潰瑲䘠湵瑣潩獮ⴠⴭⴭⴭⴭ‭⼪਍਍畦据楴湯攠灸牯呴䍯噓搨瑡ⱡ映汩湥浡⥥笠਍††晩⠠搡瑡⁡籼℠慤慴氮湥瑧⥨笠猠潨呷慯瑳✨潎搠瑡⁡潴攠灸牯⹴Ⱗ✠牥潲❲㬩爠瑥牵㭮素਍††潣獮⁴敨摡牥⁳‽扏敪瑣欮祥⡳慤慴せ⥝഻ †挠湯瑳挠癳潒獷㴠嬠਍††††敨摡牥⹳潪湩✨✬Ⱙ਍††††⸮搮瑡⹡慭⡰潲⁷㸽栠慥敤獲洮灡栨㴠‾≠笤瑓楲杮爨睯桛⁝籼✠⤧爮灥慬散⼨⼢Ⱨ✠∢⤧≽⥠樮楯⡮Ⱗ⤧ഩ †崠഻ †挠湯瑳戠潬⁢‽敮⁷求扯嬨尧䙵䙅❆⬠挠癳潒獷樮楯⡮尧❮崩‬⁻祴数›琧硥⽴獣㭶档牡敳㵴瑵ⵦ㬸‧⥽഻ †挠湯瑳氠湩⁫‽潤畣敭瑮挮敲瑡䕥敬敭瑮✨❡㬩਍††楬歮栮敲⁦‽剕⹌牣慥整扏敪瑣剕⡌汢扯㬩਍††楬歮搮睯汮慯⁤‽①晻汩湥浡絥⑟湻睥䐠瑡⡥⸩潴卉协牴湩⡧⸩汳捩⡥ⰰㄠ⤰⹽獣恶഻ †氠湩⹫汣捩⡫㬩਍††剕⹌敲潶敫扏敪瑣剕⡌楬歮栮敲⥦഻ †猠潨呷慯瑳怨硅潰瑲摥␠摻瑡⹡敬杮桴⁽敲潣摲⹳Ⱡ✠畳捣獥❳㬩਍ൽഊ昊湵瑣潩⁮硥潰瑲敗步慍牴硩潔千⡖潬獧‬捳敨畤敬‬敷步瑓牡却牴 ൻ †挠湯瑳洠湯慤⁹‽慰獲䑥祭慄整眨敥卫慴瑲瑓⥲഻ †挠湯瑳搠祡慎敭⁳‽❛潍❮‬吧敵Ⱗ✠敗❤‬吧畨Ⱗ✠牆❩㭝਍††潣獮⁴敷步慄獹㴠嬠㭝਍††潦⁲氨瑥椠㴠〠※⁩‼㬵椠⬫ ൻ †††挠湯瑳搠祡㴠渠睥䐠瑡⡥潭摮祡㬩਍††††慤⹹敳䑴瑡⡥潭摮祡朮瑥慄整⤨⬠椠㬩਍††††敷步慄獹瀮獵⡨潦浲瑡慄整䵄⡙慤⥹㬩਍††ൽഊ †挠湯瑳愠汬瑓晡⁦‽敮⁷敓⡴㬩਍††扏敪瑣欮祥⡳捳敨畤敬簠⁼絻⸩潦䕲捡⡨慮敭㴠‾污卬慴晦愮摤渨浡⥥㬩਍††氨杯⁳籼嬠⥝昮牯慅档攨瑮祲㴠‾污卬慴晦愮摤攨瑮祲渮浡⥥㬩਍††晩⠠污卬慴晦楌瑳氮湥瑧⥨愠汬瑓晡䱦獩⹴潦䕲捡⡨⁳㸽愠汬瑓晡⹦摡⡤⹳慮敭⤩഻ †挠湯瑳猠牯整卤慴晦㴠䄠牲祡昮潲⡭污卬慴晦⸩潳瑲⠨ⱡ戠 㸽愠氮捯污䍥浯慰敲戨⤩഻ഊ †椠⁦ℨ潳瑲摥瑓晡⹦敬杮桴 ⁻桳睯潔獡⡴丧⁯瑳晡⁦慤慴琠⁯硥潰瑲映牯琠楨⁳敷步✮‬攧牲牯⤧※敲畴湲※ൽഊ †挠湯瑳猠档摥汵乥浡䥥摮硥㴠戠極摬捓敨畤敬慎敭湉敤⡸捳敨畤敬㬩਍਍††潣獮⁴潲獷㴠猠牯整卤慴晦洮灡渨浡⁥㸽笠਍††††潣獮⁴潮浲污穩摥瑓晡书浡⁥‽瑓楲杮渨浡⁥籼✠⤧琮楲⡭⸩潴潌敷䍲獡⡥㬩਍††††潣獮⁴潲⁷‽⁻瑓晡㩦渠浡⁥㭽਍਍††††敷步慄獹昮牯慅档⠨慤ⱹ椠硤 㸽笠਍††††††潣獮⁴潣畬湭慌敢⁬‽①摻祡慎敭孳摩嵸⁽笤慤絹㭠਍††††††潣獮⁴慤䭹祥㴠渠牯慭楬敺慄整敋⡹慤⥹഻ഊ †††††挠湯瑳搠祡潌獧㴠⠠潬獧簠⁼嵛⸩楦瑬牥氨㴠‾ൻ †††††††挠湯瑳氠杯慎敭㴠匠牴湩⡧⹬慮敭簠⁼✧⸩牴浩⤨琮䱯睯牥慃敳⤨഻ †††††††挠湯瑳氠杯慄整敋⁹‽潮浲污穩䑥瑡䭥祥氨搮瑡⁥籼氠琮浩獥慴灭簠⁼✧㬩਍††††††††敲畴湲氠杯慎敭㴠㴽渠牯慭楬敺卤慴晦慎敭☠…潬䑧瑡䭥祥㴠㴽搠祡敋㭹਍††††††⥽഻ഊ †††††氠瑥猠档摥汵䭥祥㴠猠档摥汵乥浡䥥摮硥湛牯慭楬敺卤慴晦慎敭⁝籼渠汵㭬਍††††††晩⠠猡档摥汵䭥祥 ൻ †††††††挠湯瑳挠湡楤慤整㴠传橢捥⹴敫獹猨档摥汵⁥籼笠⥽昮湩⡤⁫㸽笠਍††††††††††潣獮⁴歮㴠匠牴湩⡧⁫籼✠⤧琮楲⡭⸩潴潌敷䍲獡⡥㬩਍††††††††††敲畴湲渠⁫㴽‽潮浲污穩摥瑓晡书浡⁥籼渠⹫湩汣摵獥渨牯慭楬敺卤慴晦慎敭 籼渠牯慭楬敺卤慴晦慎敭椮据畬敤⡳歮㬩਍††††††††⥽഻ †††††††椠⁦挨湡楤慤整 捳敨畤敬敋⁹‽慣摮摩瑡㭥਍††††††ൽ †††††挠湯瑳猠慴晦捓敨畤敬⁳‽捳敨畤敬敋⁹‿猨档摥汵孥捳敨畤敬敋嵹簠⁼嵛 ›嵛഻ †††††挠湯瑳搠祡捓敨畤敬㴠猠慴晦捓敨畤敬⹳楦摮猨㴠‾潮浲污穩䑥瑡䭥祥猨搮瑡⥥㴠㴽搠祡敋⥹഻ †††††挠湯瑳椠坳桦㴠匠牴湩⡧慤卹档摥汵㽥氮捯瑡潩⁮籼✠⤧琮楲⡭⸩潴潌敷䍲獡⡥ 㴽‽栧浯❥഻ഊ †††††挠湯瑳椠䱮杯㴠搠祡潌獧昮湩⡤⁬㸽匠牴湩⡧⹬捡楴湯簠⁼✧⸩牴浩⤨琮啯灰牥慃敳⤨㴠㴽✠义⤧഻ഊ †††††氠瑥挠汥呬硥⁴‽尧㉵㄰✴഻ †††††椠⁦椨坳桦 ൻ †††††††挠汥呬硥⁴‽尧摵㌸屣摵敦‰潈敭㬧਍††††††⁽汥敳椠⁦椨䱮杯 ൻ †††††††挠湯瑳椠䱳瑡⁥‽湩潌⹧瑳瑡獵☠…瑓楲杮椨䱮杯献慴畴⥳琮楲⡭⸩潴灕数䍲獡⡥ 㴽‽䰧呁❅഻ †††††††挠汥呬硥⁴‽屠㉵ㄷ″笤湩潌⹧楴敭簠⁼✧恽琮楲⡭㬩਍††††††††晩⠠獩慌整 散汬敔瑸⬠‽‧䰨瑡⥥㬧਍††††††ൽഊ †††††爠睯捛汯浵䱮扡汥⁝‽散汬敔瑸഻ †††素㬩਍਍††††敲畴湲爠睯഻ †素㬩਍਍††硥潰瑲潔千⡖潲獷‬愧瑴湥慤据彥慭牴硩睟敥❫㬩਍ൽഊ⼊‪㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽਍†䐠十䉈䅏䑒⼠圠䕅⁋䅄䅔਍†㴠㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽‽⼪਍਍獡湹⁣畦据楴湯氠慯坤敥䑫瑡⡡獩楓敬瑮㴠映污敳 ൻ †椠⁦ℨ畣牲湥坴敥卫慴瑲 ൻ †††挠湯瑳琠摯祡㴠渠睥䐠瑡⡥㬩਍††††畣牲湥坴敥卫慴瑲㴠映牯慭䑴瑡䑥奍木瑥潍摮祡牆浯慄整琨摯祡⤩഻ †素਍਍††潣獮⁴敷步敂湩䱧慯敤⁤‽畣牲湥坴敥卫慴瑲഻ †挠湯瑳笠洠湯慤ⱹ映楲慤⁹⁽‽敧坴敥剫湡敧瀨牡敳浄䑹瑡⡥敷步敂湩䱧慯敤⥤㬩਍††潣獮⁴潭摮祡瑓⁲‽潦浲瑡慄整䵄⡙潭摮祡㬩਍††潣獮⁴牦摩祡瑓⁲‽潦浲瑡慄整䵄⡙牦摩祡㬩਍††਍††潣獮⁴敷步慌敢⁬‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤眧敥⵫慬敢❬㬩਍††晩⠠敷步慌敢⥬眠敥䱫扡汥琮硥䍴湯整瑮㴠怠鿰薓␠浻湯慤卹牴⁽‭笤牦摩祡瑓絲㭠਍਍††潣獮⁴敷步慄獹㴠嬠㭝਍††潦⁲氨瑥椠㴠〠※⁩‼㬵椠⬫ ൻ †††挠湯瑳搠祡㴠渠睥䐠瑡⡥潭摮祡㬩਍††††慤⹹敳䑴瑡⡥潭摮祡朮瑥慄整⤨⬠椠㬩਍††††敷步慄獹瀮獵⡨潦浲瑡慄整䵄⡙慤⥹㬩਍††ൽ †ഠ †⼠ 桃捥⁫湩洭浥牯⁹…潬慣卬潴慲敧挠捡敨映牯〠獭椠獮慴瑮爠湥敤楲杮਍††晩⠠挡捡敨坤敥䑫瑡孡敷步敂湩䱧慯敤嵤 ൻ †††琠祲笠਍††††††潣獮⁴瑳牯摥㴠氠捯污瑓牯条⹥敧䥴整⡭愧浤湩损捡敨睟敥彫‧‫敷步敂湩䱧慯敤⥤഻ †††††椠⁦猨潴敲⥤挠捡敨坤敥䑫瑡孡敷步敂湩䱧慯敤嵤㴠䨠体⹎慰獲⡥瑳牯摥㬩਍††††⁽慣捴⁨攨 絻਍††ൽഊ †椠⁦挨捡敨坤敥䑫瑡孡敷步敂湩䱧慯敤嵤 ൻ †††爠湥敤坲敥佫敶癲敩⡷慣档摥敗步慄慴睛敥䉫楥杮潌摡摥⹝潬獧‬慣档摥敗步慄慴睛敥䉫楥杮潌摡摥⹝捳敨畤敬‬敷步慄獹㬩਍††††敲摮牥瑁整摮湡散慍牴硩挨捡敨坤敥䑫瑡孡敷步敂湩䱧慯敤嵤氮杯ⱳ挠捡敨坤敥䑫瑡孡敷步敂湩䱧慯敤嵤献档摥汵ⱥ眠敥䑫祡⥳഻ †素攠獬⁥晩⠠椡即汩湥⥴笠਍††††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤琧摯祡愭瑴湥慤据ⵥ楬瑳⤧椮湮牥呈䱍㴠怠਍††††††搼癩挠慬獳∽畳浭牡⵹瑳瑡挭牡⁤歳汥瑥湯戭硯猠敫敬潴⵮慣摲㸢⼼楤㹶਍††††㭠਍††††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧瑴湥慤据ⵥ慭牴硩⤧椮湮牥呈䱍㴠怠਍††††††搼癩挠慬獳∽歳汥瑥湯戭硯猠敫敬潴⵮潲≷㰾搯癩ാ †††††㰠楤⁶汣獡㵳猢敫敬潴⵮潢⁸歳汥瑥湯爭睯㸢⼼楤㹶਍††††††搼癩挠慬獳∽歳汥瑥湯戭硯猠敫敬潴⵮潲≷㰾搯癩ാ †††怠഻ †素਍††਍††牴⁹ൻ †††挠湯瑳爠獥潰獮⁥‽睡楡⁴敦捴䱨杯⡳⁻敷步瑓牡㩴眠敥䉫楥杮潌摡摥‬楬業㩴㔠〰素㬩਍††††敬⁴潬獧㴠爠獥潰獮⹥歯☠…牁慲⹹獩牁慲⡹敲灳湯敳氮杯⥳㼠爠獥潰獮⹥潬獧㨠嬠㭝਍††††潣獮⁴捳敨畤敬㴠愠慷瑩映瑥档祈牢摩捓敨畤敬眨敥䉫楥杮潌摡摥‬慦獬⥥഻ †††ഠ †††挠捡敨坤敥䑫瑡孡敷步敂湩䱧慯敤嵤㴠笠氠杯ⱳ猠档摥汵⁥㭽਍††††牴⁹⁻潬慣卬潴慲敧献瑥瑉浥✨摡業彮慣档彥敷步❟⬠眠敥䉫楥杮潌摡摥‬半乏献牴湩楧祦笨氠杯ⱳ猠档摥汵⁥⥽㬩素挠瑡档⠠⥥笠ൽ †††ഠ †††挠湯瑳眠敥䑫祡⁳‽嵛഻ †††映牯⠠敬⁴⁩‽㬰椠㰠㔠※⭩⤫笠਍††††††潣獮⁴慤⁹‽敮⁷慄整洨湯慤⥹഻ †††††搠祡献瑥慄整洨湯慤⹹敧䑴瑡⡥ ‫⥩഻ †††††眠敥䑫祡⹳異桳昨牯慭䑴瑡䑥奍搨祡⤩഻ †††素਍††††਍††††晩⠠畣牲湥坴敥卫慴瑲㴠㴽眠敥䉫楥杮潌摡摥 ൻ †††††爠湥敤坲敥佫敶癲敩⡷潬獧‬捳敨畤敬‬敷步慄獹㬩਍††††††敲摮牥瑁整摮湡散慍牴硩氨杯ⱳ猠档摥汵ⱥ眠敥䑫祡⥳഻ഊ †††††挠湯瑳爠晥敲桳慌敢⁬‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤爧晥敲桳氭扡汥⤧഻ †††††椠⁦爨晥敲桳慌敢⥬笠਍††††††††潣獮⁴楴敭瑓⁲‽敮⁷慄整⤨琮䱯捯污呥浩卥牴湩⡧嵛‬⁻潨牵›㈧搭杩瑩Ⱗ洠湩瑵㩥✠ⴲ楤楧❴‬敳潣摮›㈧搭杩瑩‧⥽഻ †††††††爠晥敲桳慌敢⹬湩敮䡲䵔⁌‽㱠灳湡挠慬獳∽楬敶瀭汵敳搭瑯•楴汴㵥㌢猰氠癩⁥畡潴爭晥敲桳愠瑣癩≥㰾猯慰㹮䰠癩⁥␨瑻浩卥牴⥽㭠਍††††††ൽ †††素਍††††਍††††晩⠠椡即汩湥⁴☦挠牵敲瑮慔⁢㴽‽搧獡扨慯摲⤧笠਍††††††敦捴䡨批楲卤档摥汵⡥敷步敂湩䱧慯敤Ɽ琠畲⥥琮敨⡮牦獥卨档摥汵⁥㸽笠਍††††††††晩⠠牦獥卨档摥汵⁥☦传橢捥⹴敫獹昨敲桳捓敨畤敬⸩敬杮桴 ൻ †††††††††挠湯瑳漠摬捓敨畤敬㴠栠批楲卤档摥汵䍥捡敨睛敥䉫楥杮潌摡摥㭝਍††††††††††晩⠠半乏献牴湩楧祦漨摬捓敨畤敬 㴡‽半乏献牴湩楧祦昨敲桳捓敨畤敬⤩笠਍††††††††††††票牢摩捓敨畤敬慃档孥敷步敂湩䱧慯敤嵤㴠映敲桳捓敨畤敬഻ †††††††††††椠⁦挨捡敨坤敥䑫瑡孡敷步敂湩䱧慯敤嵤 慣档摥敗步慄慴睛敥䉫楥杮潌摡摥⹝捳敨畤敬㴠映敲桳捓敨畤敬഻ഊ †††††††††††椠⁦挨牵敲瑮敗步瑓牡⁴㴽‽敷步敂湩䱧慯敤⥤笠਍††††††††††††††敲摮牥瑁整摮湡散慍牴硩氨杯ⱳ映敲桳捓敨畤敬‬敷步慄獹㬩਍††††††††††††††潣獮⁴敲牦獥䱨扡汥㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨敲牦獥⵨慬敢❬㬩਍††††††††††††††晩⠠敲牦獥䱨扡汥 ൻ †††††††††††††††挠湯瑳琠浩卥牴㴠渠睥䐠瑡⡥⸩潴潌慣敬楔敭瑓楲杮嬨ⱝ笠栠畯㩲✠ⴲ楤楧❴‬業畮整›㈧搭杩瑩Ⱗ猠捥湯㩤✠ⴲ楤楧❴素㬩਍††††††††††††††††敲牦獥䱨扡汥椮湮牥呈䱍㴠怠猼慰⁮汣獡㵳氢癩ⵥ異獬ⵥ潤≴琠瑩敬∽〳⁳楬敶愠瑵ⵯ敲牦獥⁨捡楴敶㸢⼼灳湡‾楌敶⠠笤楴敭瑓絲怩഻ †††††††††††††素਍††††††††††††ൽ †††††††††素਍††††††††ൽ †††††素⸩慣捴⡨牥⁲㸽挠湯潳敬眮牡⡮䈧捡杫潲湵⁤捳敨畤敬爠晥敲桳映楡敬㩤Ⱗ攠牲⤩഻ †††素਍††⁽慣捴⁨攨牲牯 ൻ †††挠湯潳敬攮牲牯✨牅潲⁲潬摡湩⁧敷步搠瑡㩡Ⱗ攠牲牯㬩਍††††晩⠠椡即汩湥⁴☦挠牵敲瑮敗步瑓牡⁴㴽‽敷步敂湩䱧慯敤⥤笠਍††††††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤琧摯祡愭瑴湥慤据ⵥ楬瑳⤧椮湮牥呈䱍㴠✠搼癩挠慬獳∽瑳晡ⵦ楬瑳猭慴整㸢慆汩摥琠⁯潬摡搠瑡⹡䌠敨正挠湯敮瑣潩⹮⼼楤㹶㬧਍††††ൽ †素਍ൽഊ昊湵瑣潩⁮敲摮牥敗步癏牥楶睥氨杯ⱳ猠档摥汵ⱥ眠敥䑫祡⥳笠਍††潣獮⁴潨瑳㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潴慤⵹瑡整摮湡散氭獩❴㬩਍††晩⠠校獯⥴爠瑥牵㭮਍††਍††晩⠠氡杯⁳籼℠潬獧氮湥瑧⥨笠਍††††潨瑳椮湮牥呈䱍㴠✠搼癩挠慬獳∽瑳晡ⵦ楬瑳猭慴整㸢潎愠瑴湥慤据⁥敲潣摲⁳潦⁲桴獩眠敥⹫⼼楤㹶㬧਍††††敲畴湲഻ †素਍††਍††潣獮⁴楳湧摥湉㴠氠杯⹳楦瑬牥猨㴠‾瑓楲杮猨愮瑣潩⁮籼✠⤧琮楲⡭⸩潴灕数䍲獡⡥ 㴽‽䤧❎⸩敬杮桴഻ †挠湯瑳氠瑡䍥畯瑮㴠氠杯⹳楦瑬牥猨㴠‾潮浲污穩䅥瑴湥慤据卥慴畴⡳⹳瑳瑡獵 㴽‽氧瑡❥☠…瑓楲杮猨愮瑣潩⁮籼✠⤧琮楲⡭⸩潴灕数䍲獡⡥ 㴽‽䤧❎⸩敬杮桴഻ †ഠ †猠瑥瑈汭晉桃湡敧⡤潨瑳‬ൠ †††㰠楤⁶汣獡㵳琢摯祡愭瑴湥慤据ⵥ畳浭牡≹ാ †††††㰠楤⁶汣獡㵳猢浵慭祲猭慴⵴慣摲㸢਍††††††††猼慰⁮汣獡㵳猢慴⵴畮扭牥㸢笤潬獧氮湥瑧絨⼼灳湡ാ †††††††㰠灳湡挠慬獳∽瑳瑡氭扡汥㸢潔慴⁬捁楴湯㱳猯慰㹮਍††††††⼼楤㹶਍††††††搼癩挠慬獳∽畳浭牡⵹瑳瑡挭牡⁤楳湧摥椭⵮杢㸢਍††††††††猼慰⁮汣獡㵳猢慴⵴畮扭牥㸢笤楳湧摥湉㱽猯慰㹮਍††††††††猼慰⁮汣獡㵳猢慴⵴慬敢≬匾杩⁮湉㱳猯慰㹮਍††††††⼼楤㹶਍††††††搼癩挠慬獳∽畳浭牡⵹瑳瑡挭牡⁤笤慬整潃湵⁴‾‰‿眧牡楮杮‧›漧❫≽ാ †††††††㰠灳湡挠慬獳∽瑳瑡渭浵敢≲␾汻瑡䍥畯瑮㱽猯慰㹮਍††††††††猼慰⁮汣獡㵳猢慴⵴慬敢≬䰾瑡㱥猯慰㹮਍††††††⼼楤㹶਍††††⼼楤㹶਍††⥠഻紊਍਍畦据楴湯爠湥敤䅲瑴湥慤据䵥瑡楲⡸潬獧‬捳敨畤敬‬敷步慄獹 ൻ †挠湯瑳栠獯⁴‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧瑴湥慤据ⵥ慭牴硩⤧഻ †椠⁦ℨ潨瑳 敲畴湲഻ †ഠ †挠湯瑳搠祡慌敢獬㴠嬠䴧湯Ⱗ✠畔❥‬圧摥Ⱗ✠桔❵‬䘧楲崧഻ †挠湯瑳愠汬瑓晡⁦‽敮⁷敓⡴㬩਍††਍††扏敪瑣欮祥⡳捳敨畤敬⸩潦䕲捡⡨慮敭㴠‾污卬慴晦愮摤渨浡⥥㬩਍††潬獧昮牯慅档攨瑮祲㴠‾污卬慴晦愮摤攨瑮祲渮浡⥥㬩਍††晩⠠污卬慴晦楌瑳氮湥瑧⥨愠汬瑓晡䱦獩⹴潦䕲捡⡨⁳㸽愠汬瑓晡⹦摡⡤⹳慮敭⤩഻ †ഠ †挠湯瑳猠牯整卤慴晦㴠䄠牲祡昮潲⡭污卬慴晦⸩潳瑲⠨ⱡ戠 㸽愠氮捯污䍥浯慰敲戨⤩഻ †挠湯瑳猠档摥汵乥浡䥥摮硥㴠戠極摬捓敨畤敬慎敭湉敤⡸捳敨畤敬㬩਍††਍††潣獮⁴慭牴硩㴠笠㭽਍††潳瑲摥瑓晡⹦潦䕲捡⡨慮敭㴠‾ൻ †††洠瑡楲學慮敭⁝‽絻഻ †††眠敥䑫祡⹳潦䕲捡⡨搨祡‬摩⥸㴠‾ൻ †††††挠湯瑳搠祡敋⁹‽潮浲污穩䑥瑡䭥祥搨祡㬩਍††††††潣獮⁴潮浲污穩摥瑓晡书浡⁥‽瑓楲杮渨浡⁥籼✠⤧琮楲⡭⸩潴潌敷䍲獡⡥㬩਍਍††††††潣獮⁴慤䱹杯⁳‽潬獧昮汩整⡲⁬㸽笠਍††††††††潣獮⁴潬乧浡⁥‽瑓楲杮氨渮浡⁥籼✠⤧琮楲⡭⸩潴潌敷䍲獡⡥㬩਍††††††††潣獮⁴潬䑧瑡䭥祥㴠渠牯慭楬敺慄整敋⡹⹬慤整簠⁼⹬楴敭瑳浡⁰籼✠⤧഻ †††††††爠瑥牵⁮潬乧浡⁥㴽‽潮浲污穩摥瑓晡书浡⁥☦氠杯慄整敋⁹㴽‽慤䭹祥഻ †††††素㬩਍਍††††††敬⁴捳敨畤敬敋⁹‽捳敨畤敬慎敭湉敤學潮浲污穩摥瑓晡书浡嵥簠⁼畮汬഻ †††††椠⁦ℨ捳敨畤敬敋⥹笠਍††††††††潣獮⁴慣摮摩瑡⁥‽扏敪瑣欮祥⡳捳敨畤敬簠⁼絻⸩楦摮欨㴠‾ൻ †††††††††挠湯瑳渠⁫‽瑓楲杮欨簠⁼✧⸩牴浩⤨琮䱯睯牥慃敳⤨഻ †††††††††爠瑥牵⁮歮㴠㴽渠牯慭楬敺卤慴晦慎敭簠⁼歮椮据畬敤⡳潮浲污穩摥瑓晡书浡⥥簠⁼潮浲污穩摥瑓晡书浡⹥湩汣摵獥渨⥫഻ †††††††素㬩਍††††††††晩⠠慣摮摩瑡⥥猠档摥汵䭥祥㴠挠湡楤慤整഻ †††††素਍††††††潣獮⁴瑳晡卦档摥汵獥㴠猠档摥汵䭥祥㼠⠠捳敨畤敬獛档摥汵䭥祥⁝籼嬠⥝㨠嬠㭝਍††††††潣獮⁴慤卹档摥汵⁥‽瑳晡卦档摥汵獥昮湩⡤⁳㸽渠牯慭楬敺慄整敋⡹⹳慤整 㴽‽慤䭹祥㬩਍਍††††††慭牴硩湛浡嵥楛硤⁝‽ൻ †††††††氠杯㩳搠祡潌獧ബ †††††††猠档摥汵㩥搠祡捓敨畤敬簠⁼畮汬ബ †††††††椠坳桦›瑓楲杮搨祡捓敨畤敬⸿潬慣楴湯簠⁼✧⸩牴浩⤨琮䱯睯牥慃敳⤨㴠㴽✠潨敭ധ †††††素഻ †††素㬩਍††⥽഻ †ഠ †猠瑥瑈汭晉桃湡敧⡤潨瑳‬ൠ †††㰠楤⁶汣獡㵳洢瑡楲⵸牷灡数≲ാ †††††㰠慴汢⁥汣獡㵳愢瑴湥慤据ⵥ慭牴硩㸢਍††††††††琼敨摡ാ †††††††††㰠牴ാ †††††††††††㰠桴匾慴晦⼼桴ാ †††††††††††␠摻祡慌敢獬洮灡⠨慬敢ⱬ椠 㸽怠琼㹨笤慬敢絬戼㹲猼慰⁮汣獡㵳洢瑡楲⵸慤整㸢笤敷步慄獹楛絝⼼灳湡㰾琯㹨⥠樮楯⡮✧紩਍††††††††††⼼牴ാ †††††††㰠琯敨摡ാ †††††††㰠扴摯㹹਍††††††††††笤潳瑲摥瑓晡⹦慭⡰慮敭㴠‾ൻ †††††††††††挠湯瑳爠睯㴠洠瑡楲學慮敭㭝਍††††††††††††敲畴湲怠琼㹲਍††††††††††††††琼⁤汣獡㵳洢瑡楲⵸慮敭㸢笤獥慣数瑈汭渨浡⥥㱽琯㹤਍††††††††††††††笤敷步慄獹洮灡⠨ⱟ椠 㸽笠਍††††††††††††††††潣獮⁴散汬㴠爠睯楛㭝਍††††††††††††††††潣獮⁴湩潌⁧‽散汬氮杯⹳楦摮氨㴠‾瑓楲杮氨愮瑣潩⁮籼✠⤧琮楲⡭⸩潴灕数䍲獡⡥ 㴽‽䤧❎㬩਍਍††††††††††††††††敬⁴瑳瑡獵㴠✠㬧਍††††††††††††††††敬⁴瑳瑡獵汃獡⁳‽✧഻ഊ †††††††††††††††椠⁦椨䱮杯 ൻ †††††††††††††††††挠湯瑳椠䱳瑡⁥‽湩潌⹧瑳瑡獵☠…瑓楲杮椨䱮杯献慴畴⥳琮楲⡭⸩潴灕数䍲獡⡥ 㴽‽䰧呁❅഻ †††††††††††††††††猠慴畴⁳‽鎜䤠㱮牢␾敻捳灡䡥浴⡬湩潌⹧楴敭簠⁼✧紩㭠਍††††††††††††††††††晩⠠獩慌整 瑳瑡獵⬠‽㰧牢ꂚ䰠瑡❥഻ †††††††††††††††††猠慴畴䍳慬獳㴠椠䱳瑡⁥‿洧瑡楲⵸慬整‧›洧瑡楲⵸湩㬧਍††††††††††††††††⁽汥敳椠⁦挨汥⹬獩晗⥨笠਍††††††††††††††††††瑳瑡獵㴠✠猼慰⁮汣獡㵳洢瑡楲⵸潨敭攭潭楪•牡慩氭扡汥∽潈敭㸢鿰ꂏ⼼灳湡✾഻ †††††††††††††††††猠慴畴䍳慬獳㴠✠慭牴硩眭桦㬧਍††††††††††††††††⁽汥敳笠਍††††††††††††††††††瑳瑡獵㴠✠胢➔഻ †††††††††††††††††猠慴畴䍳慬獳㴠✠慭牴硩愭獢湥❴഻ †††††††††††††††素਍਍††††††††††††††††敲畴湲怠琼⁤汣獡㵳洢瑡楲⵸散汬␠獻慴畴䍳慬獳≽␾獻慴畴絳⼼摴怾഻ †††††††††††††素⸩潪湩✨⤧ൽ †††††††††††㰠琯㹲㭠਍††††††††††⥽樮楯⡮✧紩਍††††††††⼼扴摯㹹਍††††††⼼慴汢㹥਍††††⼼楤㹶਍††††搼癩挠慬獳∽慭牴硩氭来湥≤ാ †††††㰠灳湡挠慬獳∽敬敧摮椭整≭㰾灳湡挠慬獳∽敬敧摮搭瑯洠瑡楲⵸湩㸢⼼灳湡‾楓湧摥䤠㱮猯慰㹮਍††††††猼慰⁮汣獡㵳氢来湥ⵤ瑩浥㸢猼慰⁮汣獡㵳氢来湥ⵤ潤⁴慭牴硩氭瑡≥㰾猯慰㹮䰠瑡㱥猯慰㹮਍††††††猼慰⁮汣獡㵳氢来湥ⵤ瑩浥㸢猼慰⁮汣獡㵳氢来湥ⵤ潤⁴慭牴硩眭桦㸢⼼灳湡‾潈敭⼼灳湡ാ †††††㰠灳湡挠慬獳∽敬敧摮椭整≭㰾灳湡挠慬獳∽敬敧摮搭瑯洠瑡楲⵸扡敳瑮㸢⼼灳湡‾扁敳瑮⼼灳湡ാ †††㰠搯癩ാ †怠㬩਍਍††晩⠠楷摮睯氮捯瑡潩⁮☦眠湩潤⹷潬慣楴湯栮獡⁨㴽‽⌧敤畢ⵧ捳敨畤敬⤧笠਍††††牴⁹ൻ †††††挠湯瑳搠扥杵潒獷㴠猠牯整卤慴晦洮灡渨浡⁥㸽笠਍††††††††潣獮⁴⁮‽瑓楲杮渨浡⁥籼✠⤧琮楲⡭㬩਍††††††††潣獮⁴敫⁹‽捳敨畤敬慎敭湉敤學⹮潴潌敷䍲獡⡥崩簠⁼畮汬഻ †††††††挠湯瑳猠档摥㴠欠祥㼠⠠捳敨畤敬歛祥⁝籼嬠⥝㨠嬠㭝਍††††††††潣獮⁴晷䍨畯瑮㴠猠档摥昮汩整⡲⁳㸽匠牴湩⡧⹳潬慣楴湯簠⁼✧⸩潴潌敷䍲獡⡥ 㴽‽栧浯❥⸩敬杮桴഻ †††††††爠瑥牵⁮⁻慮敭›Ɱ猠档摥汵䭥祥›敫ⱹ眠桦潃湵ⱴ猠档摥素഻ †††††素㬩਍††††††潣獮⁴敤畢䡧浴⁬‽㰧楤⁶汣獡㵳愢慮祬楴獣猭捥楴湯搠扥杵猭档摥汵≥✾⬠਍††††††††㰧㑨ꞟ₪捓敨畤敬䐠扥杵⼼㑨✾⬠਍††††††††㰧牰⁥瑳汹㵥洢硡栭楥桧㩴㐲瀰㭸癯牥汦睯愺瑵㭯桷瑩ⵥ灳捡㩥牰ⵥ牷灡㸢‧‫獥慣数瑈汭䨨体⹎瑳楲杮晩⡹⁻捳敨畤敬慎敭湉敤ⱸ搠扥杵潒獷素‬畮汬‬⤲ ‫㰧瀯敲✾⬠਍††††††††㰧搯癩✾഻ †††††栠獯⹴湩敮䡲䵔⁌㴫搠扥杵瑈汭഻ †††素挠瑡档⠠⥥笠਍††††††潣獮汯⹥慷湲✨捓敨畤敬搠扥杵爠湥敤⁲慦汩摥Ⱗ攠洮獥慳敧㬩਍††††ൽ †素਍ൽഊ⼊‪㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽਍†匠䅔䙆䴠乁䝁䵅久⁔䅔ൂ †㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽⨠യഊ昊湵瑣潩⁮敲摮牥瑓晡䱦獩⡴瑳晡⥦笠਍††潣獮⁴瑳晡䱦獩⁴‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤猧慴晦氭獩❴㬩਍††晩⠠猡慴晦楌瑳 敲畴湲഻ †椠⁦䄨牲祡椮䅳牲祡猨慴晦⤩愠汬瑓晡䱦獩⁴‽瑳晡㭦਍਍††潣獮⁴敳牡档畑牥⁹‽搨捯浵湥⹴敧䕴敬敭瑮祂摉✨瑳晡ⵦ摡業⵮敳牡档⤧⸿慶畬⁥籼✠⤧琮楲⡭⸩潴潌敷䍲獡⡥㬩਍††潣獮⁴楦瑬牥摥瑓晡⁦‽敳牡档畑牥⁹਍††††‿污卬慴晦楌瑳昮汩整⡲⁳㸽匠牴湩⡧⹳慮敭簠⁼✧⸩潴潌敷䍲獡⡥⸩湩汣摵獥猨慥捲全敵祲⤩਍††††›污卬慴晦楌瑳഻ഊ †椠⁦ℨ楦瑬牥摥瑓晡⹦敬杮桴 ൻ †††猠慴晦楌瑳椮湮牥呈䱍㴠怠搼癩挠慬獳∽瑳晡ⵦ楬瑳猭慴整㸢笤敳牡档畑牥⁹‿习⁯瑳晡⁦慭捴楨杮∠笤獥慣数瑈汭猨慥捲全敵祲紩怢㨠✠潎猠慴晦洠浥敢獲挠湯楦畧敲⹤䄠摤礠畯⁲楦獲⁴瑳晡⁦敭扭牥戠汥睯✮㱽搯癩怾഻ †††爠瑥牵㭮਍††ൽ †ഠ †挠湯瑳栠慥敤䡲浴⁬‽ൠ †††㰠楤⁶汣獡㵳猢慴晦栭慥敤⵲潲≷ാ †††††㰠楤㹶瑓晡⁦敍扭牥⼼楤㹶਍††††††搼癩䐾癥捩⁥潌正⼼楤㹶਍††††††搼癩猠祴敬∽整瑸愭楬湧›楲桧㭴㸢捁楴湯㱳搯癩ാ †††㰠搯癩ാ †怠഻ഊ †挠湯瑳爠睯䡳浴⁬‽楦瑬牥摥瑓晡⹦慭⡰攨瑮祲 㸽怠਍††††搼癩挠慬獳∽瑳晡ⵦ潲≷ാ †††††㰠楤⁶汣獡㵳猢慴晦渭浡ⵥ散汬㸢笤獥慣数瑈汭攨瑮祲渮浡⥥㱽搯癩ാ †††††㰠楤⁶汣獡㵳猢慴晦搭癥捩ⵥ散汬㸢਍††††††††猼慰⁮汣獡㵳猢慴畴⵳楰汬猭慭汬␠敻瑮祲搮癥捩䥥⁤‿氧瑡❥㨠✠祳据摥紧㸢笤湥牴⹹敤楶散摉㼠✠鿰銔䰠捯敫❤㨠✠鿰鎔唠汮捯敫❤㱽猯慰㹮਍††††††⼼楤㹶਍††††††搼癩挠慬獳∽瑳晡ⵦ捡楴湯≳ാ †††††††㰠畢瑴湯挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮琠瑩敬∽汃慥⁲敤楶散氠捯⁫潦⁲笤獥慣数瑈汭攨瑮祲渮浡⥥≽搠瑡ⵡ敲敳⵴慮敭∽笤獥慣数瑈汭攨瑮祲渮浡⥥≽钟ₓ敒敳㱴戯瑵潴㹮਍††††††††戼瑵潴⁮汣獡㵳愢浤湩戭湴猠捥湯慤祲猠慭汬搠湡敧≲琠灹㵥戢瑵潴≮琠瑩敬∽敒潭敶␠敻捳灡䡥浴⡬湥牴⹹慮敭紩•慤慴爭浥癯ⵥ慮敭∽笤獥慣数瑈汭攨瑮祲渮浡⥥≽鞟ₑ敒潭敶⼼畢瑴湯ാ †††††㰠搯癩ാ †††㰠搯癩ാ †怠⸩潪湩✨⤧഻ഊ †椠⁦ℨ敳䡴浴䥬䍦慨杮摥猨慴晦楌瑳‬敨摡牥瑈汭⬠爠睯䡳浴⥬ 敲畴湲഻ഊ †猠慴晦楌瑳焮敵祲敓敬瑣牯汁⡬嬧慤慴爭獥瑥渭浡嵥⤧昮牯慅档⠨畢瑴湯 㸽笠਍††††畢瑴湯愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠ 㸽栠湡汤剥獥瑥瑓晡䱦捯⡫畢瑴湯朮瑥瑁牴扩瑵⡥搧瑡ⵡ敲敳⵴慮敭⤧⤩഻ †素㬩਍††瑳晡䱦獩⹴畱牥卹汥捥潴䅲汬✨摛瑡ⵡ敲潭敶渭浡嵥⤧昮牯慅档⠨畢瑴湯 㸽笠਍††††畢瑴湯愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠ 㸽栠湡汤剥浥癯卥慴晦戨瑵潴⹮敧䅴瑴楲畢整✨慤慴爭浥癯ⵥ慮敭⤧⤩഻ †素㬩਍ൽഊ愊祳据映湵瑣潩⁮潬摡瑓晡䱦獩⡴獩楓敬瑮㴠映污敳 ൻ †挠湯瑳猠慴晦楌瑳㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨瑳晡ⵦ楬瑳⤧഻ †ഠ †⼠ 桃捥⁫湩洭浥牯⁹…潬慣卬潴慲敧挠捡敨映牯〠獭椠獮慴瑮爠湥敤楲杮਍††晩⠠污卬慴晦楌瑳☠…污卬慴晦楌瑳氮湥瑧⥨笠਍††††敲摮牥瑓晡䱦獩⡴污卬慴晦楌瑳㬩਍††††潰異慬整瑓晡䙦汩整䑲潲摰睯獮愨汬瑓晡䱦獩⥴഻ †素攠獬⁥ൻ †††琠祲笠਍††††††潣獮⁴瑳牯摥㴠氠捯污瑓牯条⹥敧䥴整⡭愧浤湩损捡敨獟慴晦⤧഻ †††††椠⁦猨潴敲⥤笠਍††††††††污卬慴晦楌瑳㴠䨠体⹎慰獲⡥瑳牯摥㬩਍††††††††敲摮牥瑓晡䱦獩⡴污卬慴晦楌瑳㬩਍††††††††潰異慬整瑓晡䙦汩整䑲潲摰睯獮愨汬瑓晡䱦獩⥴഻ †††††素਍††††⁽慣捴⁨攨 絻਍††ൽഊ †椠⁦⠨愡汬瑓晡䱦獩⁴籼℠污卬慴晦楌瑳氮湥瑧⥨☠…瑳晡䱦獩⁴☦℠獩楓敬瑮 ൻ †††猠慴晦楌瑳椮湮牥呈䱍㴠怠਍††††††搼癩挠慬獳∽歳汥瑥湯戭硯猠敫敬潴⵮潲≷㰾搯癩ാ †††††㰠楤⁶汣獡㵳猢敫敬潴⵮潢⁸歳汥瑥湯爭睯㸢⼼楤㹶਍††††††搼癩挠慬獳∽歳汥瑥湯戭硯猠敫敬潴⵮潲≷㰾搯癩ാ †††怠഻ †素਍਍††牴⁹ൻ †††挠湯瑳爠獥潰獮⁥‽睡楡⁴楬瑳瑓晡⡦㬩਍††††晩⠠敲灳湯敳漮⁫☦爠獥潰獮⹥瑳晡⥦笠਍††††††污卬慴晦楌瑳㴠爠獥潰獮⹥瑳晡㭦਍††††††牴⁹⁻潬慣卬潴慲敧献瑥瑉浥✨摡業彮慣档彥瑳晡❦‬半乏献牴湩楧祦爨獥潰獮⹥瑳晡⥦㬩素挠瑡档⠠⥥笠ൽ †††††爠湥敤卲慴晦楌瑳爨獥潰獮⹥瑳晡⥦഻ †††††瀠灯汵瑡卥慴晦楆瑬牥牄灯潤湷⡳敲灳湯敳献慴晦㬩਍††††⁽汥敳椠⁦ℨ污卬慴晦楌瑳簠⁼愡汬瑓晡䱦獩⹴敬杮桴 ൻ †††††椠⁦猨慴晦楌瑳 瑳晡䱦獩⹴湩敮䡲䵔⁌‽㱠楤⁶汣獡㵳猢慴晦氭獩⵴瑳瑡≥␾敻捳灡䡥浴⡬敲灳湯敳洮獥慳敧簠⁼䌧畯摬渠瑯氠慯⁤瑳晡⁦楬瑳✮紩⼼楤㹶㭠਍††††ൽ †素挠瑡档⠠牥潲⥲笠਍††††晩⠠ℨ污卬慴晦楌瑳簠⁼愡汬瑓晡䱦獩⹴敬杮桴 ☦猠慴晦楌瑳☠…椡即汩湥⥴笠਍††††††瑳晡䱦獩⹴湩敮䡲䵔⁌‽㰧楤⁶汣獡㵳猢慴晦氭獩⵴瑳瑡≥䘾楡敬⁤潴爠慥档琠敨猠牥敶⹲⼼楤㹶㬧਍††††ൽ †素਍ൽഊ昊湵瑣潩⁮潰異慬整瑓晡䙦汩整䑲潲摰睯獮猨慴晦 ൻ †挠湯瑳映汩整卲汥捥⁴‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤氧杯⵳楦瑬牥渭浡ⵥ敳敬瑣⤧഻ †椠⁦昨汩整卲汥捥⥴笠਍††††潣獮⁴畣牲湥噴污㴠映汩整卲汥捥⹴慶畬㭥਍††††楦瑬牥敓敬瑣椮湮牥呈䱍㴠✠漼瑰潩⁮慶畬㵥∢䄾汬猠慴晦⼼灯楴湯✾⬠猠慴晦洮灡猨㴠‾㱠灯楴湯瘠污敵∽笤獥慣数瑈汭猨渮浡⥥≽␾敻捳灡䡥浴⡬⹳慮敭紩⼼灯楴湯怾⸩潪湩✨⤧഻ †††椠⁦挨牵敲瑮慖⥬映汩整卲汥捥⹴慶畬⁥‽畣牲湥噴污഻ †素਍ൽഊ愊祳据映湵瑣潩⁮慨摮敬摁卤慴晦⤨笠਍††潣獮⁴湩異⁴‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤渧睥猭慴晦渭浡❥㬩਍††潣獮⁴慮敭㴠椠灮瑵瘮污敵琮楲⡭㬩਍††晩⠠渡浡⥥笠猠潨呷慯瑳✨湅整⁲⁡瑳晡⁦慮敭映物瑳✮‬攧牲牯⤧※敲畴湲※ൽ †椠⁦渨浡⹥敬杮桴㰠㈠ ⁻桳睯潔獡⡴匧慴晦渠浡⁥畭瑳戠⁥瑡氠慥瑳㈠挠慨慲瑣牥⹳Ⱗ✠牥潲❲㬩爠瑥牵㭮素਍††晩⠠慮敭氮湥瑧⁨‾〵 ⁻桳睯潔獡⡴匧慴晦渠浡⁥畭瑳戠⁥敬獳琠慨⁮〵挠慨慲瑣牥⹳Ⱗ✠牥潲❲㬩爠瑥牵㭮素਍††晩⠠⼡孞ⵡ䅺娭獜ⵜ⸧⭝⼤琮獥⡴慮敭⤩笠猠潨呷慯瑳✨湉慶楬⁤档牡捡整獲椠⁮慮敭✮‬攧牲牯⤧※敲畴湲※ൽ †ഠ †挠湯瑳愠摤瑂⁮‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧摤猭慴晦戭湴⤧഻ †愠摤瑂⹮楤慳汢摥㴠琠畲㭥਍††牴⁹ൻ †††挠湯瑳爠獥潰獮⁥‽睡楡⁴摡卤慴晦渨浡⥥഻ †††猠潨呷慯瑳爨獥潰獮⹥敭獳条⁥籼✠瑓晡⁦摡敤⹤Ⱗ爠獥潰獮⹥歯㼠✠畳捣獥❳㨠✠牥潲❲㬩਍††††晩⠠敲灳湯敳漮⥫笠椠灮瑵瘮污敵㴠✠㬧愠慷瑩氠慯卤慴晦楌瑳⤨※ൽ †素挠瑡档⠠牥潲⥲笠猠潨呷慯瑳✨潃汵⁤潮⁴敲捡⁨桴⁥敳癲牥✮‬攧牲牯⤧※ൽ †映湩污祬笠愠摤瑂⹮楤慳汢摥㴠映污敳※ൽ紊਍਍獡湹⁣畦据楴湯栠湡汤剥浥癯卥慴晦渨浡⥥笠਍††潣獮⁴潣普物敭⁤‽睡楡⁴潣普物䑭慩潬⡧剠浥癯⁥笤慮敭⁽牦浯猠慴晦氠獩㽴䌠湡潮⁴敢甠摮湯⹥Ⱡ笠搠湡敧㩲琠畲ⱥ挠湯楦浲慌敢㩬✠敒潭敶‧⥽഻ †椠⁦ℨ潣普物敭⥤爠瑥牵㭮਍††牴⁹ൻ †††挠湯瑳爠獥潰獮⁥‽睡楡⁴敲潭敶瑓晡剦捥牯⡤慮敭㬩਍††††桳睯潔獡⡴敲灳湯敳洮獥慳敧簠⁼匧慴晦爠浥癯摥✮‬敲灳湯敳漮⁫‿猧捵散獳‧›攧牲牯⤧഻ †††椠⁦爨獥潰獮⹥歯 睡楡⁴潬摡瑓晡䱦獩⡴㬩਍††⁽慣捴⁨攨牲牯 ⁻桳睯潔獡⡴䌧畯摬渠瑯爠慥档琠敨猠牥敶⹲Ⱗ✠牥潲❲㬩素਍ൽഊ愊祳据映湵瑣潩⁮慨摮敬敒敳却慴晦潌正渨浡⥥笠਍††潣獮⁴潣普物敭⁤‽睡楡⁴潣普物䑭慩潬⡧䍠敬牡搠癥捩⁥潬正映牯␠湻浡絥‿桔祥挠湡爠来獩整⁲⁡敮⁷敤楶散漠⁮敮瑸猠杩⵮湩怮‬⁻潣普物䱭扡汥›刧獥瑥氠捯❫素㬩਍††晩⠠挡湯楦浲摥 敲畴湲഻ †琠祲笠਍††††潣獮⁴敲灳湯敳㴠愠慷瑩爠獥瑥瑓晡䱦捯⡫慮敭㬩਍††††桳睯潔獡⡴敲灳湯敳洮獥慳敧簠⁼䰧捯⁫汣慥敲⹤Ⱗ爠獥潰獮⹥歯㼠✠畳捣獥❳㨠✠牥潲❲㬩਍††††晩⠠敲灳湯敳漮⥫愠慷瑩氠慯卤慴晦楌瑳⤨഻ †素挠瑡档⠠牥潲⥲笠猠潨呷慯瑳✨潃汵⁤潮⁴敲捡⁨桴⁥敳癲牥✮‬攧牲牯⤧※ൽ紊਍਍獡湹⁣畦据楴湯栠湡汤剥獥瑥汁䱬捯獫⤨笠਍††潣獮⁴潣普物敭⁤‽睡楡⁴潣普物䑭慩潬⡧䌧敬牡搠癥捩⁥潬正⁳潦⁲䱁⁌瑳晡㽦䔠敶祲湯⁥楷汬渠敥⁤潴爠来獩整⁲⁡敮⁷敤楶散漠⁮桴楥⁲敮瑸猠杩⵮湩‮桔獩挠湡潮⁴敢甠摮湯⹥Ⱗ笠搠湡敧㩲琠畲ⱥ挠湯楦浲慌敢㩬✠敒敳⁴汁❬素㬩਍††晩⠠挡湯楦浲摥 敲畴湲഻ †琠祲笠਍††††潣獮⁴敲灳湯敳㴠愠慷瑩爠獥瑥汁䱬捯獫⤨഻ †††猠潨呷慯瑳爨獥潰獮⹥敭獳条⁥籼✠汁⁬潬正⁳汣慥敲⹤Ⱗ爠獥潰獮⹥歯㼠✠畳捣獥❳㨠✠牥潲❲㬩਍††††晩⠠敲灳湯敳漮⥫愠慷瑩氠慯卤慴晦楌瑳⤨഻ †素挠瑡档⠠牥潲⥲笠猠潨呷慯瑳✨潃汵⁤潮⁴敲捡⁨桴⁥敳癲牥✮‬攧牲牯⤧※ൽ紊਍਍⨯㴠㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽ഽ †佌升吠䉁਍†㴠㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽‽⼪਍਍敬⁴潬獧汁剬捥牯獤㴠嬠㭝਍敬⁴潬獧畃牲湥側条⁥‽㬱਍敬⁴潬獧慐敧楓敺㴠㈠㬰਍਍獡湹⁣畦据楴湯氠慯䱤杯噳敩敷⡲獩楓敬瑮㴠映污敳 ൻ †挠湯瑳栠獯⁴‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤氧杯⵳楬瑳⤧഻ †ഠ †⼠ 桃捥⁫湩洭浥牯⁹…潬慣卬潴慲敧挠捡敨映牯〠獭椠獮慴瑮爠湥敤楲杮਍††晩⠠潬獧汁剬捥牯獤☠…潬獧汁剬捥牯獤氮湥瑧⥨笠਍††††敲摮牥潌獧慔汢⡥㬩਍††⁽汥敳笠਍††††牴⁹ൻ †††††挠湯瑳猠潴敲⁤‽潬慣卬潴慲敧朮瑥瑉浥✨摡業彮慣档彥潬獧⤧഻ †††††椠⁦猨潴敲⥤笠਍††††††††潬獧汁剬捥牯獤㴠䨠体⹎慰獲⡥瑳牯摥㬩਍††††††††敲摮牥潌獧慔汢⡥㬩਍††††††ൽ †††素挠瑡档⠠⥥笠ൽ †素਍਍††晩⠠ℨ潬獧汁剬捥牯獤簠⁼氡杯䅳汬敒潣摲⹳敬杮桴 ☦栠獯⁴☦℠獩楓敬瑮 ൻ †††栠獯⹴湩敮䡲䵔⁌‽ൠ †††††㰠楤⁶汣獡㵳猢敫敬潴⵮潢⁸歳汥瑥湯爭睯㸢⼼楤㹶਍††††††搼癩挠慬獳∽歳汥瑥湯戭硯猠敫敬潴⵮潲≷㰾搯癩ാ †††††㰠楤⁶汣獡㵳猢敫敬潴⵮潢⁸歳汥瑥湯爭睯㸢⼼楤㹶਍††††㭠਍††ൽഊ †挠湯瑳渠浡䙥汩整⁲‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤氧杯⵳楦瑬牥渭浡ⵥ敳敬瑣⤧⸿慶畬⁥籼✠㬧਍††潣獮⁴牦浯湉異⁴‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤氧杯⵳楦瑬牥昭潲❭㼩瘮污敵簠⁼✧഻ †挠湯瑳琠䥯灮瑵㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潬獧昭汩整⵲潴⤧⸿慶畬⁥籼✠㬧਍਍††牴⁹ൻ †††挠湯瑳爠獥潰獮⁥‽睡楡⁴敦捴䱨杯⡳ൻ †††††渠浡㩥渠浡䙥汩整⁲籼甠摮晥湩摥ബ †††††映潲䑭瑡㩥椠潳慄整潔摄浍祙祹昨潲䥭灮瑵 籼甠摮晥湩摥ബ †††††琠䑯瑡㩥椠潳慄整潔摄浍祙祹琨䥯灮瑵 籼甠摮晥湩摥ബ †††††氠浩瑩›〲ര †††素㬩਍††††晩⠠敲灳湯敳漮⁫☦䄠牲祡椮䅳牲祡爨獥潰獮⹥潬獧⤩笠਍††††††潬獧汁剬捥牯獤㴠爠獥潰獮⹥潬獧഻ †††††琠祲笠氠捯污瑓牯条⹥敳䥴整⡭愧浤湩损捡敨江杯❳‬半乏献牴湩楧祦爨獥潰獮⹥潬獧⤩※⁽慣捴⁨攨 絻਍††††††潬獧畃牲湥側条⁥‽㬱਍††††††敲摮牥潌獧慔汢⡥㬩਍††††⁽汥敳椠⁦ℨ潬獧汁剬捥牯獤簠⁼氡杯䅳汬敒潣摲⹳敬杮桴 ൻ †††††氠杯䅳汬敒潣摲⁳‽嵛഻ †††††椠⁦栨獯⥴栠獯⹴湩敮䡲䵔⁌‽㱠楤⁶汣獡㵳猢慴晦氭獩⵴瑳瑡≥␾敻捳灡䡥浴⡬敲灳湯敳洮獥慳敧簠⁼丧⁯敲潣摲⁳潦湵⹤⤧㱽搯癩怾഻ †††素਍††⁽慣捴⁨攨牲牯 ൻ †††椠⁦ℨ潬獧汁剬捥牯獤簠⁼氡杯䅳汬敒潣摲⹳敬杮桴 ൻ †††††氠杯䅳汬敒潣摲⁳‽嵛഻ †††††椠⁦栨獯⥴栠獯⹴湩敮䡲䵔⁌‽㰧楤⁶汣獡㵳猢慴晦氭獩⵴瑳瑡≥䘾楡敬⁤潴爠慥档琠敨猠牥敶⹲⼼楤㹶㬧਍††††ൽ †素਍ൽഊ昊湵瑣潩⁮潮浲污穩䅥瑴湥慤据卥慴畴⡳瑳瑡獵㴠✠⤧笠਍††潣獮⁴慶畬⁥‽猨慴畴⁳籼✠⤧琮卯牴湩⡧⸩牴浩⤨琮䱯睯牥慃敳⤨഻ †椠⁦瘨污敵椮据畬敤⡳氧瑡❥⤩爠瑥牵⁮氧瑡❥഻ †椠⁦瘨污敵椮据畬敤⡳攧牡祬⤧ 敲畴湲✠慥汲❹഻ †椠⁦瘨污敵椮据畬敤⡳洧獩❳⤩爠瑥牵⁮洧獩敳❤഻ †椠⁦瘨污敵椮据畬敤⡳漧⁮楴敭⤧簠⁼慶畬⹥湩汣摵獥✨湯琭浩❥ 籼瘠污敵椮据畬敤⡳瘧牥晩敩❤ 籼瘠污敵椮据畬敤⡳渧牯慭❬ 籼瘠污敵椮据畬敤⡳眧汥潣敭⤧ 敲畴湲✠湯楴敭㬧਍††敲畴湲✠敤慦汵❴഻紊਍਍畦据楴湯朠瑥瑓瑡獵慂杤䍥慬獳猨慴畴⁳‽✧ ൻ †猠楷捴⁨渨牯慭楬敺瑁整摮湡散瑓瑡獵猨慴畴⥳ ൻ †††挠獡⁥氧瑡❥ഺ †††挠獡⁥攧牡祬㨧਍††††††敲畴湲✠慬整㬧਍††††慣敳✠業獳摥㨧਍††††††敲畴湲✠景汦湩❥഻ †††搠晥畡瑬ഺ †††††爠瑥牵⁮猧湹散❤഻ †素਍ൽഊ昊湵瑣潩⁮敧却慴畴䱳扡汥猨慴畴⁳‽✧ ൻ †挠湯瑳瘠污敵㴠⠠瑳瑡獵簠⁼✧⸩潴瑓楲杮⤨琮楲⡭㬩਍††睳瑩档⠠潮浲污穩䅥瑴湥慤据卥慴畴⡳瑳瑡獵⤩笠਍††††慣敳✠慬整㨧਍††††††敲畴湲✠慌整㬧਍††††慣敳✠慥汲❹ഺ †††††爠瑥牵⁮䔧牡祬传瑵㬧਍††††慣敳✠業獳摥㨧਍††††††敲畴湲✠楍獳摥㬧਍††††慣敳✠湯楴敭㨧਍††††††敲畴湲✠湏吠浩❥഻ †††搠晥畡瑬ഺ †††††爠瑥牵⁮慶畬⁥籼✠湕湫睯❮഻ †素਍ൽഊ昊湵瑣潩⁮敲摮牥潌獧慔汢⡥ ൻ †挠湯瑳栠獯⁴‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤氧杯⵳楬瑳⤧഻ †椠⁦ℨ潨瑳 敲畴湲഻ †挠湯瑳氠杯⁳‽潬獧汁剬捥牯獤഻ †椠⁦ℨ潬獧氮湥瑧⥨笠栠獯⹴湩敮䡲䵔⁌‽㰧楤⁶汣獡㵳猢慴晦氭獩⵴瑳瑡≥举⁯敲潣摲⁳慭捴⁨桴獩映汩整⹲⼼楤㹶㬧爠瑥牵㭮素਍਍††潣獮⁴潴慴偬条獥㴠䴠瑡⹨慭⡸ⰱ䴠瑡⹨散汩氨杯⹳敬杮桴⼠氠杯偳条卥穩⥥㬩਍††晩⠠潬獧畃牲湥側条⁥‾潴慴偬条獥 潬獧畃牲湥側条⁥‽潴慴偬条獥഻ †挠湯瑳猠慴瑲摉⁸‽氨杯䍳牵敲瑮慐敧ⴠㄠ ‪潬獧慐敧楓敺഻ †挠湯瑳瀠条䱥杯⁳‽潬獧献楬散猨慴瑲摉ⱸ猠慴瑲摉⁸‫潬獧慐敧楓敺㬩਍਍††潨瑳椮湮牥呈䱍㴠怠਍††††搼癩挠慬獳∽潬獧琭扡敬眭慲灰牥㸢਍††††††搼癩挠慬獳∽潬獧琭扡敬㸢਍††††††††搼癩挠慬獳∽潬獧爭睯氠杯⵳敨摡㸢਍††††††††††猼慰㹮慄整⼼灳湡㰾灳湡举浡㱥猯慰㹮猼慰㹮捁楴湯⼼灳湡㰾灳湡吾浩㱥猯慰㹮猼慰㹮瑓瑡獵⼼灳湡㰾灳湡䐾獩慴据㱥猯慰㹮਍††††††††⼼楤㹶਍††††††††笤慰敧潌獧洮灡攨瑮祲㴠‾ൠ †††††††††㰠楤⁶汣獡㵳氢杯⵳潲≷ാ †††††††††††㰠灳湡␾敻捳灡䡥浴⡬湥牴⹹慤整紩⼼灳湡ാ †††††††††††㰠灳湡␾敻捳灡䡥浴⡬湥牴⹹慮敭紩⼼灳湡ാ †††††††††††㰠灳湡挠慬獳∽潬獧愭瑣潩⁮笤湥牴⹹捡楴湯㴠㴽✠义‧‿椧❮㨠✠畯❴≽␾敻捳灡䡥浴⡬湥牴⹹捡楴湯紩⼼灳湡ാ †††††††††††㰠灳湡␾敻捳灡䡥浴⡬湥牴⹹楴敭紩⼼灳湡ാ †††††††††††㰠灳湡㰾灳湡挠慬獳∽瑳瑡獵瀭汩⵬浳污⁬笤敧却慴畴䉳摡敧汃獡⡳湥牴⹹瑳瑡獵紩㸢笤獥慣数瑈汭木瑥瑓瑡獵慌敢⡬湥牴⹹瑳瑡獵⤩㱽猯慰㹮⼼灳湡ാ †††††††††††㰠灳湡␾敻捳灡䡥浴⡬湥牴⹹楤瑳湡散㼠攠瑮祲搮獩慴据⁥‫‧敭整獲‧›ⴧ⤧㱽猯慰㹮਍††††††††††⼼楤㹶਍††††††††⥠樮楯⡮✧紩਍††††††⼼楤㹶਍††††⼼楤㹶਍††††搼癩挠慬獳∽潬獧昭潯整≲ാ †††††㰠灳湡␾汻杯⹳敬杮桴⁽敲潣摲⁳胢ₔ慰敧␠汻杯䍳牵敲瑮慐敧⁽景␠瑻瑯污慐敧絳⼼灳湡ാ †††††㰠楤⁶汣獡㵳瀢条湩瑡潩⵮潣瑮潲獬㸢਍††††††††搼癩挠慬獳∽慰敧猭穩ⵥ敳敬瑣㸢਍††††††††††氼扡汥映牯∽潬獧瀭条ⵥ楳敺㸢桓睯⼼慬敢㹬਍††††††††††猼汥捥⁴摩∽潬獧瀭条ⵥ楳敺•牡慩氭扡汥∽敒潣摲⁳数⁲慰敧㸢਍††††††††††††漼瑰潩⁮慶畬㵥㈢∰␠汻杯偳条卥穩⁥㴽‽〲㼠✠敳敬瑣摥‧›✧㹽〲⼼灯楴湯ാ †††††††††††㰠灯楴湯瘠污敵∽〵•笤潬獧慐敧楓敺㴠㴽㔠‰‿猧汥捥整❤㨠✠紧㔾㰰漯瑰潩㹮਍††††††††††⼼敳敬瑣ാ †††††††㰠搯癩ാ †††††††㰠畢瑴湯椠㵤氢杯⵳牰癥瀭条ⵥ瑢≮挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮␠汻杯䍳牵敲瑮慐敧㰠‽‱‿搧獩扡敬❤㨠✠紧릀倠敲㱶戯瑵潴㹮਍††††††††戼瑵潴⁮摩∽潬獧渭硥⵴慰敧戭湴•汣獡㵳愢浤湩戭湴猠捥湯慤祲猠慭汬•祴数∽畢瑴湯•笤潬獧畃牲湥側条⁥㴾琠瑯污慐敧⁳‿搧獩扡敬❤㨠✠紧举硥⁴胢㲺戯瑵潴㹮਍††††††⼼楤㹶਍††††††戼瑵潴⁮摩∽硥潰瑲氭杯⵳瑢≮挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮鎟₥硅潰瑲䌠噓⼼畢瑴湯ാ †††㰠搯癩ാ †怠഻ഊ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潬獧瀭条ⵥ楳敺⤧⸿摡䕤敶瑮楌瑳湥牥✨档湡敧Ⱗ⠠⥥㴠‾ൻ †††氠杯偳条卥穩⁥‽慰獲䥥瑮攨琮牡敧⹴慶畬ⱥㄠ⤰簠⁼〲഻ †††氠杯䍳牵敲瑮慐敧㴠ㄠ഻ †††爠湥敤䱲杯味扡敬⤨഻ †素㬩਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤氧杯⵳牰癥瀭条ⵥ瑢❮㼩愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠ 㸽笠਍††††晩⠠潬獧畃牲湥側条⁥‾⤱笠氠杯䍳牵敲瑮慐敧ⴭ※敲摮牥潌獧慔汢⡥㬩素਍††⥽഻ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潬獧渭硥⵴慰敧戭湴⤧⸿摡䕤敶瑮楌瑳湥牥✨汣捩❫‬⤨㴠‾ൻ †††椠⁦氨杯䍳牵敲瑮慐敧㰠琠瑯污慐敧⥳笠氠杯䍳牵敲瑮慐敧⬫※敲摮牥潌獧慔汢⡥㬩素਍††⥽഻ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨硥潰瑲氭杯⵳瑢❮㼩愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠ 㸽攠灸牯呴䍯噓氨杯ⱳ✠瑡整摮湡散江杯❳⤩഻紊਍਍⨯㴠㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽ഽ †乁䱁呙䍉⁓䅔ൂ †㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽⨠യഊ昊湵瑣潩⁮獩硅浥瑰牆浯湁污瑹捩⡳慮敭 ൻ †挠湯瑳氠睯牥㴠匠牴湩⡧慮敭簠⁼✧⸩潴潌敷䍲獡⡥㬩਍††敲畴湲氠睯牥椮据畬敤⡳欧湥敮桴⤧簠⁼潬敷⹲湩汣摵獥✨慶敬瑮湩❥㬩਍ൽഊ昊湵瑣潩⁮牰捯獥䅳慮祬楴獣慄慴氨杯ⱳ猠档摥汵ⱥ映汩整呲灹⁥‽愧汬Ⱗ挠獵潴䙭潲䑭瑡⁥‽畮汬‬畣瑳浯潔慄整㴠渠汵⥬笠਍††晩⠠氡杯⁳籼℠潬獧氮湥瑧⥨爠瑥牵⁮畮汬഻ †ഠ †挠湯瑳渠睯㴠渠睥䐠瑡⡥㬩਍††敬⁴瑳牡䑴瑡⁥‽畮汬‬湥䑤瑡⁥‽畮汬഻ഊ †椠⁦昨汩整呲灹⁥㴽‽洧湯桴⤧笠਍††††⼯ㄠ瑳挠污湥慤⁲慤⁹景挠牵敲瑮洠湯桴琠⁯潴慤൹ †††猠慴瑲慄整㴠渠睥䐠瑡⡥潮⹷敧䙴汵奬慥⡲Ⱙ渠睯朮瑥潍瑮⡨Ⱙㄠ㬩਍††††湥䑤瑡⁥‽敮⁷慄整渨睯朮瑥畆汬教牡⤨‬潮⹷敧䵴湯桴⤨⬠ㄠ‬ⰰ㈠ⰳ㔠ⰹ㔠⤹഻ †素攠獬⁥晩⠠楦瑬牥祔数㴠㴽✠敷步⤧笠਍††††⼯䴠湯慤⁹景挠牵敲瑮眠敥⁫潴琠摯祡਍††††潣獮⁴慤⁹‽潮⹷敧䑴祡⤨഻ †††挠湯瑳搠晩⁦‽潮⹷敧䑴瑡⡥ ‭慤⁹‫搨祡㴠㴽〠㼠ⴠ‶›⤱഻ †††猠慴瑲慄整㴠渠睥䐠瑡⡥潮⹷敧䙴汵奬慥⡲Ⱙ渠睯朮瑥潍瑮⡨Ⱙ搠晩⥦഻ †††攠摮慄整㴠渠睥䐠瑡⡥潮⹷敧䙴汵奬慥⡲Ⱙ渠睯朮瑥潍瑮⡨Ⱙ搠晩⁦‫ⰶ㈠ⰳ㔠ⰹ㔠⤹഻ †素攠獬⁥晩⠠楦瑬牥祔数㴠㴽✠畣瑳浯‧☦挠獵潴䙭潲䑭瑡⥥笠਍††††潣獮⁴ㅰ㴠挠獵潴䙭潲䑭瑡⹥灳楬⡴ⴧ⤧഻ †††猠慴瑲慄整㴠瀠牡敳浄䑹瑡⡥畣瑳浯牆浯慄整 籼⠠ㅰ氮湥瑧⁨㴽‽″‿敮⁷慄整瀨牡敳湉⡴ㅰせⱝㄠ⤰‬慰獲䥥瑮瀨嬱崱‬〱⴩ⰱ瀠牡敳湉⡴ㅰ㉛ⱝㄠ⤰ ›敮⁷慄整挨獵潴䙭潲䑭瑡⥥㬩਍††††਍††††潣獮⁴㉰㴠挠獵潴呭䑯瑡⁥‿畣瑳浯潔慄整献汰瑩✨✭ ›嵛഻ †††攠摮慄整㴠挠獵潴呭䑯瑡⁥‿瀨牡敳浄䑹瑡⡥畣瑳浯潔慄整 籼⠠㉰氮湥瑧⁨㴽‽″‿敮⁷慄整瀨牡敳湉⡴㉰せⱝㄠ⤰‬慰獲䥥瑮瀨嬲崱‬〱⴩ⰱ瀠牡敳湉⡴㉰㉛ⱝㄠ⤰ ›敮⁷慄整挨獵潴呭䑯瑡⥥⤩㨠渠睥䐠瑡⡥㬩਍††††਍††††晩⠠瑳牡䑴瑡⥥猠慴瑲慄整献瑥潈牵⡳ⰰ〠‬ⰰ〠㬩਍††††晩⠠湥䑤瑡⥥攠摮慄整献瑥潈牵⡳㌲‬㤵‬㤵‬㤹⤹഻ †††ഠ †††椠⁦猨慴瑲慄整☠…湥䑤瑡⁥☦猠慴瑲慄整㸠攠摮慄整 ൻ †††††挠湯瑳琠浥⁰‽敮⁷慄整猨慴瑲慄整㬩਍††††††瑳牡䑴瑡⁥‽敮⁷慄整攨摮慄整㬩਍††††††湥䑤瑡⁥‽整灭഻ †††††猠慴瑲慄整献瑥潈牵⡳ⰰ〠‬ⰰ〠㬩਍††††††湥䑤瑡⹥敳䡴畯獲㈨ⰳ㔠ⰹ㔠ⰹ㤠㤹㬩਍††††ൽ †素਍਍††潣獮⁴楦瑬牥摥潌獧㴠氠杯⹳楦瑬牥攨瑮祲㴠‾ൻ †††椠⁦ℨ瑳牡䑴瑡⥥爠瑥牵⁮牴敵഻ †††挠湯瑳攠瑮祲慄整㴠瀠牡敳浄䑹瑡⡥湥牴⹹慤整 籼渠睥䐠瑡⡥湥牴⹹楴敭瑳浡⁰籼攠瑮祲搮瑡⥥഻ †††椠⁦椨乳乡攨瑮祲慄整朮瑥楔敭⤨⤩爠瑥牵⁮牴敵഻ †††爠瑥牵⁮湥牴䑹瑡⁥㴾猠慴瑲慄整☠…湥牴䑹瑡⁥㴼攠摮慄整഻ †素㬩਍਍††潣獮⁴瑳晡䍦畯瑮⁳‽絻഻ †氠瑥氠瑡䍥畯瑮㴠〠‬慥汲佹瑵潃湵⁴‽㬰਍††潣獮⁴潴慴䑬祡⁳‽敮⁷敓⡴㬩਍††਍††楦瑬牥摥潌獧昮牯慅档攨瑮祲㴠‾ൻ †††挠湯瑳渠浡⁥‽湥牴⹹慮敭഻ †††椠⁦椨䕳數灭䙴潲䅭慮祬楴獣渨浡⥥ 敲畴湲഻ †††椠⁦ℨ瑳晡䍦畯瑮孳慮敭⥝猠慴晦潃湵獴湛浡嵥㴠笠椠㩮〠‬畯㩴〠‬慬整›ⰰ攠牡祬畏㩴〠‬晷䑨祡㩳〠‬慤獹牐獥湥㩴渠睥匠瑥⤨素഻ †††椠⁦攨瑮祲愮瑣潩⁮㴽‽䤧❎ 瑳晡䍦畯瑮孳慮敭⹝湩⬫഻ †††椠⁦攨瑮祲愮瑣潩⁮㴽‽伧呕⤧猠慴晦潃湵獴湛浡嵥漮瑵⬫഻ †††挠湯瑳猠慴畴味灹⁥‽潮浲污穩䅥瑴湥慤据卥慴畴⡳湥牴⹹瑳瑡獵㬩਍††††晩⠠瑳瑡獵祔数㴠㴽✠慬整⤧笠਍††††††慬整潃湵⭴㬫਍††††††晩⠠湥牴⹹捡楴湯㴠㴽✠义⤧猠慴晦潃湵獴湛浡嵥氮瑡⭥㬫਍††††ൽ †††椠⁦猨慴畴味灹⁥㴽‽攧牡祬‧☦攠瑮祲愮瑣潩⁮㴽‽伧呕⤧笠਍††††††慥汲佹瑵潃湵⭴㬫਍††††††瑳晡䍦畯瑮孳慮敭⹝慥汲佹瑵⬫഻ †††素਍††††晩⠠湥牴⹹慤整 ൻ †††††琠瑯污慄獹愮摤攨瑮祲搮瑡⥥഻ †††††猠慴晦潃湵獴湛浡嵥搮祡偳敲敳瑮愮摤攨瑮祲搮瑡⥥഻ †††素਍††⥽഻ †ഠ †传橢捥⹴湥牴敩⡳捳敨畤敬⸩潦䕲捡⡨嬨慮敭‬慤獹⥝㴠‾ൻ †††椠⁦椨䕳數灭䙴潲䅭慮祬楴獣渨浡⥥ 敲畴湲഻ †††椠⁦ℨ瑳晡䍦畯瑮孳慮敭⥝笠਍††††††瑳晡䍦畯瑮孳慮敭⁝‽⁻湩›ⰰ漠瑵›ⰰ氠瑡㩥〠‬慥汲佹瑵›ⰰ眠桦慄獹›ⰰ搠祡偳敲敳瑮›敮⁷敓⡴ 㭽਍††††ൽ †††搠祡⹳潦䕲捡⡨⁤㸽笠਍††††††晩⠠⹤潬慣楴湯㴠㴽✠潨敭⤧猠慴晦潃湵獴湛浡嵥眮桦慄獹⬫഻ †††素㬩਍††⥽഻ †ഠ †挠湯瑳琠瑯污慄獹湉慒杮⁥‽潴慴䑬祡⹳楳敺഻ †ഠ †挠湯瑳猠慴晦牂慥摫睯⁮‽扏敪瑣攮瑮楲獥猨慴晦潃湵獴ഩ †††⸠慭⡰嬨慮敭‬潣湵獴⥝㴠‾笨਍††††††慮敭ബ †††††猠杩䥮獮›潣湵獴椮Ɱ਍††††††楳湧畏獴›潣湵獴漮瑵ബ †††††琠瑯污捁楴湯㩳挠畯瑮⹳湩⬠挠畯瑮⹳畯ⱴ਍††††††慬整潃湵㩴挠畯瑮⹳慬整ബ †††††攠牡祬畏䍴畯瑮›潣湵獴攮牡祬畏ⱴ਍††††††晷䑨祡㩳挠畯瑮⹳晷䑨祡ⱳ਍††††††慤獹牐獥湥㩴挠畯瑮⹳慤獹牐獥湥⹴楳敺ബ †††††攠灸捥整佤晦捩䑥祡㩳琠瑯污慄獹湉慒杮⁥‭潣湵獴眮桦慄獹ബ †††††愠瑴湥慤据剥瑡㩥琠瑯污慄獹湉慒杮⁥‾‰਍††††††††‿慍桴爮畯摮⠨潣湵獴搮祡偳敲敳瑮献穩⁥ 慍桴洮硡琨瑯污慄獹湉慒杮⁥‭潣湵獴眮桦慄獹‬⤱ ‪〱⤰਍††††††††›ര †††素⤩਍††††献牯⡴愨‬⥢㴠‾⹡潴慴䅬瑣潩獮ⴠ戠琮瑯污捁楴湯⥳഻ †ഠ †爠瑥牵⁮ൻ †††琠瑯污湅牴敩㩳映汩整敲䱤杯⹳敬杮桴ബ †††甠楮畱卥慴晦›扏敪瑣欮祥⡳瑳晡䍦畯瑮⥳氮湥瑧ⱨ਍††††潴慴䑬祡㩳琠瑯污慄獹湉慒杮ⱥ਍††††慬整潃湵ⱴ਍††††慥汲佹瑵潃湵ⱴ਍††††慬整敐捲湥慴敧›楦瑬牥摥潌獧氮湥瑧⁨‿⠨慬整潃湵⁴ 楦瑬牥摥潌獧氮湥瑧⥨⨠ㄠ〰⸩潴楆數⡤⤱㨠〠ബ †††氠慥瑳捁楴敶›瑳晡䉦敲歡潤湷献楬散〨‬⤳ബ †††洠獯䅴瑣癩㩥嬠⸮献慴晦牂慥摫睯嵮爮癥牥敳⤨献楬散〨‬⤳ബ †††猠慴晦牂慥摫睯൮ †素഻紊਍਍畦据楴湯爠湥敤䅲慮祬楴獣⤨笠਍††潣獮⁴潨瑳㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨湡污瑹捩⵳潣瑮湥❴㬩਍††晩⠠校獯⥴爠瑥牵㭮਍††਍††晩⠠愡慮祬楴獣慄慴 ൻ †††栠獯⹴湩敮䡲䵔⁌‽㰧楤⁶汣獡㵳猢慴晦氭獩⵴瑳瑡≥举⁯慤慴愠慶汩扡敬映牯愠慮祬楴獣‮潌摡琠敨䐠獡扨慯摲映物瑳㰮搯癩✾഻ †††爠瑥牵㭮਍††ൽ †ഠ †挠湯瑳搠瑡⁡‽湡污瑹捩䑳瑡㭡਍††潣獮⁴敤楶散癅湥獴㴠搠癥捩䕥敶瑮䅳汬഻ †挠湯瑳琠瑯污癅湥側条獥㴠䴠瑡⹨慭⡸ⰱ䴠瑡⹨散汩搨癥捩䕥敶瑮⹳敬杮桴⼠䐠噅䍉彅噅久協偟䝁彅䥓䕚⤩഻ †椠⁦搨癥捩䕥敶瑮偳条⁥‾潴慴䕬敶瑮慐敧⥳搠癥捩䕥敶瑮偳条⁥‽潴慴䕬敶瑮慐敧㭳਍††潣獮⁴癥湥獴瑓牡⁴‽搨癥捩䕥敶瑮偳条⁥‭⤱⨠䐠噅䍉彅噅久協偟䝁彅䥓䕚഻ †挠湯瑳瀠条䕥敶瑮⁳‽敤楶散癅湥獴献楬散攨敶瑮即慴瑲‬癥湥獴瑓牡⁴‫䕄䥖䕃䕟䕖呎当䅐䕇卟婉⥅഻ †ഠ †椠⁦ℨ敳䡴浴䥬䍦慨杮摥栨獯ⱴ怠਍††††搼癩挠慬獳∽湡污瑹捩⵳牧摩㸢਍††††††搼癩挠慬獳∽湡污瑹捩⵳慣摲㸢਍††††††††猼慰⁮汣獡㵳愢慮祬楴獣椭潣≮鎟㲊猯慰㹮਍††††††††搼癩㰾灳湡挠慬獳∽湡污瑹捩⵳畮扭牥㸢笤慤慴琮瑯污湅牴敩絳⼼灳湡㰾灳湡挠慬獳∽湡污瑹捩⵳慬敢≬刾捥牯獤⼼灳湡㰾搯癩ാ †††††㰠搯癩ാ †††††㰠楤⁶汣獡㵳愢慮祬楴獣挭牡≤ാ †††††††㰠灳湡挠慬獳∽湡污瑹捩⵳捩湯㸢鿰ꖑ⼼灳湡ാ †††††††㰠楤㹶猼慰⁮汣獡㵳愢慮祬楴獣渭浵敢≲␾摻瑡⹡湵煩敵瑓晡給⼼灳湡㰾灳湡挠慬獳∽湡污瑹捩⵳慬敢≬匾慴晦⼼灳湡㰾搯癩ാ †††††㰠搯癩ാ †††††㰠楤⁶汣獡㵳愢慮祬楴獣挭牡≤ാ †††††††㰠灳湡挠慬獳∽湡污瑹捩⵳捩湯㸢鿰薓⼼灳湡ാ †††††††㰠楤㹶猼慰⁮汣獡㵳愢慮祬楴獣渭浵敢≲␾摻瑡⹡潴慴䑬祡絳⼼灳湡㰾灳湡挠慬獳∽湡污瑹捩⵳慬敢≬䄾瑣癩⁥慄獹⼼灳湡㰾搯癩ാ †††††㰠搯癩ാ †††††㰠楤⁶汣獡㵳愢慮祬楴獣挭牡⁤笤慤慴氮瑡健牥散瑮条⁥‾〲㼠✠慷湲湩❧㨠✠歯紧㸢਍††††††††猼慰⁮汣獡㵳愢慮祬楴獣椭潣≮낏⼼灳湡ാ †††††††㰠楤㹶猼慰⁮汣獡㵳愢慮祬楴獣渭浵敢≲␾摻瑡⹡慬整敐捲湥慴敧╽⼼灳湡㰾灳湡挠慬獳∽湡污瑹捩⵳慬敢≬䰾瑡⁥慒整⼼灳湡㰾搯癩ാ †††††㰠搯癩ാ †††㰠搯癩ാ †††ഠ †††㰠楤⁶汣獡㵳愢慮祬楴獣猭捥楴湯㸢਍††††††格㸴髢₠敌獡⁴捁楴敶匠慴晦⼼㑨ാ †††††㰠⁰汣獡㵳愢浤湩椭瑮潲㸢瑓晡⁦楷桴氠睯獥⁴景楦散愠瑴湥慤据⁥慲整‮捓敨畤敬⁤䙗⁈慤獹愠敲攠捸畬敤⁤牦浯爠煥極敲敭瑮⹳⼼㹰਍††††††搼癩挠慬獳∽湡污瑹捩⵳慴汢ⵥ牷灡数≲ാ †††††††㰠楤⁶汣獡㵳愢慮祬楴獣琭扡敬㸢਍††††††††††搼癩挠慬獳∽牢慥摫睯⵮潲⁷牢慥摫睯⵮敨摡㸢਍††††††††††††猼慰㹮瑓晡⁦慎敭⼼灳湡ാ †††††††††††㰠灳湡倾潲牧獥㱳猯慰㹮਍††††††††††††猼慰⁮汣獡㵳挢汯挭湥整≲匾杩⁮湉⼼灳湡ാ †††††††††††㰠灳湡挠慬獳∽潣⵬散瑮牥㸢楓湧传瑵⼼灳湡ാ †††††††††††㰠灳湡挠慬獳∽潣⵬散瑮牥㸢慒整⼼灳湡ാ †††††††††††㰠灳湡挠慬獳∽潣⵬散瑮牥㸢䙗㱈猯慰㹮਍††††††††††††猼慰⁮汣獡㵳挢汯挭湥整≲䰾瑡㱥猯慰㹮਍††††††††††⼼楤㹶਍††††††††††笤慤慴氮慥瑳捁楴敶洮灡猨㴠‾ൠ †††††††††††㰠楤⁶汣獡㵳戢敲歡潤湷爭睯㸢਍††††††††††††††猼慰⁮汣獡㵳戢敲歡潤湷渭浡≥琠瑩敬∽笤獥慣数瑈汭猨渮浡⥥≽␾敻捳灡䡥浴⡬⹳慮敭紩⼼灳湡ാ †††††††††††††㰠灳湡挠慬獳∽牢慥摫睯⵮慢⵲潣≬ാ †††††††††††††††㰠楤⁶汣獡㵳戢敲歡潤湷戭牡㸢猼慰⁮汣獡㵳戢牡椭⁮笤⹳瑡整摮湡散慒整㸠‽〸㼠✠慢⵲楨桧‧›⹳瑡整摮湡散慒整㸠‽〵㼠✠慢⵲業❤㨠✠慢⵲潬❷≽猠祴敬∽楷瑤㩨␠䵻瑡⹨慭⡸ⰴ䴠瑡⹨業⡮〱ⰰ猠愮瑴湥慤据剥瑡⥥紩∥㰾猯慰㹮⼼楤㹶਍††††††††††††††⼼灳湡ാ †††††††††††††㰠灳湡挠慬獳∽瑳瑡挭汥⁬瑳瑡椭≮␾獻献杩䥮獮⁽湩⼼灳湡ാ †††††††††††††㰠灳湡挠慬獳∽瑳瑡挭汥⁬瑳瑡漭瑵㸢笤⹳楳湧畏獴⁽畯㱴猯慰㹮਍††††††††††††††猼慰⁮汣獡㵳猢慴⵴散汬␠獻愮瑴湥慤据剥瑡⁥‼〶㼠✠瑳瑡氭瑡ⵥ慶❬㨠✠瑳瑡椭⵮慶❬≽␾獻愮瑴湥慤据剥瑡絥㰥猯慰㹮਍††††††††††††††猼慰⁮汣獡㵳猢慴⵴散汬猠慴⵴晷≨␾獻眮桦慄獹㱽猯慰㹮਍††††††††††††††猼慰⁮汣獡㵳猢慴⵴散汬猠慴⵴慬整㸢笤⹳慬整潃湵⁴‾‰‿ꂚ␠獻氮瑡䍥畯瑮恽㨠✠✭㱽猯慰㹮਍††††††††††††⼼楤㹶਍††††††††††⥠樮楯⡮✧紩਍††††††††⼼楤㹶਍††††††⼼楤㹶਍††††⼼楤㹶਍††††਍††††搼癩挠慬獳∽湡污瑹捩⵳敳瑣潩≮ാ †††††㰠㑨邭䴠獯⁴捁楴敶匠慴晦⼼㑨ാ †††††㰠楤⁶汣獡㵳愢慮祬楴獣琭扡敬眭慲灰牥㸢਍††††††††搼癩挠慬獳∽湡污瑹捩⵳慴汢≥ാ †††††††††㰠楤⁶汣獡㵳戢敲歡潤湷爭睯戠敲歡潤湷栭慥≤ാ †††††††††††㰠灳湡匾慴晦丠浡㱥猯慰㹮਍††††††††††††猼慰㹮牐杯敲獳⼼灳湡ാ †††††††††††㰠灳湡挠慬獳∽潣⵬散瑮牥㸢楓湧䤠㱮猯慰㹮਍††††††††††††猼慰⁮汣獡㵳挢汯挭湥整≲匾杩⁮畏㱴猯慰㹮਍††††††††††††猼慰⁮汣獡㵳挢汯挭湥整≲刾瑡㱥猯慰㹮਍††††††††††††猼慰⁮汣獡㵳挢汯挭湥整≲圾䡆⼼灳湡ാ †††††††††††㰠灳湡挠慬獳∽潣⵬散瑮牥㸢慌整⼼灳湡ാ †††††††††㰠搯癩ാ †††††††††␠摻瑡⹡潭瑳捁楴敶洮灡猨㴠‾ൠ †††††††††††㰠楤⁶汣獡㵳戢敲歡潤湷爭睯㸢਍††††††††††††††猼慰⁮汣獡㵳戢敲歡潤湷渭浡≥琠瑩敬∽笤獥慣数瑈汭猨渮浡⥥≽␾敻捳灡䡥浴⡬⹳慮敭紩⼼灳湡ാ †††††††††††††㰠灳湡挠慬獳∽牢慥摫睯⵮慢⵲潣≬ാ †††††††††††††††㰠楤⁶汣獡㵳戢敲歡潤湷戭牡㸢猼慰⁮汣獡㵳戢牡椭⁮笤⹳瑡整摮湡散慒整㸠‽〸㼠✠慢⵲楨桧‧›⹳瑡整摮湡散慒整㸠‽〵㼠✠慢⵲業❤㨠✠慢⵲潬❷≽猠祴敬∽楷瑤㩨␠䵻瑡⹨慭⡸ⰴ䴠瑡⹨業⡮〱ⰰ猠愮瑴湥慤据剥瑡⥥紩∥㰾猯慰㹮⼼楤㹶਍††††††††††††††⼼灳湡ാ †††††††††††††㰠灳湡挠慬獳∽瑳瑡挭汥⁬瑳瑡椭≮␾獻献杩䥮獮⁽湩⼼灳湡ാ †††††††††††††㰠灳湡挠慬獳∽瑳瑡挭汥⁬瑳瑡漭瑵㸢笤⹳楳湧畏獴⁽畯㱴猯慰㹮਍††††††††††††††猼慰⁮汣獡㵳猢慴⵴散汬猠慴⵴湩瘭污㸢笤⹳瑡整摮湡散慒整╽⼼灳湡ാ †††††††††††††㰠灳湡挠慬獳∽瑳瑡挭汥⁬瑳瑡眭桦㸢笤⹳晷䑨祡絳⼼灳湡ാ †††††††††††††㰠灳湡挠慬獳∽瑳瑡挭汥⁬瑳瑡氭瑡≥␾獻氮瑡䍥畯瑮㸠〠㼠怠髢₠笤⹳慬整潃湵絴⁠›ⴧ紧⼼灳湡ാ †††††††††††㰠搯癩ാ †††††††††怠⸩潪湩✨⤧ൽ †††††††㰠搯癩ാ †††††㰠搯癩ാ †††㰠搯癩ാ †††ഠ †††㰠楤⁶汣獡㵳愢慮祬楴獣猭捥楴湯㸢਍††††††格㸴鿰讓䘠汵⁬瑓晡⁦牂慥摫睯㱮栯㸴਍††††††搼癩挠慬獳∽湡污瑹捩⵳慴汢ⵥ牷灡数≲ാ †††††††㰠楤⁶汣獡㵳愢慮祬楴獣琭扡敬㸢਍††††††††††搼癩挠慬獳∽牢慥摫睯⵮潲⁷牢慥摫睯⵮敨摡㸢਍††††††††††††猼慰㹮瑓晡⁦慎敭⼼灳湡ാ †††††††††††㰠灳湡倾潲牧獥㱳猯慰㹮਍††††††††††††猼慰⁮汣獡㵳挢汯挭湥整≲匾杩⁮湉⼼灳湡ാ †††††††††††㰠灳湡挠慬獳∽潣⵬散瑮牥㸢楓湧传瑵⼼灳湡ാ †††††††††††㰠灳湡挠慬獳∽潣⵬散瑮牥㸢慒整⼼灳湡ാ †††††††††††㰠灳湡挠慬獳∽潣⵬散瑮牥㸢䙗㱈猯慰㹮਍††††††††††††猼慰⁮汣獡㵳挢汯挭湥整≲䰾瑡㱥猯慰㹮਍††††††††††⼼楤㹶਍††††††††††笤慤慴献慴晦牂慥摫睯⹮慭⡰⁳㸽怠਍††††††††††††搼癩挠慬獳∽牢慥摫睯⵮潲≷ാ †††††††††††††㰠灳湡挠慬獳∽牢慥摫睯⵮慮敭•楴汴㵥␢敻捳灡䡥浴⡬⹳慮敭紩㸢笤獥慣数瑈汭猨渮浡⥥㱽猯慰㹮਍††††††††††††††猼慰⁮汣獡㵳戢敲歡潤湷戭牡挭汯㸢਍††††††††††††††††搼癩挠慬獳∽牢慥摫睯⵮慢≲㰾灳湡挠慬獳∽慢⵲湩␠獻愮瑴湥慤据剥瑡⁥㴾㠠‰‿戧牡栭杩❨㨠猠愮瑴湥慤据剥瑡⁥㴾㔠‰‿戧牡洭摩‧›戧牡氭睯紧•瑳汹㵥眢摩桴›笤慍桴洮硡㐨‬慍桴洮湩ㄨ〰‬⹳瑡整摮湡散慒整⤩╽㸢⼼灳湡㰾搯癩ാ †††††††††††††㰠猯慰㹮਍††††††††††††††猼慰⁮汣獡㵳猢慴⵴散汬猠慴⵴湩㸢笤⹳楳湧湉絳椠㱮猯慰㹮਍††††††††††††††猼慰⁮汣獡㵳猢慴⵴散汬猠慴⵴畯≴␾獻献杩佮瑵絳漠瑵⼼灳湡ാ †††††††††††††㰠灳湡挠慬獳∽瑳瑡挭汥⁬笤⹳瑡整摮湡散慒整㰠㘠‰‿猧慴⵴慬整瘭污‧›猧慴⵴湩瘭污紧㸢笤⹳瑡整摮湡散慒整╽⼼灳湡ാ †††††††††††††㰠灳湡挠慬獳∽瑳瑡挭汥⁬瑳瑡眭桦㸢笤⹳晷䑨祡絳⼼灳湡ാ †††††††††††††㰠灳湡挠慬獳∽瑳瑡挭汥⁬瑳瑡氭瑡≥␾獻氮瑡䍥畯瑮㸠〠㼠怠髢₠笤⹳慬整潃湵絴⁠›ⴧ紧⼼灳湡ാ †††††††††††㰠搯癩ാ †††††††††怠⸩潪湩✨⤧ൽ †††††††㰠搯癩ാ †††††㰠搯癩ാ †††㰠搯癩ാ †††ഠ †††㰠楤⁶汣獡㵳氢杯⵳潦瑯牥㸢਍††††††戼瑵潴⁮摩∽硥潰瑲愭慮祬楴獣戭湴•汣獡㵳愢浤湩戭湴猠捥湯慤祲猠慭汬•祴数∽畢瑴湯㸢鿰ꖓ䔠灸牯⁴千㱖戯瑵潴㹮਍††††⼼楤㹶਍††††਍††††搼癩挠慬獳∽湡污瑹捩⵳敳瑣潩≮ാ †††††㰠㑨钟₴敄楶散☠匠獹整⁭畁楤⁴癅湥獴⼼㑨ാ †††††㰠⁰汣獡㵳愢浤湩椭瑮潲㸢敒污琭浩⁥潬⁧湥牴敩⁳敲潣摲摥映潲⁭潇杯敬匠敨瑥⁳畁楤⁴潌Ⱨ䐠獩慴据⁥汁牥獴‬湡⁤敤楶散猠捥牵瑩⁹癥湥獴㰮瀯ാ †††††␠摻癥捩䕥敶瑮⹳敬杮桴㸠〠㼠怠਍††††††搼癩挠慬獳∽潬獧琭扡敬眭慲灰牥㸢਍††††††††搼癩挠慬獳∽潬獧琭扡敬•瑳汹㵥洢湩眭摩桴㔺〰硰㸢਍††††††††††搼癩挠慬獳∽潬獧爭睯氠杯⵳敨摡•瑳汹㵥朢楲ⵤ整灭慬整挭汯浵獮ㄺ㈮牦ㄠ㐮牦㈠㐮牦㸢਍††††††††††††猼慰㹮楔敭⼼灳湡㰾灳湡吾灹㱥猯慰㹮猼慰㹮敄慴汩㱳猯慰㹮਍††††††††††⼼楤㹶਍††††††††††笤慰敧癅湥獴洮灡攨㴠‾ൠ †††††††††††㰠楤⁶汣獡㵳氢杯⵳潲≷猠祴敬∽牧摩琭浥汰瑡ⵥ潣畬湭㩳⸱昲⁲⸱昴⁲⸲昴≲ാ †††††††††††††㰠灳湡猠祴敬∽潦瑮猭穩㩥⸰㔷敲≭␾敻捳灡䡥浴⡬⹥楴敭簠⁼✧紩⼼灳湡ാ †††††††††††††㰠灳湡挠慬獳∽瑳瑡獵瀭汩⵬浳污⁬笤⹥祴数椮据畬敤⡳攧牲牯⤧簠⁼⹥祴数椮据畬敤⡳朧潥敦据❥ 籼攠琮灹⹥湩汣摵獥✨䥖䱏呁佉❎ ‿氧瑡❥㨠✠祳据摥紧㸢笤獥慣数瑈汭攨琮灹⥥㱽猯慰㹮਍††††††††††††††猼慰⁮瑳汹㵥昢湯⵴楳敺〺㜮爵浥眻牯ⵤ牢慥㩫牢慥⵫污≬␾敻捳灡䡥浴⡬⹥敤慴汩⁳籼✠⤧㱽猯慰㹮਍††††††††††††⼼楤㹶਍††††††††††⥠樮楯⡮✧紩਍††††††††⼼楤㹶਍††††††⼼楤㹶਍††††††搼癩挠慬獳∽潬獧昭潯整≲ാ †††††††㰠灳湡␾摻癥捩䕥敶瑮⹳敬杮桴⁽癥湥獴钀瀠条⁥笤敤楶散癅湥獴慐敧⁽景␠瑻瑯污癅湥側条獥㱽猯慰㹮਍††††††††搼癩挠慬獳∽慰楧慮楴湯挭湯牴汯≳ാ †††††††††㰠畢瑴湯椠㵤搢癥捩ⵥ癥湥獴瀭敲⵶瑢≮挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮␠摻癥捩䕥敶瑮偳条⁥㴼ㄠ㼠✠楤慳汢摥‧›✧㹽胢₹牐癥⼼畢瑴湯ാ †††††††††㰠畢瑴湯椠㵤搢癥捩ⵥ癥湥獴渭硥⵴瑢≮挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮␠摻癥捩䕥敶瑮偳条⁥㴾琠瑯污癅湥側条獥㼠✠楤慳汢摥‧›✧㹽敎瑸몀⼼畢瑴湯ാ †††††††㰠搯癩ാ †††††㰠搯癩ാ †††††怠㨠✠搼癩挠慬獳∽瑳晡ⵦ楬瑳猭慴整㸢潎搠癥捩⁥牥潲獲‬楤瑳湡散愠敬瑲ⱳ漠⁲祳瑳浥愠摵瑩攠敶瑮⁳敲潣摲摥㰮搯癩✾ൽ †††㰠搯癩ാ †怠⤩爠瑥牵㭮਍††਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤攧灸牯⵴湡污瑹捩⵳瑢❮㼩愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠ 㸽笠਍††††潣獮⁴硥潰瑲慄慴㴠愠慮祬楴獣慄慴献慴晦牂慥摫睯⹮慭⡰⁳㸽⠠ൻ †††††丠浡㩥猠渮浡ⱥ✠楓湧䤠獮㨧猠献杩䥮獮‬匧杩⁮畏獴㨧猠献杩佮瑵ⱳ਍††††††䰧瑡❥›⹳慬整潃湵ⱴ✠䙗⁈慄獹㨧猠眮桦慄獹‬䄧瑴湥慤据⁥慒整㨧猠愮瑴湥慤据剥瑡⁥‫┧ധ †††素⤩഻ †††攠灸牯呴䍯噓攨灸牯䑴瑡ⱡ✠瑡整摮湡散慟慮祬楴獣⤧഻ †素㬩਍਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤搧癥捩ⵥ癥湥獴瀭敲⵶瑢❮㼩愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠ 㸽笠਍††††晩⠠敤楶散癅湥獴慐敧㸠ㄠ ⁻敤楶散癅湥獴慐敧ⴭ※敲摮牥湁污瑹捩⡳㬩素਍††⥽഻ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨敤楶散攭敶瑮⵳敮瑸戭湴⤧⸿摡䕤敶瑮楌瑳湥牥✨汣捩❫‬⤨㴠‾ൻ †††椠⁦搨癥捩䕥敶瑮偳条⁥‼潴慴䕬敶瑮慐敧⥳笠搠癥捩䕥敶瑮偳条⭥㬫爠湥敤䅲慮祬楴獣⤨※ൽ †素㬩਍ൽഊ氊瑥愠慮祬楴獣慄慴㴠渠汵㭬਍敬⁴敤楶散癅湥獴汁⁬‽嵛഻氊瑥搠癥捩䕥敶瑮偳条⁥‽㬱਍潣獮⁴䕄䥖䕃䕟䕖呎当䅐䕇卟婉⁅‽〱഻ഊ愊祳据映湵瑣潩⁮敦捴䑨獩慴据䅥敬瑲⡳楬業⁴‽〱⤰笠਍††敲畴湲挠污䉬捡敫摮笨洠摯㩥✠楬瑳搭獩慴据ⵥ污牥獴Ⱗ氠浩瑩素㬩਍ൽഊ愊祳据映湵瑣潩⁮敦捴䅨摵瑩潌獧氨浩瑩㴠ㄠ〰 ൻ †爠瑥牵⁮慣汬慂正湥⡤⁻潭敤›氧獩⵴畡楤⵴潬獧Ⱗ氠浩瑩素㬩਍ൽഊ昊湵瑣潩⁮慰獲䕥敶瑮楔敭瑳浡⡰慤整瑓Ⱳ琠浩卥牴 ൻ †挠湯瑳搠瑡健牡獴㴠匠牴湩⡧慤整瑓⁲籼✠⤧献汰瑩✨✯㬩਍††晩⠠慤整慐瑲⹳敬杮桴℠㴽㌠ 敲畴湲〠഻ †挠湯瑳搠祡㴠瀠牡敳湉⡴慤整慐瑲孳崰‬〱Ⱙ洠湯桴㴠瀠牡敳湉⡴慤整慐瑲孳崱‬〱 ‭ⰱ礠慥⁲‽慰獲䥥瑮搨瑡健牡獴㉛ⱝㄠ⤰഻ †椠⁦ℨ楴敭瑓⥲爠瑥牵⁮敮⁷慄整礨慥Ⱳ洠湯桴‬慤⥹朮瑥楔敭⤨഻ഊ †挠湯瑳愠灭䵭瑡档㴠匠牴湩⡧楴敭瑓⥲琮楲⡭⸩慭捴⡨帯尨筤ⰱ紲㨩尨筤紲尩⩳䄨籍䵐␩椯㬩਍††晩⠠浡浰慍捴⥨笠਍††††敬⁴潨牵㴠瀠牡敳湉⡴浡浰慍捴孨崱‬〱 ‥㈱഻ †††椠⁦⼨浰椯琮獥⡴浡浰慍捴孨崳⤩栠畯⁲㴫ㄠ㬲਍††††敲畴湲渠睥䐠瑡⡥敹牡‬潭瑮ⱨ搠祡‬潨牵‬慰獲䥥瑮愨灭䵭瑡档㉛ⱝㄠ⤰⸩敧呴浩⡥㬩਍††ൽ †挠湯瑳栠獭慍捴⁨‽瑓楲杮琨浩卥牴⸩牴浩⤨洮瑡档⼨⡞摜ㅻ㈬⥽⠺摜㉻⥽㼨㨺尨筤紲⤩␿⤯഻ †椠⁦栨獭慍捴⥨笠਍††††敲畴湲渠睥䐠瑡⡥敹牡‬潭瑮ⱨ搠祡‬慰獲䥥瑮栨獭慍捴孨崱‬〱Ⱙ瀠牡敳湉⡴浨䵳瑡档㉛ⱝㄠ⤰‬慰獲䥥瑮栨獭慍捴孨崳簠⁼〧Ⱗㄠ⤰⸩敧呴浩⡥㬩਍††ൽ †爠瑥牵⁮敮⁷慄整礨慥Ⱳ洠湯桴‬慤⥹朮瑥楔敭⤨഻紊਍਍敬⁴畣牲湥䅴慮祬楴獣楆瑬牥㴠✠污❬഻氊瑥挠牵敲瑮湁污瑹捩䙳潲⁭‽畮汬഻氊瑥挠牵敲瑮湁污瑹捩味⁯‽畮汬഻ഊ愊祳据映湵瑣潩⁮潬摡湁污瑹捩⡳楦瑬牥祔数㴠渠汵ⱬ挠獵潴䙭潲⁭‽畮汬‬畣瑳浯潔㴠渠汵ⱬ椠即汩湥⁴‽慦獬⥥笠਍††晩⠠楦瑬牥祔数 ൻ †††挠牵敲瑮湁污瑹捩䙳汩整⁲‽楦瑬牥祔数഻ †††挠牵敲瑮湁污瑹捩䙳潲⁭‽畣瑳浯牆浯഻ †††挠牵敲瑮湁污瑹捩味⁯‽畣瑳浯潔഻ †素攠獬⁥ൻ †††映汩整呲灹⁥‽畣牲湥䅴慮祬楴獣楆瑬牥഻ †††挠獵潴䙭潲⁭‽畣牲湥䅴慮祬楴獣牆浯഻ †††挠獵潴呭⁯‽畣牲湥䅴慮祬楴獣潔഻ †素਍††਍††潣獮⁴潨瑳㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨湡污瑹捩⵳潣瑮湥❴㬩਍††਍††⼯䌠敨正椠⵮敭潭祲漠⁲潬慣卬潴慲敧挠捡敨映牯〠獭椠獮慴瑮爠湥敤楲杮਍††晩⠠湡污瑹捩䑳瑡⁡☦映汩整呲灹⁥㴽‽愧汬‧☦℠畣瑳浯牆浯 ൻ †††爠湥敤䅲慮祬楴獣⤨഻ †素攠獬⁥ൻ †††琠祲笠਍††††††潣獮⁴瑳牯摥㴠氠捯污瑓牯条⹥敧䥴整⡭愧浤湩损捡敨慟慮祬楴獣⤧഻ †††††椠⁦猨潴敲⁤☦映汩整呲灹⁥㴽‽愧汬‧☦℠畣瑳浯牆浯 ൻ †††††††挠湯瑳瀠牡敳⁤‽半乏瀮牡敳猨潴敲⥤഻ †††††††愠慮祬楴獣慄慴㴠瀠牡敳⹤湡污瑹捩䑳瑡㭡਍††††††††敤楶散癅湥獴汁⁬‽慰獲摥搮癥捩䕥敶瑮䅳汬簠⁼嵛഻ †††††††爠湥敤䅲慮祬楴獣⤨഻ †††††素਍††††⁽慣捴⁨攨 絻਍††ൽഊ †椠⁦栨獯⁴☦℠獩楓敬瑮 ൻ †††栠獯⹴湩敮䡲䵔⁌‽ൠ †††††㰠楤⁶汣獡㵳猢敫敬潴⵮潢⁸歳汥瑥湯挭牡≤猠祴敬∽慭杲湩戭瑯潴㩭㈱硰∻㰾搯癩ാ †††††㰠楤⁶汣獡㵳猢敫敬潴⵮潢⁸歳汥瑥湯爭睯㸢⼼楤㹶਍††††††搼癩挠慬獳∽歳汥瑥湯戭硯猠敫敬潴⵮潲≷㰾搯癩ാ †††怠഻ †素਍††਍††牴⁹ൻ †††挠湯瑳愠汬捓敨畤敬㴠传橢捥⹴慶畬獥挨捡敨坤敥䑫瑡⥡爮摥捵⡥愨捣‬⥷㴠‾笨⸠⸮捡Ᵽ⸠⸮眨献档摥汵⁥籼笠⥽素Ⱙ笠⥽഻ †††ഠ †††挠湯瑳嬠瑡整摮湡散潌獧‬湡污瑹捩剳獥潰獮ⱥ愠敬瑲剳獥潰獮ⱥ愠摵瑩敒灳湯敳⁝‽睡楡⁴牐浯獩⹥污⡬൛ †††††映瑥档潌獧笨氠浩瑩›〱〰素⸩桴湥爨㴠‾爨漮⁫☦䄠牲祡椮䅳牲祡爨氮杯⥳ ‿⹲潬獧㨠嬠⥝ബ †††††挠污䉬捡敫摮笨洠摯㩥✠楬瑳愭慮祬楴獣Ⱗ氠浩瑩›〵素⸩慣捴⡨攨牲 㸽笠挠湯潳敬眮牡⡮氧獩⵴湡污瑹捩⁳敦捴⁨慦汩摥✺‬牥⥲※敲畴湲笠漠㩫映污敳‬癥湥獴›嵛素※⥽ബ †††††映瑥档楄瑳湡散汁牥獴ㄨ〰⸩慣捴⡨攨牲 㸽笠挠湯潳敬眮牡⡮氧獩⵴楤瑳湡散愭敬瑲⁳敦捴⁨慦汩摥✺‬牥⥲※敲畴湲笠漠㩫映污敳‬污牥獴›嵛素※⥽ബ †††††映瑥档畁楤䱴杯⡳〱⤰挮瑡档⠨牥⥲㴠‾⁻潣獮汯⹥慷湲✨楬瑳愭摵瑩氭杯⁳敦捴⁨慦汩摥✺‬牥⥲※敲畴湲笠漠㩫映污敳‬癥湥獴›嵛素※⥽਍††††⥝഻ഊ †††愠慮祬楴獣慄慴㴠瀠潲散獳湁污瑹捩䑳瑡⡡瑡整摮湡散潌獧‬污卬档摥汵ⱥ映汩整呲灹ⱥ挠獵潴䙭潲Ɑ挠獵潴呭⥯഻ഊ †††挠湯瑳挠楬湥䕴敶瑮⁳‽愨慮祬楴獣敒灳湯敳漮⁫☦䄠牲祡椮䅳牲祡愨慮祬楴獣敒灳湯敳攮敶瑮⥳ഩ †††††㼠愠慮祬楴獣敒灳湯敳攮敶瑮⹳慭⡰⁥㸽笠਍††††††††潣獮⁴摛瑡健牡ⱴ琠浩健牡嵴㴠匠牴湩⡧⹥楴敭簠⁼✧⸩灳楬⡴‧⤧഻ †††††††爠瑥牵⁮ൻ †††††††††琠灹㩥攠琮灹ⱥ਍††††††††††敤慴汩㩳琠灹潥⁦⹥敤慴汩⁳㴽‽猧牴湩❧㼠攠搮瑥楡獬㨠䨠体⹎瑳楲杮晩⡹⹥敤慴汩⁳籼笠⥽ബ †††††††††琠浩㩥攠琮浩⁥籼✠Ⱗ਍††††††††††潳瑲慖畬㩥瀠牡敳癅湥呴浩獥慴灭搨瑡健牡ⱴ琠浩健牡⥴਍††††††††㭽਍††††††⥽਍††††††›嵛഻ഊ †††挠湯瑳朠潥敦据䕥敶瑮⁳‽愨敬瑲剳獥潰獮⹥歯☠…牁慲⹹獩牁慲⡹污牥獴敒灳湯敳愮敬瑲⥳ഩ †††††㼠愠敬瑲剳獥潰獮⹥污牥獴洮灡愨㴠‾笨਍††††††††祴数›䰧䍏呁佉彎䱁剅❔ബ †††††††搠瑥楡獬›①慻渮浡絥愠瑴浥瑰摥␠慻愮瑣潩絮映潲⁭⑾慻搮獩慴据絥⁭睡祡⠠畯獴摩⁥景楦散爠摡畩⥳Ⱡ਍††††††††楴敭›①慻搮瑡絥␠慻琮浩絥Ⱡ਍††††††††潳瑲慖畬㩥瀠牡敳癅湥呴浩獥慴灭愨搮瑡ⱥ愠琮浩⥥਍††††††⥽ഩ †††††㨠嬠㭝਍਍††††潣獮⁴畡楤䕴敶瑮⁳‽愨摵瑩敒灳湯敳漮⁫☦䄠牲祡椮䅳牲祡愨摵瑩敒灳湯敳攮敶瑮⥳ഩ †††††㼠愠摵瑩敒灳湯敳攮敶瑮⹳慭⡰⁡㸽⠠ൻ †††††††琠灹㩥愠攮敶瑮祔数簠⁼⹡慣整潧祲簠⁼匧卙䕔彍啁䥄❔ബ †††††††搠瑥楡獬›①慻甮敳⁲‿⹡獵牥⬠✠›‧›✧⑽慻搮瑥楡獬簠⁼✧恽ബ †††††††琠浩㩥怠笤⹡慤整簠⁼✧⁽笤⹡楴敭簠⁼✧恽琮楲⡭Ⱙ਍††††††††潳瑲慖畬㩥瀠牡敳癅湥呴浩獥慴灭愨搮瑡ⱥ愠琮浩⥥਍††††††⥽ഩ †††††㨠嬠㭝਍਍††††敤楶散癅湥獴汁⁬‽⹛⸮汣敩瑮癅湥獴‬⸮朮潥敦据䕥敶瑮ⱳ⸠⸮畡楤䕴敶瑮嵳献牯⡴愨‬⥢㴠‾⹢潳瑲慖畬⁥‭⹡潳瑲慖畬⥥഻ †††搠癥捩䕥敶瑮偳条⁥‽㬱਍਍††††敲摮牥湁污瑹捩⡳㬩਍††††牴⁹⁻潬慣卬潴慲敧献瑥瑉浥✨摡業彮慣档彥湡污瑹捩❳‬半乏献牴湩楧祦笨愠慮祬楴獣慄慴‬敤楶散癅湥獴汁⁬⥽㬩素挠瑡档⠠⥥笠ൽ †素挠瑡档⠠牥潲⥲笠਍††††晩⠠潨瑳☠…愡慮祬楴獣慄慴 潨瑳椮湮牥呈䱍㴠✠搼癩挠慬獳∽瑳晡ⵦ楬瑳猭慴整㸢慆汩摥琠⁯潬摡愠慮祬楴獣㰮搯癩✾഻ †††攠獬⁥晩⠠潨瑳 桳睯潔獡⡴䌧畯摬渠瑯爠晥敲桳愠慮祬楴獣搠瑡⁡漨晦楬敮⸩Ⱗ✠牥潲❲㬩਍††ൽ紊਍਍⨯㴠㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽ഽ †䕒䑎剅䄠䵄义倠乁䱅਍†㴠㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽‽⼪਍਍畦据楴湯爠湥敤䅲浤湩慐敮⡬ ൻ †挠湯瑳瀠湡汥潈瑳㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨摡業⵮慰敮⵬潨瑳⤧഻ †挠湯瑳椠即灵牥㴠猠獥楳湯瑓牯条⹥敧䥴整⡭椧彳畳数畲敳❲ 㴽‽琧畲❥഻ †挠湯瑳搠癥慂杤䡥浴⁬‽獩畓数⁲‿㱠灳湡挠慬獳∽敤敶潬数⵲慢杤≥琠瑩敬∽汅癥瑡摥䐠癥汥灯牥匠灵牥獵牥匠獥楳湯•瑳汹㵥洢牡楧⵮敬瑦›畡潴※污杩⵮敳晬›散瑮牥∻醟ₑ敄敶潬数⁲潍敤⼼灳湡怾㨠✠㬧਍਍††慰敮䡬獯⹴湩敮䡲䵔⁌‽ൠ †††㰠楤⁶汣獡㵳愢浤湩琭扡≳ാ †††††㰠畢瑴湯挠慬獳∽慴ⵢ瑢⁮捡楴敶•慤慴琭扡∽慤桳潢牡≤琠瑩敬∽慄桳潢牡≤㰾灳湡挠慬獳∽慴ⵢ捩湯㸢鿰誓⼼灳湡㰾灳湡挠慬獳∽慴ⵢ慬敢≬䐾獡扨慯摲⼼灳湡㰾戯瑵潴㹮਍††††††戼瑵潴⁮汣獡㵳琢扡戭湴•慤慴琭扡∽瑳晡≦琠瑩敬∽瑓晡≦㰾灳湡挠慬獳∽慴ⵢ捩湯㸢鿰ꖑ⼼灳湡㰾灳湡挠慬獳∽慴ⵢ慬敢≬匾慴晦⼼灳湡㰾戯瑵潴㹮਍††††††戼瑵潴⁮汣獡㵳琢扡戭湴•慤慴琭扡∽潬獧•楴汴㵥䰢杯≳㰾灳湡挠慬獳∽慴ⵢ捩湯㸢鿰讓⼼灳湡㰾灳湡挠慬獳∽慴ⵢ慬敢≬䰾杯㱳猯慰㹮⼼畢瑴湯ാ †††††㰠畢瑴湯挠慬獳∽慴ⵢ瑢≮搠瑡ⵡ慴㵢愢慮祬楴獣•楴汴㵥䄢慮祬楴獣㸢猼慰⁮汣獡㵳琢扡椭潣≮鎟㲈猯慰㹮猼慰⁮汣獡㵳琢扡氭扡汥㸢湁污瑹捩㱳猯慰㹮⼼畢瑴湯ാ †††††㰠畢瑴湯挠慬獳∽慴ⵢ瑢≮搠瑡ⵡ慴㵢挢湯楦≧琠瑩敬∽潃普杩㸢猼慰⁮汣獡㵳琢扡椭潣≮馚룯㲏猯慰㹮猼慰⁮汣獡㵳琢扡氭扡汥㸢潃普杩⼼灳湡㰾戯瑵潴㹮਍††††††戼瑵潴⁮汣獡㵳琢扡戭湴•慤慴琭扡∽捡潣湵≴琠瑩敬∽捁潣湵≴㰾灳湡挠慬獳∽慴ⵢ捩湯㸢鿰邔⼼灳湡㰾灳湡挠慬獳∽慴ⵢ慬敢≬䄾捣畯瑮⼼灳湡㰾戯瑵潴㹮਍††††††笤敤䉶摡敧瑈汭ൽ †††㰠搯癩ാ †††ഠ †††㰠楤⁶摩∽慴ⵢ慤桳潢牡≤挠慬獳∽慴ⵢ潣瑮湥⁴捡楴敶㸢਍††††††搼癩挠慬獳∽慤桳潢牡ⵤ敨摡牥㸢਍††††††††搼癩挠慬獳∽敷步渭癡杩瑡牯㸢਍††††††††††戼瑵潴⁮摩∽敷步瀭敲⵶瑢≮挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮릀倠敲㱶戯瑵潴㹮਍††††††††††猼慰⁮摩∽敷步氭扡汥•汣獡㵳眢敥⵫慬敢≬鎟₅潌摡湩⹧⸮⼼灳湡ാ †††††††††㰠畢瑴湯椠㵤眢敥⵫敮瑸戭湴•汣獡㵳愢浤湩戭湴猠捥湯慤祲猠慭汬•祴数∽畢瑴湯㸢敎瑸몀⼼畢瑴湯ാ †††††††㰠搯癩ാ †††††††㰠楤⁶汣獡㵳搢獡扨慯摲愭瑣潩獮㸢਍††††††††††猼慰⁮摩∽敲牦獥⵨慬敢≬挠慬獳∽敲牦獥⵨慬敢≬㰾猯慰㹮਍††††††††††戼瑵潴⁮摩∽敲牦獥⵨潴慤⵹瑢≮挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮钟㲄戯瑵潴㹮਍††††††††††愼椠㵤猢敨瑥⵳楬歮戭湴•汣獡㵳椢潣⵮瑢≮栠敲㵦栢瑴獰⼺搯捯⹳潧杯敬挮浯猯牰慥獤敨瑥⽳⽤瘱昹愰㉌坴㕋么㉫䩔睲朵瑮橁婦㉐癟塢㍏硉㔸㙋睐支楤㽴楧㵤⌰楧㵤∰琠牡敧㵴弢汢湡≫爠汥∽潮灯湥牥•楴汴㵥伢数⁮潇杯敬匠敨瑥⁳慢正湥≤愠楲ⵡ慬敢㵬伢数⁮潇杯敬匠敨瑥⁳慢正湥≤鎟㲗愯ാ †††††††㰠搯癩ാ †††††㰠搯癩ാ †††††㰠楤⁶摩∽潴慤⵹瑡整摮湡散氭獩≴㰾楤⁶汣獡㵳猢慴晦氭獩⵴瑳瑡≥䰾慯楤杮琠楨⁳敷步⸮㰮搯癩㰾搯癩ാ †††††㰠楤⁶汣獡㵳搢獡扨慯摲猭捥楴湯㸢਍††††††††格㸴敗步祬䄠瑴湥慤据⁥慍牴硩⼼㑨ാ †††††††㰠楤⁶摩∽瑡整摮湡散洭瑡楲≸㰾楤⁶汣獡㵳猢慴晦氭獩⵴瑳瑡≥䰾慯楤杮洠瑡楲⹸⸮⼼楤㹶⼼楤㹶਍††††††⼼楤㹶਍††††††搼癩挠慬獳∽慤桳潢牡ⵤ畱捩⵫捡楴湯≳ാ †††††††㰠畢瑴湯椠㵤搢獡扨慯摲攭灸牯⵴瑢≮挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮鎟₥硅潰瑲圠敥㱫戯瑵潴㹮਍††††††††愼挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬栠敲㵦栢瑴獰⼺欯祡散敥獡⹹楧桴扵椮⽯祈牢摩匭档摥汵牥∯琠牡敧㵴弢汢湡≫爠汥∽潮灯湥牥•瑳汹㵥琢硥⵴敤潣慲楴湯渺湯㭥㸢鿰薓䠠批楲⁤捓敨畤敬㱲愯ാ †††††㰠搯癩ാ †††㰠搯癩ാ †††ഠ †††㰠楤⁶摩∽慴ⵢ瑳晡≦挠慬獳∽慴ⵢ潣瑮湥≴ാ †††††㰠楤⁶汣獡㵳猢捥楴湯栭慥敤≲㰾㍨匾慴晦䴠湡条浥湥㱴栯㸳⼼楤㹶਍††††††搼癩挠慬獳∽瑳晡ⵦ慭慮敧≲ാ †††††††㰠湩異⁴摩∽瑳晡ⵦ摡業⵮敳牡档•祴数∽整瑸•汰捡桥汯敤㵲钟₍敓牡档猠慴晦戠⁹慮敭⸮∮猠祴敬∽楷瑤㩨〱┰※慰摤湩㩧瀹⁸㌱硰※潢摲牥爭摡畩㩳慶⡲ⴭ慲楤獵㬩戠牯敤㩲瀱⁸潳楬⁤慶⡲ⴭ潢摲牥㬩戠捡杫潲湵㩤慶⡲ⴭ畳晲捡ⵥ⤲※潣潬㩲慶⡲ⴭ整瑸㬩映湯⵴楳敺〺㠮父浥※慭杲湩戭瑯潴㩭〱硰∻⼠ാ †††††††㰠楤⁶摩∽瑳晡ⵦ楬瑳㸢搼癩挠慬獳∽瑳晡ⵦ楬瑳猭慴整㸢潌摡湩⁧瑳晡⁦楬瑳⸮㰮搯癩㰾搯癩ാ †††††††㰠楤⁶汣獡㵳愢摤猭慴晦昭牯≭ാ †††††††††㰠湩異⁴摩∽敮⵷瑳晡ⵦ慮敭•祴数∽整瑸•汰捡桥汯敤㵲䔢瑮牥猠慴晦渠浡⁥潴愠摤•㸯਍††††††††††搼癩挠慬獳∽摡業⵮捡楴湯⁳潣灭捡≴ാ †††††††††††㰠畢瑴湯椠㵤愢摤猭慴晦戭湴•汣獡㵳愢浤湩戭湴•祴数∽畢瑴湯㸢黢ₕ摁⁤瑓晡㱦戯瑵潴㹮਍††††††††††††戼瑵潴⁮摩∽敲敳⵴污⵬潬正⵳瑢≮挠慬獳∽摡業⵮瑢⁮慤杮牥•祴数∽畢瑴湯㸢鿰鎔删獥瑥䄠汬䰠捯獫⼼畢瑴湯ാ †††††††††㰠搯癩ാ †††††††㰠搯癩ാ †††††㰠搯癩ാ †††㰠搯癩ാ †††ഠ †††㰠楤⁶摩∽慴ⵢ潬獧•汣獡㵳琢扡挭湯整瑮㸢਍††††††搼癩挠慬獳∽敳瑣潩⵮敨摡牥㸢格㸳瑁整摮湡散删捥牯獤⼼㍨㰾搯癩ാ †††††㰠楤⁶汣獡㵳氢杯⵳楦瑬牥≳ാ †††††††㰠敳敬瑣椠㵤氢杯⵳楦瑬牥渭浡ⵥ敳敬瑣•汣獡㵳氢杯⵳楦瑬牥猭汥捥≴愠楲ⵡ慬敢㵬䘢汩整⁲祢渠浡≥㰾灯楴湯瘠污敵∽㸢汁⁬瑳晡㱦漯瑰潩㹮⼼敳敬瑣ാ †††††††㰠楤⁶汣獡㵳搢瑡ⵥ楦瑬牥爭睯㸢਍††††††††††搼癩挠慬獳∽慤整椭灮瑵眭慲≰ാ †††††††††††㰠灳湡挠慬獳∽慤整椭灮瑵氭扡汥㸢牆浯㰺猯慰㹮਍††††††††††††椼灮瑵椠㵤氢杯⵳楦瑬牥昭潲≭琠灹㵥搢瑡≥愠楲ⵡ慬敢㵬䘢潲⁭慤整•汰捡桥汯敤㵲䘢潲≭⼠ാ †††††††††㰠搯癩ാ †††††††††㰠楤⁶汣獡㵳搢瑡ⵥ湩異⵴牷灡㸢਍††††††††††††猼慰⁮汣獡㵳搢瑡ⵥ湩異⵴慬敢≬吾㩯⼼灳湡ാ †††††††††††㰠湩異⁴摩∽潬獧昭汩整⵲潴•祴数∽慤整•牡慩氭扡汥∽潔搠瑡≥瀠慬散潨摬牥∽潔•㸯਍††††††††††⼼楤㹶਍††††††††⼼楤㹶਍††††††††搼癩挠慬獳∽楦瑬牥愭瑣潩獮㸢਍††††††††††戼瑵潴⁮摩∽潬獧昭汩整⵲瑢≮挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮钟₍楆瑬牥⼼畢瑴湯ാ †††††††††㰠畢瑴湯椠㵤氢杯⵳汣慥⵲瑢≮挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮閜䌠敬牡⼼畢瑴湯ാ †††††††㰠搯癩ാ †††††㰠搯癩ാ †††††㰠楤⁶摩∽潬獧氭獩≴㰾楤⁶汣獡㵳猢慴晦氭獩⵴瑳瑡≥䰾慯楤杮爠捥牯獤⸮㰮搯癩㰾搯癩ാ †††㰠搯癩ാ †††ഠ †††㰠楤⁶摩∽慴ⵢ湡污瑹捩≳挠慬獳∽慴ⵢ潣瑮湥≴ാ †††††㰠楤⁶汣獡㵳猢捥楴湯栭慥敤≲ാ †††††††㰠㍨䄾瑴湥慤据⁥湁污瑹捩㱳栯㸳਍††††††††瀼挠慬獳∽摡業⵮湩牴≯䠾批楲⁤慤獹攠捸畬敤⁤牦浯愠瑴湥慤据⁥慲整挠污畣慬楴湯㱳瀯ാ †††††㰠搯癩ാ †††††㰠楤⁶汣獡㵳愢慮祬楴獣昭汩整⵲慢≲猠祴敬∽楤灳慬㩹汦硥※慧㩰瀸㭸洠牡楧⵮潢瑴浯ㄺ瀴㭸映敬⵸牷灡眺慲㭰愠楬湧椭整獭挺湥整㭲㸢਍††††††††戼瑵潴⁮摩∽湡污瑹捩⵳楦瑬牥愭汬•汣獡㵳愢浤湩戭湴猠捥湯慤祲猠慭汬愠瑣癩≥琠灹㵥戢瑵潴≮貟ₐ汁⁬楔敭⼼畢瑴湯ാ †††††††㰠畢瑴湯椠㵤愢慮祬楴獣昭汩整⵲潭瑮≨挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮鎟₆桔獩䴠湯桴⼼畢瑴湯ാ †††††††㰠畢瑴湯椠㵤愢慮祬楴獣昭汩整⵲敷步•汣獡㵳愢浤湩戭湴猠捥湯慤祲猠慭汬•祴数∽畢瑴湯㸢鿰薓吠楨⁳敗步⼼畢瑴湯ാ †††††††㰠畢瑴湯椠㵤愢慮祬楴獣昭汩整⵲畣瑳浯琭杯汧≥挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮鎟₅畃瑳浯删湡敧⼼畢瑴湯ാ †††††††㰠楤⁶摩∽湡污瑹捩⵳畣瑳浯椭灮瑵≳猠祴敬∽楤灳慬㩹潮敮※慧㩰瀶㭸愠楬湧椭整獭挺湥整㭲㸢਍††††††††††椼灮瑵椠㵤愢慮祬楴獣昭潲⵭慤整•祴数∽慤整•瑳汹㵥瀢摡楤杮㐺硰㠠硰※潢摲牥爭摡畩㩳瀶㭸戠牯敤㩲瀱⁸潳楬⁤慶⡲ⴭ潢摲牥㬩戠捡杫潲湵㩤慶⡲ⴭ畳晲捡ⵥ⤲※潣潬㩲慶⡲ⴭ整瑸㬩映湯⵴楳敺〺㠮敲㭭•㸯਍††††††††††猼慰⁮瑳汹㵥昢湯⵴楳敺〺㠮敲㭭㸢潴⼼灳湡ാ †††††††††㰠湩異⁴摩∽湡污瑹捩⵳潴搭瑡≥琠灹㵥搢瑡≥猠祴敬∽慰摤湩㩧瀴⁸瀸㭸戠牯敤⵲慲楤獵㘺硰※潢摲牥ㄺ硰猠汯摩瘠牡⴨戭牯敤⥲※慢正牧畯摮瘺牡⴨猭牵慦散㈭㬩挠汯牯瘺牡⴨琭硥⥴※潦瑮猭穩㩥⸰爸浥∻⼠ാ †††††††††㰠畢瑴湯椠㵤愢慮祬楴獣愭灰祬挭獵潴≭挠慬獳∽摡業⵮瑢⁮浳污≬琠灹㵥戢瑵潴≮䄾灰祬⼼畢瑴湯ാ †††††††㰠搯癩ാ †††††㰠搯癩ാ †††††㰠楤⁶摩∽湡污瑹捩⵳潣瑮湥≴㰾楤⁶汣獡㵳猢慴晦氭獩⵴瑳瑡≥䰾慯楤杮愠慮祬楴獣⸮㰮搯癩㰾搯癩ാ †††㰠搯癩ാ †††ഠ †††㰠楤⁶摩∽慴ⵢ潣普杩•汣獡㵳琢扡挭湯整瑮㸢਍††††††搼癩挠慬獳∽敳瑣潩⵮敨摡牥㸢格㸳祓瑳浥䌠湯楦畧慲楴湯⼼㍨㰾⁰汣獡㵳愢浤湩椭瑮潲㸢晏楦散氠捯瑡潩Ɱ愠瑴湥慤据⁥捳敨畤敬☠朠潥敦据⁥敳瑴湩獧⼼㹰⼼楤㹶਍††††††਍††††††搼癩挠慬獳∽潣普杩猭捥楴湯札潲灵㸢਍††††††††格㸴鿰趓传晦捩⁥潌慣楴湯⼼㑨ാ †††††††㰠楤⁶汣獡㵳挢湯楦ⵧ慣摲≳ാ †††††††††㰠楤⁶汣獡㵳挢湯楦ⵧ慣摲㸢਍††††††††††††猼慰⁮汣獡㵳挢湯楦ⵧ捩湯㸢鿰趓⼼灳湡ാ †††††††††††㰠楤⁶汣獡㵳挢湯楦ⵧ湩潦㸢猼牴湯㹧晏楦散䰠瑡瑩摵㱥猯牴湯㹧猼慰⁮汣獡㵳挢湯楦ⵧ慶畬≥椠㵤挢湯楦ⵧ慬⵴畣牲湥≴㘾㐮ㄵ㘸ㄳ⼼灳湡㰾搯癩ാ †††††††††††㰠畢瑴湯椠㵤挢湯楦ⵧ景楦散氭瑡戭湴•汣獡㵳愢浤湩戭湴猠捥湯慤祲猠慭汬•祴数∽畢瑴湯㸢摅瑩⼼畢瑴湯ാ †††††††††㰠搯癩ാ †††††††††㰠楤⁶汣獡㵳挢湯楦ⵧ慣摲㸢਍††††††††††††猼慰⁮汣獡㵳挢湯楦ⵧ捩湯㸢鿰趓⼼灳湡ാ †††††††††††㰠楤⁶汣獡㵳挢湯楦ⵧ湩潦㸢猼牴湯㹧晏楦散䰠湯楧畴敤⼼瑳潲杮㰾灳湡挠慬獳∽潣普杩瘭污敵•摩∽潣普杩氭湯挭牵敲瑮㸢⸳㈵㜷㘸㰳猯慰㹮⼼楤㹶਍††††††††††††戼瑵潴⁮摩∽潣普杩漭晦捩ⵥ潬⵮瑢≮挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮䔾楤㱴戯瑵潴㹮਍††††††††††⼼楤㹶਍††††††††††搼癩挠慬獳∽潣普杩挭牡≤ാ †††††††††††㰠灳湡挠慬獳∽潣普杩椭潣≮鎟㲏猯慰㹮਍††††††††††††搼癩挠慬獳∽潣普杩椭普≯㰾瑳潲杮䜾潥敦据⁥慒楤獵⼼瑳潲杮㰾灳湡挠慬獳∽潣普杩瘭污敵•摩∽潣普杩爭摡畩⵳畣牲湥≴ㄾ〰洠瑥牥㱳猯慰㹮⼼楤㹶਍††††††††††††戼瑵潴⁮摩∽潣普杩爭摡畩⵳瑢≮挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮䔾楤㱴戯瑵潴㹮਍††††††††††⼼楤㹶਍††††††††⼼楤㹶਍††††††⼼楤㹶਍਍††††††搼癩挠慬獳∽潣普杩猭捥楴湯札潲灵㸢਍††††††††格㸴迢₰瑁整摮湡散匠档摥汵㱥栯㸴਍††††††††搼癩挠慬獳∽潣普杩挭牡獤㸢਍††††††††††搼癩挠慬獳∽潣普杩挭牡≤ാ †††††††††††㰠灳湡挠慬獳∽潣普杩椭潣≮낏⼼灳湡ാ †††††††††††㰠楤⁶汣獡㵳挢湯楦ⵧ湩潦㸢猼牴湯㹧慌整䌠瑵景⁦楔敭⼼瑳潲杮㰾灳湡挠慬獳∽潣普杩瘭污敵•摩∽潣普杩氭瑡ⵥ畣潴晦挭牵敲瑮㸢㨸〳䄠㱍猯慰㹮⼼楤㹶਍††††††††††††戼瑵潴⁮摩∽潣普杩氭瑡ⵥ畣潴晦戭湴•汣獡㵳愢浤湩戭湴猠捥湯慤祲猠慭汬•祴数∽畢瑴湯㸢摅瑩⼼畢瑴湯ാ †††††††††㰠搯癩ാ †††††††††㰠楤⁶汣獡㵳挢湯楦ⵧ慣摲㸢਍††††††††††††猼慰⁮汣獡㵳挢湯楦ⵧ捩湯㸢鿰鎗룯㲏猯慰㹮਍††††††††††††搼癩挠慬獳∽潣普杩椭普≯㰾瑳潲杮圾牯楫杮䐠祡㱳猯牴湯㹧猼慰⁮汣獡㵳挢湯楦ⵧ慶畬≥椠㵤挢湯楦ⵧ潷歲慤獹挭牵敲瑮㸢潍摮祡鎀䘠楲慤㱹猯慰㹮⼼楤㹶਍††††††††††††戼瑵潴⁮摩∽潣普杩眭牯摫祡⵳瑢≮挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污≬琠灹㵥戢瑵潴≮䔾楤㱴戯瑵潴㹮਍††††††††††⼼楤㹶਍††††††††⼼楤㹶਍††††††⼼楤㹶਍਍††††††搼癩挠慬獳∽潣普杩猭捥楴湯札潲灵㸢਍††††††††格㸴鿰ꞔ吠潯獬⼼㑨ാ †††††††㰠楤⁶瑳汹㵥搢獩汰祡›汦硥※慧㩰ㄠ敲㭭映敬⵸牷灡›牷灡∻ാ †††††††††㰠畢瑴湯椠㵤挢湯楦ⵧ畡潴氭捯瑡潩⵮瑢≮挠慬獳∽摡業⵮瑢⁮敳潣摮牡≹琠灹㵥戢瑵潴≮躟₯敓⁴晏楦散琠⁯祍䌠牵敲瑮䰠捯瑡潩㱮戯瑵潴㹮਍††††††††††戼瑵潴⁮摩∽潣普杩琭獥⵴楤瑳湡散戭湴•汣獡㵳愢浤湩戭湴猠捥湯慤祲•祴数∽畢瑴湯㸢鿰ꆓ吠獥⁴畃牲湥⁴楄瑳湡散映潲⁭晏楦散⼼畢瑴湯ാ †††††††㰠搯癩ാ †††††㰠搯癩ാ †††㰠搯癩ാഊ †††㰠楤⁶摩∽慴ⵢ捡潣湵≴挠慬獳∽慴ⵢ潣瑮湥≴ാ †††††㰠楤⁶汣獡㵳猢捥楴湯栭慥敤≲㰾㍨䄾捣畯瑮匠瑥楴杮㱳栯㸳⼼楤㹶਍††††††搼癩挠慬獳∽捡潣湵⵴捡楴湯≳ാ †††††††㰠楤⁶汣獡㵳愢捣畯瑮挭牡≤ാ †††††††††㰠灳湡挠慬獳∽捡潣湵⵴捩湯㸢鿰醔⼼灳湡ാ †††††††††㰠楤㹶猼牴湯㹧桃湡敧倠獡睳牯㱤猯牴湯㹧瀼挠慬獳∽摡業⵮湩牴≯唾摰瑡⁥潹牵愠浤湩瀠獡睳牯㱤瀯㰾搯癩ാ †††††††††㰠畢瑴湯椠㵤挢慨杮ⵥ慰獳潷摲戭湴•汣獡㵳愢浤湩戭湴猠捥湯慤祲猠慭汬•祴数∽畢瑴湯㸢灕慤整⼼畢瑴湯ാ †††††††㰠搯癩ാ †††††††㰠楤⁶汣獡㵳愢捣畯瑮挭牡≤ാ †††††††††㰠灳湡挠慬獳∽捡潣湵⵴捩湯㸢鿰ꞓ⼼灳湡ാ †††††††††㰠楤㹶਍††††††††††††猼牴湯㹧敒潣敶祲䔠慭汩⼼瑳潲杮ാ †††††††††††㰠⁰汣獡㵳愢浤湩椭瑮潲•摩∽敲潣敶祲攭慭汩搭獩汰祡㸢捁楴敶›潌摡湩⹧⸮⼼㹰਍††††††††††⼼楤㹶਍††††††††††戼瑵潴⁮摩∽敳⵴敲潣敶祲攭慭汩戭湴•汣獡㵳愢浤湩戭湴猠捥湯慤祲猠慭汬•祴数∽畢瑴湯㸢敓⁴ 摅瑩⼼畢瑴湯ാ †††††††㰠搯癩ാ †††††††㰠楤⁶汣獡㵳愢捣畯瑮挭牡≤ാ †††††††††㰠灳湡挠慬獳∽捡潣湵⵴捩湯㸢鿰ꪚ⼼灳湡ാ †††††††††㰠楤㹶猼牴湯㹧潌潧瑵⼼瑳潲杮㰾⁰汣獡㵳愢浤湩椭瑮潲㸢湅⁤潹牵愠浤湩猠獥楳湯⠠畡潴琭浩潥瑵愠瑦牥ㄠ‵業⁮摩敬㰩瀯㰾搯癩ാ †††††††††㰠畢瑴湯椠㵤氢杯畯⵴瑢≮挠慬獳∽摡業⵮瑢⁮敳潣摮牡⁹浳污⁬慤杮牥•祴数∽畢瑴湯㸢潌潧瑵⼼畢瑴湯ാ †††††††㰠搯癩ാ †††††㰠搯癩ാഊ †††††㰠楤⁶摩∽摡業⵮獵牥洭湡条浥湥⵴敳瑣潩≮挠慬獳∽慤桳潢牡ⵤ敳瑣潩≮猠祴敬∽慭杲湩琭灯㈺敲㭭㸢਍††††††††格㸴鿰ꖑ䄠浤湩唠敳獲☠倠牥業獳潩⁮楔牥㱳栯㸴਍††††††††瀼挠慬獳∽摡業⵮湩牴≯䴾湡条⁥敤敬慧整⁤摡業⁮捡潣湵獴愠摮愠捣獥⁳敬敶獬㰮瀯ാ †††††††㰠楤⁶摩∽摡業⵮獵牥⵳楬瑳•瑳汹㵥洢牡楧⵮潢瑴浯ㄺ敲㭭㸢搼癩挠慬獳∽瑳晡ⵦ楬瑳猭慴整㸢潌摡湩⁧摡業⁮獵牥⹳⸮⼼楤㹶⼼楤㹶਍††††††††戼瑵潴⁮摩∽摡ⵤ摡業⵮獵牥戭湴•汣獡㵳愢浤湩戭湴猠捥湯慤祲猠慭汬•祴数∽畢瑴湯㸢黢ₕ摁⁤摁業⁮獕牥⼼畢瑴湯ാ †††††㰠搯癩ാ †††㰠搯癩ാ †怠഻ഊ †搠捯浵湥⹴畱牥卹汥捥潴䅲汬✨琮扡戭湴⤧昮牯慅档戨湴㴠‾ൻ †††戠湴愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠ 㸽猠楷捴周扡戨湴搮瑡獡瑥琮扡⤩഻ †素㬩਍਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤爧晥敲桳琭摯祡戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ愠祳据⠠⥥㴠‾ൻ †††挠湯瑳戠湴㴠攠琮牡敧⹴汣獯獥⡴戧瑵潴❮ 籼攠琮牡敧㭴਍††††潣獮⁴牯杩湩污瑈汭㴠戠湴椮湮牥呈䱍഻ †††戠湴椮湮牥呈䱍㴠✠迢➳഻ †††愠慷瑩氠慯坤敥䑫瑡⡡慦獬⥥഻ †††戠湴椮湮牥呈䱍㴠漠楲楧慮䡬浴㭬਍††⥽഻ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨敷步瀭敲⵶瑢❮⸩摡䕤敶瑮楌瑳湥牥✨汣捩❫‬⤨㴠‾慮楶慧整敗步✨牰癥⤧㬩਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤眧敥⵫敮瑸戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠ 㸽渠癡杩瑡坥敥⡫渧硥❴⤩഻ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨慤桳潢牡ⵤ硥潰瑲戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠ 㸽笠਍††††潣獮⁴敷步慄慴㴠挠捡敨坤敥䑫瑡孡畣牲湥坴敥卫慴瑲㭝਍††††晩⠠眡敥䑫瑡⥡笠猠潨呷慯瑳✨潎眠敥⁫慤慴琠⁯硥潰瑲✮‬攧牲牯⤧※敲畴湲※ൽ †††攠灸牯坴敥䵫瑡楲呸䍯噓眨敥䑫瑡⹡潬獧簠⁼嵛‬敷步慄慴献档摥汵⁥籼笠ⱽ挠牵敲瑮敗步瑓牡⥴഻ †素㬩਍਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧摤猭慴晦戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ栠湡汤䅥摤瑓晡⥦഻ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨敮⵷瑳晡ⵦ慮敭⤧愮摤癅湥䱴獩整敮⡲欧祥潤湷Ⱗ⠠⥥㴠‾⁻晩⠠⹥敫⁹㴽‽䔧瑮牥⤧栠湡汤䅥摤瑓晡⡦㬩素㬩਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤爧獥瑥愭汬氭捯獫戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ栠湡汤剥獥瑥汁䱬捯獫㬩਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤猧慴晦愭浤湩猭慥捲❨㼩愮摤癅湥䱴獩整敮⡲椧灮瑵Ⱗ⠠ 㸽爠湥敤卲慴晦楌瑳愨汬瑓晡䱦獩⥴㬩਍਍††慣汬慂正湥⡤⁻潭敤›朧瑥猭敨瑥甭汲‧⥽琮敨⡮爨獥 㸽笠਍††††潣獮⁴瑢⁮‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤猧敨瑥⵳楬歮戭湴⤧഻ †††椠⁦戨湴☠…敲⁳☦爠獥漮⁫☦爠獥甮汲 瑢⹮牨晥㴠爠獥甮汲഻ †素⸩慣捴⡨⤨㴠‾絻㬩਍਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤氧杯⵳楦瑬牥戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ氠慯䱤杯噳敩敷⥲഻ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潬獧昭汩整⵲慮敭猭汥捥❴⸩摡䕤敶瑮楌瑳湥牥✨档湡敧Ⱗ氠慯䱤杯噳敩敷⥲഻ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潬獧昭汩整⵲牦浯⤧愮摤癅湥䱴獩整敮⡲挧慨杮❥‬潬摡潌獧楖睥牥㬩਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤氧杯⵳楦瑬牥琭❯⸩摡䕤敶瑮楌瑳湥牥✨档湡敧Ⱗ氠慯䱤杯噳敩敷⥲഻ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潬獧挭敬牡戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠ 㸽笠਍††††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤氧杯⵳楦瑬牥渭浡ⵥ敳敬瑣⤧瘮污敵㴠✠㬧਍††††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤氧杯⵳楦瑬牥昭潲❭⸩慶畬⁥‽✧഻ †††搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潬獧昭汩整⵲潴⤧瘮污敵㴠✠㬧਍††††潬摡潌獧楖睥牥⤨഻ †素㬩਍਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤挧慨杮ⵥ慰獳潷摲戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ愠祳据⠠ 㸽笠਍††††潣獮⁴敲畳瑬㴠愠慷瑩猠潨䥷汮湩䑥慩潬⡧ൻ †††††琠瑩敬›䌧慨杮⁥慐獳潷摲Ⱗ਍††††††敭獳条㩥✠畃牲湥⁴慰獳潷摲爠煥極敲Ɽ琠敨⁮敮⁷慰獳潷摲✮ബ †††††映敩摬㩳嬠਍††††††††⁻汰捡桥汯敤㩲✠畃牲湥⁴慰獳潷摲Ⱗ琠灹㩥✠慰獳潷摲Ⱗ愠瑵捯浯汰瑥㩥✠畣牲湥⵴慰獳潷摲‧ⱽ਍††††††††⁻汰捡桥汯敤㩲✠敎⁷慰獳潷摲Ⱗ琠灹㩥✠慰獳潷摲Ⱗ愠瑵捯浯汰瑥㩥✠敮⵷慰獳潷摲‧ൽ †††††崠ബ †††††挠湯楦浲慌敢㩬✠灕慤整ധ †††素㬩਍††††晩⠠爡獥汵⥴爠瑥牵㭮਍††††牴⁹ൻ †††††挠湯瑳爠㴠愠慷瑩挠慨杮䅥浤湩慐獳潷摲挨牵敲瑮摁業啮敳湲浡ⱥ爠獥汵孴崰‬敲畳瑬ㅛ⥝഻ †††††猠潨呷慯瑳爨洮獥慳敧簠⁼倧獡睳牯⁤灵慤整⹤Ⱗ爠漮⁫‿猧捵散獳‧›攧牲牯⤧഻ †††素挠瑡档⠠⥥笠猠潨呷慯瑳✨敓癲牥攠牲牯✮‬攧牲牯⤧※ൽ †素㬩਍਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤猧瑥爭捥癯牥⵹浥楡⵬瑢❮⸩摡䕤敶瑮楌瑳湥牥✨汣捩❫‬獡湹⁣⤨㴠‾ൻ †††挠湯瑳爠獥汵⁴‽睡楡⁴桳睯湉楬敮楄污杯笨਍††††††楴汴㩥✠敓⁴敒潣敶祲䔠慭汩Ⱗ਍††††††敭獳条㩥✠慐獳潷摲爠煥極敲⁤潴挠湯楦浲椠敤瑮瑩⹹Ⱗ਍††††††楦汥獤›൛ †††††††笠瀠慬散潨摬牥›䌧牵敲瑮瀠獡睳牯❤‬祴数›瀧獡睳牯❤‬畡潴潣灭敬整›挧牵敲瑮瀭獡睳牯❤素ബ †††††††笠瀠慬散潨摬牥›刧捥癯牥⁹浥楡❬‬祴数›攧慭汩Ⱗ愠瑵捯浯汰瑥㩥✠浥楡❬素਍††††††ⱝ਍††††††潣普物䱭扡汥›匧癡❥਍††††⥽഻ †††椠⁦ℨ敲畳瑬 敲畴湲഻ †††琠祲笠਍††††††潣獮⁴⁲‽睡楡⁴敳剴捥癯牥䕹慭汩挨牵敲瑮摁業啮敳湲浡ⱥ爠獥汵孴崰‬敲畳瑬ㅛ⥝഻ †††††猠潨呷慯瑳爨洮獥慳敧簠⁼䔧慭汩猠癡摥✮‬⹲歯㼠✠畳捣獥❳㨠✠牥潲❲㬩਍††††††晩⠠⹲歯 潬摡敒潣敶祲浅楡䑬獩汰祡⤨഻ †††素挠瑡档⠠⥥笠猠潨呷慯瑳✨敓癲牥攠牲牯✮‬攧牲牯⤧※ൽ †素㬩਍਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧摤愭浤湩甭敳⵲瑢❮㼩愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ栠湡汤䅥摤摁業啮敳⥲഻ഊ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨湡污瑹捩⵳楦瑬牥愭汬⤧⸿摡䕤敶瑮楌瑳湥牥✨汣捩❫‬攨 㸽笠਍††††潤畣敭瑮焮敵祲敓敬瑣牯汁⡬⸧湡污瑹捩⵳楦瑬牥戭牡戠瑵潴❮⸩潦䕲捡⡨⁢㸽戠挮慬獳楌瑳爮浥癯⡥愧瑣癩❥⤩഻ †††攠琮牡敧⹴汣獡䱳獩⹴摡⡤愧瑣癩❥㬩਍††††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧慮祬楴獣挭獵潴⵭湩異獴⤧献祴敬搮獩汰祡㴠✠潮敮㬧਍††††潬摡湁污瑹捩⡳愧汬⤧഻ †素㬩਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧慮祬楴獣昭汩整⵲潭瑮❨㼩愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠⥥㴠‾ൻ †††搠捯浵湥⹴畱牥卹汥捥潴䅲汬✨愮慮祬楴獣昭汩整⵲慢⁲畢瑴湯⤧昮牯慅档戨㴠‾⹢汣獡䱳獩⹴敲潭敶✨捡楴敶⤧㬩਍††††⹥慴杲瑥挮慬獳楌瑳愮摤✨捡楴敶⤧഻ †††搠捯浵湥⹴敧䕴敬敭瑮祂摉✨湡污瑹捩⵳畣瑳浯椭灮瑵❳⸩瑳汹⹥楤灳慬⁹‽渧湯❥഻ †††氠慯䅤慮祬楴獣✨潭瑮❨㬩਍††⥽഻ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨湡污瑹捩⵳楦瑬牥眭敥❫㼩愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠⥥㴠‾ൻ †††搠捯浵湥⹴畱牥卹汥捥潴䅲汬✨愮慮祬楴獣昭汩整⵲慢⁲畢瑴湯⤧昮牯慅档戨㴠‾⹢汣獡䱳獩⹴敲潭敶✨捡楴敶⤧㬩਍††††⹥慴杲瑥挮慬獳楌瑳愮摤✨捡楴敶⤧഻ †††搠捯浵湥⹴敧䕴敬敭瑮祂摉✨湡污瑹捩⵳畣瑳浯椭灮瑵❳⸩瑳汹⹥楤灳慬⁹‽渧湯❥഻ †††氠慯䅤慮祬楴獣✨敷步⤧഻ †素㬩਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧慮祬楴獣昭汩整⵲畣瑳浯琭杯汧❥㼩愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠⥥㴠‾ൻ †††搠捯浵湥⹴畱牥卹汥捥潴䅲汬✨愮慮祬楴獣昭汩整⵲慢⁲畢瑴湯⤧昮牯慅档戨㴠‾⹢汣獡䱳獩⹴敲潭敶✨捡楴敶⤧㬩਍††††⹥慴杲瑥挮慬獳楌瑳愮摤✨捡楴敶⤧഻ †††挠湯瑳挠獵潴坭慲⁰‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧慮祬楴獣挭獵潴⵭湩異獴⤧഻ †††椠⁦挨獵潴坭慲⥰挠獵潴坭慲⹰瑳汹⹥楤灳慬⁹‽畣瑳浯牗灡献祴敬搮獩汰祡㴠㴽✠潮敮‧‿昧敬❸㨠✠潮敮㬧਍††⥽഻ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨湡污瑹捩⵳灡汰⵹畣瑳浯⤧⸿摡䕤敶瑮楌瑳湥牥✨汣捩❫‬⤨㴠‾ൻ †††挠湯瑳映潲噭污㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨湡污瑹捩⵳牦浯搭瑡❥㼩瘮污敵഻ †††挠湯瑳琠噯污㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨湡污瑹捩⵳潴搭瑡❥㼩瘮污敵഻ †††椠⁦ℨ牦浯慖⥬笠猠潨呷慯瑳✨敓敬瑣愠∠牆浯•慤整映物瑳✮‬攧牲牯⤧※敲畴湲※ൽ †††氠慯䅤慮祬楴獣✨畣瑳浯Ⱗ映潲噭污‬潴慖⥬഻ †素㬩਍਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤挧湯楦ⵧ潷歲慤獹戭湴⤧⸿摡䕤敶瑮楌瑳湥牥✨汣捩❫‬獡湹⁣⤨㴠‾ൻ †††挠湯瑳搠祡慎敭⁳‽❛潍摮祡Ⱗ✠畔獥慤❹‬圧摥敮摳祡Ⱗ✠桔牵摳祡Ⱗ✠牆摩祡Ⱗ✠慓畴摲祡Ⱗ✠畓摮祡崧഻ †††挠湯瑳猠慴瑲灏楴湯⁳‽慤乹浡獥洮灡⠨Ɽ椠 㸽怠漼瑰潩⁮慶畬㵥␢楻≽笤⁩㴽‽‰‿‧敳敬瑣摥‧›✧㹽笤絤⼼灯楴湯怾⸩潪湩✨⤧഻ †††挠湯瑳攠摮灏楴湯⁳‽慤乹浡獥洮灡⠨Ɽ椠 㸽怠漼瑰潩⁮慶畬㵥␢楻≽笤⁩㴽‽‴‿‧敳敬瑣摥‧›✧㹽笤絤⼼灯楴湯怾⸩潪湩✨⤧഻ †††挠湯瑳搠慩潬䡧浴⁬‽ൠ †††††㰠楤⁶瑳汹㵥搢獩汰祡昺敬㭸映敬⵸楤敲瑣潩㩮潣畬湭※慧㩰㈱硰※整瑸愭楬湧氺晥㭴洠牡楧⵮潴㩰〱硰∻ാ †††††††㰠楤⁶瑳汹㵥搢獩汰祡昺敬㭸朠灡ㄺ瀰㭸愠楬湧椭整獭挺湥整㭲㸢਍††††††††††氼扡汥猠祴敬∽潦瑮猭穩㩥⸰㈸敲㭭映湯⵴敷杩瑨㘺〰※業⵮楷瑤㩨〵硰∻䘾潲㩭⼼慬敢㹬਍††††††††††猼汥捥⁴摩∽潣普杩眭牯摫祡⵳瑳牡≴猠祴敬∽汦硥ㄺ※慰摤湩㩧瀸⁸㈱硰※潢摲牥爭摡畩㩳瀶㭸戠牯敤㩲瀱⁸潳楬⁤慶⡲ⴭ潢摲牥㬩戠捡杫潲湵㩤慶⡲ⴭ畳晲捡ⵥ⤲※潣潬㩲慶⡲ⴭ整瑸㬩㸢਍††††††††††††笤瑳牡佴瑰潩獮ൽ †††††††††㰠猯汥捥㹴਍††††††††⼼楤㹶਍††††††††搼癩猠祴敬∽楤灳慬㩹汦硥※慧㩰〱硰※污杩⵮瑩浥㩳散瑮牥∻ാ †††††††††㰠慬敢⁬瑳汹㵥昢湯⵴楳敺〺㠮爲浥※潦瑮眭楥桧㩴〶㬰洠湩眭摩桴㔺瀰㭸㸢潔㰺氯扡汥ാ †††††††††㰠敳敬瑣椠㵤挢湯楦ⵧ潷歲慤獹攭摮•瑳汹㵥昢敬㩸㬱瀠摡楤杮㠺硰ㄠ瀲㭸戠牯敤⵲慲楤獵㘺硰※潢摲牥ㄺ硰猠汯摩瘠牡⴨戭牯敤⥲※慢正牧畯摮瘺牡⴨猭牵慦散㈭㬩挠汯牯瘺牡⴨琭硥⥴∻ാ †††††††††††␠敻摮灏楴湯絳਍††††††††††⼼敳敬瑣ാ †††††††㰠搯癩ാ †††††㰠搯癩ാ †††怠഻ †††挠湯瑳挠湯楦浲摥㴠愠慷瑩猠潨䥷汮湩䑥慩潬⡧ൻ †††††琠瑩敬›圧牯楫杮䐠祡⁳捓敨畤敬Ⱗ਍††††††敭獳条㩥✠敓⁴桴⁥瑳牡⁴湡⁤湥⁤慤獹映牯漠晦捩⁥瑡整摮湡散✮ബ †††††挠獵潴䍭湯整瑮瑈汭›楤污杯瑈汭ബ †††††挠湯楦浲慌敢㩬✠慓敶匠档摥汵❥਍††††⥽഻ †††椠⁦ℨ潣普物敭⥤爠瑥牵㭮਍††††潣獮⁴瑳牡䥴硤㴠眠湩潤孷弧楤污杯慖彬潣普杩眭牯摫祡⵳瑳牡❴⁝籼✠✰഻ †††挠湯瑳攠摮摉⁸‽楷摮睯❛摟慩潬噧污损湯楦ⵧ潷歲慤獹攭摮崧簠⁼㐧㬧਍††††敤敬整眠湩潤孷弧楤污杯慖彬潣普杩眭牯摫祡⵳瑳牡❴㭝਍††††敤敬整眠湩潤孷弧楤污杯慖彬潣普杩眭牯摫祡⵳湥❤㭝਍††††潣獮⁴楤灳慬䱹扡汥㴠怠笤慤乹浡獥⭛瑳牡䥴硤絝鎀␠摻祡慎敭孳攫摮摉嵸恽഻ †††挠湯瑳瘠污㴠怠笤瑳牡䥴硤彽笤湥䥤硤恽഻ †††琠祲笠਍††††††潣獮⁴敲⁳‽睡楡⁴慣汬慂正湥⡤⁻潭敤›甧摰瑡ⵥ潣普杩Ⱗ欠祥›圧剏彋䅄卙Ⱗ瘠污敵›慶⁬⥽഻ †††††猠潨呷慯瑳爨獥洮獥慳敧簠⁼圧牯摫祡⁳捳敨畤敬甠摰瑡摥✮‬敲⹳歯㼠✠畳捣獥❳㨠✠牥潲❲㬩਍††††††晩⠠敲⹳歯 潤畣敭瑮朮瑥汅浥湥䉴䥹⡤挧湯楦ⵧ潷歲慤獹挭牵敲瑮⤧琮硥䍴湯整瑮㴠搠獩汰祡慌敢㭬਍††††⁽慣捴⁨攨 ⁻桳睯潔獡⡴匧牥敶⁲牥潲⹲Ⱗ✠牥潲❲㬩素਍††⥽഻ഊ †氠慯剤捥癯牥䕹慭汩楄灳慬⡹㬩਍††潬摡摁業啮敳獲楌瑳⤨഻ഊ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潬潧瑵戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ愠祳据⠠ 㸽笠਍††††潣獮⁴潣普物敭⁤‽睡楡⁴潣普物䑭慩潬⡧䄧敲礠畯猠牵⁥潹⁵慷瑮琠⁯潬潧瑵✿‬⁻潣普物䱭扡汥›䰧杯畯❴素㬩਍††††晩⠠潣普物敭⥤栠湡汤䱥杯畯⡴慦獬⥥഻ †素㬩਍਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤挧湯楦ⵧ景楦散氭瑡戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ愠祳据⠠ 㸽笠਍††††潣獮⁴⁲‽睡楡⁴桳睯湉楬敮楄污杯笨琠瑩敬›伧晦捩⁥慌楴畴敤Ⱗ映敩摬㩳嬠⁻汰捡桥汯敤㩲✠慌楴畴敤‧嵽‬潣普物䱭扡汥›唧摰瑡❥素㬩਍††††晩⠠爡 敲畴湲഻ †††琠祲笠挠湯瑳爠獥㴠愠慷瑩挠污䉬捡敫摮笨洠摯㩥✠灵慤整挭湯楦❧‬敫㩹✠䙏䥆䕃䱟呁Ⱗ瘠污敵›孲崰素㬩猠潨呷慯瑳爨獥洮獥慳敧‬敲⹳歯㼠✠畳捣獥❳㨠✠牥潲❲㬩椠⁦爨獥漮⥫搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潣普杩氭瑡挭牵敲瑮⤧琮硥䍴湯整瑮㴠爠せ㭝素挠瑡档⠠⥥笠猠潨呷慯瑳✨敓癲牥攠牲牯✮‬攧牲牯⤧※ൽ †素㬩਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤挧湯楦ⵧ景楦散氭湯戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ愠祳据⠠ 㸽笠਍††††潣獮⁴⁲‽睡楡⁴桳睯湉楬敮楄污杯笨琠瑩敬›伧晦捩⁥潌杮瑩摵❥‬楦汥獤›筛瀠慬散潨摬牥›䰧湯楧畴敤‧嵽‬潣普物䱭扡汥›唧摰瑡❥素㬩਍††††晩⠠爡 敲畴湲഻ †††琠祲笠挠湯瑳爠獥㴠愠慷瑩挠污䉬捡敫摮笨洠摯㩥✠灵慤整挭湯楦❧‬敫㩹✠䙏䥆䕃䱟乏Ⱗ瘠污敵›孲崰素㬩猠潨呷慯瑳爨獥洮獥慳敧‬敲⹳歯㼠✠畳捣獥❳㨠✠牥潲❲㬩椠⁦爨獥漮⥫搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潣普杩氭湯挭牵敲瑮⤧琮硥䍴湯整瑮㴠爠せ㭝素挠瑡档⠠⥥笠猠潨呷慯瑳✨敓癲牥攠牲牯✮‬攧牲牯⤧※ൽ †素㬩਍††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤挧湯楦ⵧ慲楤獵戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ愠祳据⠠ 㸽笠਍††††潣獮⁴⁲‽睡楡⁴桳睯湉楬敮楄污杯笨琠瑩敬›䜧潥敦据⁥慒楤獵⠠〱㔭〰‰敭整獲✩‬楦汥獤›筛瀠慬散潨摬牥›䴧瑥牥❳素ⱝ挠湯楦浲慌敢㩬✠灕慤整‧⥽഻ †††椠⁦ℨ⥲爠瑥牵㭮਍††††牴⁹⁻潣獮⁴敲⁳‽睡楡⁴慣汬慂正湥⡤⁻潭敤›甧摰瑡ⵥ潣普杩Ⱗ欠祥›刧䑁啉当䕍䕔卒Ⱗ瘠污敵›孲崰素㬩猠潨呷慯瑳爨獥洮獥慳敧‬敲⹳歯㼠✠畳捣獥❳㨠✠牥潲❲㬩椠⁦爨獥漮⥫搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潣普杩爭摡畩⵳畣牲湥❴⸩整瑸潃瑮湥⁴‽孲崰⬠✠洠瑥牥❳※⁽慣捴⁨攨 ⁻桳睯潔獡⡴匧牥敶⁲牥潲⹲Ⱗ✠牥潲❲㬩素਍††⥽഻ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潣普杩氭瑡ⵥ畣潴晦戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ愠祳据⠠ 㸽笠਍††††潣獮⁴⁲‽睡楡⁴桳睯湉楬敮楄污杯笨琠瑩敬›䰧瑡⁥畃潴晦吠浩❥‬敭獳条㩥✠楓湧椭獮愠⁴牯愠瑦牥琠楨⁳楴敭愠敲洠牡敫⁤慌整✮‬楦汥獤›筛瀠慬散潨摬牥›吧浩❥‬祴数›琧浩❥素ⱝ挠湯楦浲慌敢㩬✠灕慤整‧⥽഻ †††椠⁦ℨ⁲籼℠孲崰 敲畴湲഻ †††挠湯瑳嬠桨‬浭⁝‽孲崰献汰瑩✨✺⸩慭⡰畎扭牥㬩਍††††晩⠠獩慎⡎桨 籼椠乳乡洨⥭ ⁻桳睯潔獡⡴䤧癮污摩琠浩⹥Ⱗ✠牥潲❲㬩爠瑥牵㭮素਍††††潣獮⁴潴慴䵬湩瑵獥㴠栠⁨‪〶⬠洠㭭਍††††牴⁹ൻ †††††挠湯瑳爠獥㴠愠慷瑩挠污䉬捡敫摮笨洠摯㩥✠灵慤整挭湯楦❧‬敫㩹✠䅌䕔䍟呕䙏彆䥍啎䕔❓‬慶畬㩥琠瑯污楍畮整⁳⥽഻ †††††猠潨呷慯瑳爨獥洮獥慳敧‬敲⹳歯㼠✠畳捣獥❳㨠✠牥潲❲㬩਍††††††晩⠠敲⹳歯 潤畣敭瑮朮瑥汅浥湥䉴䥹⡤挧湯楦ⵧ慬整挭瑵景ⵦ畣牲湥❴⸩整瑸潃瑮湥⁴‽潦浲瑡楍畮整䅳味浩⡥潴慴䵬湩瑵獥㬩਍††††⁽慣捴⁨攨 ⁻桳睯潔獡⡴匧牥敶⁲牥潲⹲Ⱗ✠牥潲❲㬩素਍††⥽഻ഊ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潣普杩愭瑵ⵯ潬慣楴湯戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠ 㸽笠਍††††晩⠠渡癡杩瑡牯朮潥潬慣楴湯 ൻ †††††猠潨呷慯瑳✨敇汯捯瑡潩⁮獩渠瑯猠灵潰瑲摥戠⁹潹牵戠潲獷牥✮‬攧牲牯⤧഻ †††††爠瑥牵㭮਍††††ൽ †††猠潨呷慯瑳✨捁畱物湩⁧畣牲湥⁴假⁓潬慣楴湯⸮✮‬椧普❯㬩਍††††慮楶慧潴⹲敧汯捯瑡潩⹮敧䍴牵敲瑮潐楳楴湯ന †††††愠祳据⠠潰⥳㴠‾ൻ †††††††挠湯瑳氠瑡㴠瀠獯挮潯摲⹳慬楴畴敤琮䙯硩摥㜨㬩਍††††††††潣獮⁴潬⁮‽潰⹳潣牯獤氮湯楧畴敤琮䙯硩摥㜨㬩਍††††††††潣獮⁴潣普物敭⁤‽睡楡⁴潣普物䑭慩潬⡧਍††††††††††占瑥漠晦捩⁥潣牯楤慮整⁳潴礠畯⁲畣牲湥⁴假⁓潰楳楴湯尿屮䱮瑡瑩摵㩥␠汻瑡屽䱮湯楧畴敤›笤潬絮Ⱡ਍††††††††††⁻潣普物䱭扡汥›匧瑥䌠潯摲湩瑡獥‧ൽ †††††††⤠഻ †††††††椠⁦ℨ潣普物敭⥤爠瑥牵㭮਍††††††††牴⁹ൻ †††††††††挠湯瑳爠獥慌⁴‽睡楡⁴慣汬慂正湥⡤⁻潭敤›甧摰瑡ⵥ潣普杩Ⱗ欠祥›伧䙆䍉彅䅌❔‬慶畬㩥氠瑡素㬩਍††††††††††潣獮⁴敲䱳湯㴠愠慷瑩挠污䉬捡敫摮笨洠摯㩥✠灵慤整挭湯楦❧‬敫㩹✠䙏䥆䕃䱟乏Ⱗ瘠污敵›潬⁮⥽഻ †††††††††椠⁦爨獥慌⹴歯☠…敲䱳湯漮⥫笠਍††††††††††††桳睯潔獡⡴伧晦捩⁥潣牯楤慮整⁳灵慤整⁤畳捣獥晳汵祬✡‬猧捵散獳⤧഻ †††††††††††搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潣普杩氭瑡挭牵敲瑮⤧琮硥䍴湯整瑮㴠氠瑡഻ †††††††††††搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潣普杩氭湯挭牵敲瑮⤧琮硥䍴湯整瑮㴠氠湯഻ †††††††††素攠獬⁥ൻ †††††††††††猠潨呷慯瑳✨慆汩摥琠⁯灵慤整漠晦捩⁥潬慣楴湯✮‬攧牲牯⤧഻ †††††††††素਍††††††††⁽慣捴⁨攨 ൻ †††††††††猠潨呷慯瑳✨敓癲牥攠牲牯搠牵湩⁧灵慤整✮‬攧牲牯⤧഻ †††††††素਍††††††ⱽ਍††††††攨牲 㸽笠਍††††††††桳睯潔獡⡴䌧畯摬渠瑯愠煣極敲氠捯瑡潩㩮✠⬠攠牲洮獥慳敧‬攧牲牯⤧഻ †††††素ബ †††††笠攠慮汢䡥杩䅨捣牵捡㩹琠畲ⱥ琠浩潥瑵›〱〰ⰰ洠硡浩浵杁㩥〠素਍††††㬩਍††⥽഻ഊ †搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潣普杩琭獥⵴楤瑳湡散戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠ 㸽笠਍††††晩⠠渡癡杩瑡牯朮潥潬慣楴湯 ൻ †††††猠潨呷慯瑳✨敇汯捯瑡潩⁮獩渠瑯猠灵潰瑲摥戠⁹潹牵戠潲獷牥✮‬攧牲牯⤧഻ †††††爠瑥牵㭮਍††††ൽ †††挠湯瑳漠晦捩䱥瑡㴠瀠牡敳汆慯⡴潤畣敭瑮朮瑥汅浥湥䉴䥹⡤挧湯楦ⵧ慬⵴畣牲湥❴⸩整瑸潃瑮湥⥴഻ †††挠湯瑳漠晦捩䱥湯㴠瀠牡敳汆慯⡴潤畣敭瑮朮瑥汅浥湥䉴䥹⡤挧湯楦ⵧ潬⵮畣牲湥❴⸩整瑸潃瑮湥⥴഻ †††挠湯瑳爠摡畩即牴㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨潣普杩爭摡畩⵳畣牲湥❴⸩整瑸潃瑮湥㭴਍††††潣獮⁴慲楤獵㴠瀠牡敳汆慯⡴慲楤獵瑓⥲簠⁼〱㬰਍਍††††晩⠠獩慎⡎景楦散慌⥴簠⁼獩慎⡎景楦散潌⥮ ൻ †††††猠潨呷慯瑳✨晏楦散挠潯摲湩瑡獥愠敲椠癮污摩✮‬攧牲牯⤧഻ †††††爠瑥牵㭮਍††††ൽഊ †††猠潨呷慯瑳✨捁畱物湩⁧假⁓楦⁸潦⁲楤瑳湡散琠獥⹴⸮Ⱗ✠湩潦⤧഻ †††渠癡杩瑡牯朮潥潬慣楴湯朮瑥畃牲湥側獯瑩潩⡮਍††††††瀨獯 㸽笠਍††††††††潣獮⁴畣䱲瑡㴠瀠獯挮潯摲⹳慬楴畴敤഻ †††††††挠湯瑳挠牵潌⁮‽潰⹳潣牯獤氮湯楧畴敤഻ †††††††挠湯瑳删㴠㘠㜳攱㬳਍††††††††潣獮⁴䱤瑡㴠⠠畣䱲瑡ⴠ漠晦捩䱥瑡 ‪慍桴倮⁉ 㠱㬰਍††††††††潣獮⁴䱤湯㴠⠠畣䱲湯ⴠ漠晦捩䱥湯 ‪慍桴倮⁉ 㠱㬰਍††††††††潣獮⁴⁡‽慍桴献湩搨慌⁴ ⤲⨠䴠瑡⹨楳⡮䱤瑡⼠㈠ ‫慍桴挮獯漨晦捩䱥瑡⨠䴠瑡⹨䥐⼠ㄠ〸 ‪慍桴挮獯挨牵慌⁴‪慍桴倮⁉ 㠱⤰⨠䴠瑡⹨楳⡮䱤湯⼠㈠ ‪慍桴献湩搨潌⁮ ⤲഻ †††††††挠湯瑳搠獩⁴‽⁒‪㈨⨠䴠瑡⹨瑡湡⠲慍桴献牱⡴⥡‬慍桴献牱⡴‱‭⥡⤩഻ഊ †††††††挠湯瑳椠䥳獮摩⁥‽楤瑳㰠‽慲楤獵഻ †††††††挠湯瑳猠慴畴䵳杳㴠椠䥳獮摩⁥‿薜䤠华䑉⁅䕇䙏久䕃‧›貝传呕䥓䕄䜠佅䕆䍎❅഻ഊ †††††††猠潨䥷汮湩䑥慩潬⡧ൻ †††††††††琠瑩敬›䐧獩慴据⁥敔瑳删獥汵獴Ⱗ਍††††††††††敭獳条㩥怠畃牲湥⁴潐楳楴湯尺䱮瑡›笤畣䱲瑡琮䙯硩摥㘨紩‬潌㩮␠捻牵潌⹮潴楆數⡤⤶屽屮䍮污畣慬整⁤楄瑳湡散›笤楤瑳琮䙯硩摥ㄨ紩洠瑥牥屳䝮潥敦据⁥慒楤獵›笤慲楤獵⁽敭整獲湜湜敒畳瑬›笤瑳瑡獵獍絧Ⱡ਍††††††††††楦汥獤›嵛ബ †††††††††挠湯楦浲慌敢㩬✠䭏ധ †††††††素㬩਍††††††ⱽ਍††††††攨牲 㸽笠਍††††††††桳睯潔獡⡴䌧畯摬渠瑯愠煣極敲挠牵敲瑮氠捯瑡潩㩮✠⬠攠牲洮獥慳敧‬攧牲牯⤧഻ †††††素ബ †††††笠攠慮汢䡥杩䅨捣牵捡㩹琠畲ⱥ琠浩潥瑵›〱〰ⰰ洠硡浩浵杁㩥〠素਍††††㬩਍††⥽഻ഊ †猠楷捴周扡✨慤桳潢牡❤㬩਍††瑳牡䅴瑵副晥敲桳⤨഻紊਍਍⨯㴠㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽ഽ †但䝒呏倠十坓剏ൄ †㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽⨠യഊ愊祳据映湵瑣潩⁮畲䙮牯潧側獡睳牯䙤潬⡷ ൻ †挠湯瑳甠敳卲整⁰‽睡楡⁴桳睯湉楬敮楄污杯笨琠瑩敬›䘧牯潧⁴慐獳潷摲Ⱗ洠獥慳敧›䔧瑮牥礠畯⁲摡業⁮獵牥慮敭✮‬楦汥獤›筛瀠慬散潨摬牥›唧敳湲浡❥素ⱝ挠湯楦浲慌敢㩬✠敓摮䌠摯❥素㬩਍††晩⠠甡敳卲整⥰爠瑥牵㭮਍††牴⁹ൻ †††挠湯瑳爠獥㴠愠慷瑩爠煥敵瑳慐獳潷摲敒敳䍴摯⡥獵牥瑓灥せ⥝഻ †††猠潨呷慯瑳爨獥洮獥慳敧‬敲⹳歯㼠✠畳捣獥❳㨠✠牥潲❲㬩਍††††晩⠠爡獥漮⥫爠瑥牵㭮਍††⁽慣捴⁨攨 ⁻桳睯潔獡⡴匧牥敶⁲牥潲⹲Ⱗ✠牥潲❲㬩爠瑥牵㭮素਍਍††潣獮⁴潣敤瑓灥㴠愠慷瑩猠潨䥷汮湩䑥慩潬⡧⁻楴汴㩥✠湅整⁲敒敳⁴潃敤Ⱗ洠獥慳敧›㘧搭杩瑩挠摯⁥敳瑮琠⁯潹牵攠慭汩✮‬楦汥獤›筛瀠慬散潨摬牥›㘧搭杩瑩挠摯❥素‬⁻汰捡桥汯敤㩲✠敎⁷慰獳潷摲Ⱗ琠灹㩥✠慰獳潷摲‧嵽‬潣普物䱭扡汥›刧獥瑥‧⥽഻ †椠⁦ℨ潣敤瑓灥 敲畴湲഻ †琠祲笠਍††††潣獮⁴敲⁳‽睡楡⁴潣普物偭獡睳牯剤獥瑥用敳卲整孰崰‬潣敤瑓灥せⱝ挠摯卥整孰崱㬩਍††††桳睯潔獡⡴敲⹳敭獳条ⱥ爠獥漮⁫‿猧捵散獳‧›攧牲牯⤧഻ †素挠瑡档⠠⥥笠猠潨呷慯瑳✨敓癲牥攠牲牯✮‬攧牲牯⤧※ൽ紊਍਍⨯㴠㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽ഽ †佌䥇ൎ †㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽⨠യഊ愊祳据映湵瑣潩⁮档捥偫湥楤杮敄楶散牔湡晳牥敒畱獥獴⤨笠਍††牴⁹ൻ †††挠湯瑳爠獥潰獮⁥‽睡楡⁴慣汬慂正湥⡤⁻潭敤›氧獩⵴畡楤⵴潬獧Ⱗ氠浩瑩›〲素㬩਍††††晩⠠爡獥潰獮⹥歯簠⁼䄡牲祡椮䅳牲祡爨獥潰獮⹥癥湥獴⤩爠瑥牵㭮਍਍††††潣獮⁴数摮湩剧煥敵瑳⁳‽敲灳湯敳攮敶瑮⹳楦瑬牥攨㴠‾਍††††††攨琮灹⁥㴽‽䐧噅䍉彅剔乁䙓剅剟充䕕呓‧籼攠愮瑣潩⁮㴽‽䐧噅䍉彅剔乁䙓剅剟充䕕呓⤧☠…⹥瑳瑡獵㴠㴽✠䕐䑎义❇਍††††㬩਍਍††††晩⠠瀡湥楤杮敒畱獥獴氮湥瑧⥨爠瑥牵㭮਍਍††††潣獮⁴敲ⁱ‽数摮湩剧煥敵瑳孳崰഻ †††挠湯瑳搠慩潬⁧‽潤畣敭瑮挮敲瑡䕥敬敭瑮✨楤❶㬩਍††††楤污杯挮慬獳慎敭㴠✠楤污杯漭敶汲祡挠湯楦浲搭慩潬ⵧ癯牥慬⁹捡楴敶㬧਍††††楤污杯椮湮牥呈䱍㴠怠਍††††††搼癩挠慬獳∽楤污杯戭硯挠湯楦浲搭慩潬ⵧ慣摲•瑳汹㵥洢硡眭摩桴›㐴瀰㭸㸢਍††††††††搼癩猠祴敬∽楤灳慬㩹映敬㭸樠獵楴祦挭湯整瑮›灳捡ⵥ敢睴敥㭮愠楬湧椭整獭›散瑮牥※慭杲湩戭瑯潴㩭ㄠ瀲㭸㸢਍††††††††††格″瑳汹㵥洢牡楧㩮〠※潦瑮猭穩㩥ㄠㄮ敲㭭挠汯牯›慶⡲ⴭ整瑸挭汯牯‬昣昸晡⥣∻鎟₱敄楶散吠慲獮敦⁲敒畱獥㱴栯㸳਍††††††††††戼瑵潴⁮摩∽敤楶散爭煥挭潬敳戭湴•瑳汹㵥戢捡杫潲湵㩤渠湯㭥戠牯敤㩲渠湯㭥挠汯牯›慶⡲ⴭ整瑸洭瑵摥‬㤣愴戳⤸※潦瑮猭穩㩥ㄠ㈮敲㭭挠牵潳㩲瀠楯瑮牥※慰摤湩㩧㈠硰㘠硰∻閜⼼畢瑴湯ാ †††††††㰠搯癩ാ †††††††㰠⁰瑳汹㵥昢湯⵴楳敺›⸰㠸敲㭭挠汯牯›慶⡲ⴭ整瑸挭汯牯‬挣摢攵⤱※楬敮栭楥桧㩴ㄠ㔮※慭杲湩戭瑯潴㩭ㄠ瀶㭸㸢਍††††††††††猼牴湯㹧笤獥慣数瑈汭爨煥献慴晦慎敭簠⁼敲⹱慮敭簠⁼䄧猠慴晦洠浥敢❲紩⼼瑳潲杮‾慨⁳敲畱獥整⁤潴戠湩⁤桴楥⁲瑡整摮湡散愠捣畯瑮琠⁯⁡敮⁷桰湯⹥਍††††††††††戼㹲猼慭汬猠祴敬∽潣潬㩲瘠牡⴨琭硥⵴畭整Ɽ⌠㐹㍡㡢㬩㸢敒畱獥整⁤瑡›笤獥慣数瑈汭爨煥琮浩⁥籼✠敒散瑮祬⤧㱽猯慭汬ാ †††††††㰠瀯ാ †††††††㰠楤⁶瑳汹㵥搢獩汰祡›汦硥※慧㩰ㄠ瀰㭸樠獵楴祦挭湯整瑮›汦硥攭摮∻ാ †††††††††㰠畢瑴湯椠㵤搢癥捩ⵥ敲⵱敲敪瑣戭湴•汣獡㵳愢浤湩戭湴猠捥湯慤祲猠慭汬搠湡敧≲琠灹㵥戢瑵潴≮貝删橥捥㱴戯瑵潴㹮਍††††††††††戼瑵潴⁮摩∽敤楶散爭煥愭灰潲敶戭湴•汣獡㵳愢浤湩戭湴猠慭汬•祴数∽畢瑴湯㸢鳢₅灁牰癯⁥牔湡晳牥⼼畢瑴湯ാ †††††††㰠搯癩ാ †††††㰠搯癩ാ †††怠഻ഊ †††搠捯浵湥⹴潢祤愮灰湥䍤楨摬搨慩潬⥧഻ഊ †††搠捯浵湥⹴敧䕴敬敭瑮祂摉✨敤楶散爭煥挭潬敳戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ⠠ 㸽搠慩潬⹧敲潭敶⤨㬩਍††††਍††††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤搧癥捩ⵥ敲⵱敲敪瑣戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ愠祳据⠠ 㸽笠਍††††††桳睯潔獡⡴吧慲獮敦⁲敲畱獥⁴敲敪瑣摥✮‬椧普❯㬩਍††††††楤污杯爮浥癯⡥㬩਍††††⥽഻ഊ †††搠捯浵湥⹴敧䕴敬敭瑮祂摉✨敤楶散爭煥愭灰潲敶戭湴⤧愮摤癅湥䱴獩整敮⡲挧楬正Ⱗ愠祳据⠠ 㸽笠਍††††††牴⁹ൻ †††††††挠湯瑳爠獥㴠愠慷瑩栠湡汤剥獥瑥瑓晡䱦捯⡫敲⹱瑳晡书浡⁥籼爠煥渮浡⥥഻ †††††††猠潨呷慯瑳✨敄楶散琠慲獮敦⁲灡牰癯摥愠摮氠捯⁫敲敳ⅴⰧ✠畳捣獥❳㬩਍††††††⁽慣捴⁨攨 ൻ †††††††猠潨呷慯瑳✨潃汵⁤潮⁴牰捯獥⁳灡牰癯污✮‬攧牲牯⤧഻ †††††素映湩污祬笠਍††††††††楤污杯爮浥癯⡥㬩਍††††††ൽ †††素㬩਍਍††⁽慣捴⁨攨牲 ൻ †††挠湯潳敬眮牡⡮䌧畯摬渠瑯挠敨正瀠湥楤杮搠癥捩⁥牴湡晳牥爠煥敵瑳㩳Ⱗ攠牲㬩਍††ൽ紊਍਍畦据楴湯猠瑥潌楧䱮慯楤杮椨䱳慯楤杮 ൻ †挠湯瑳氠杯湩瑂⁮‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧浤湩氭杯湩戭湴⤧഻ †挠湯瑳映牯⁭‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧浤湩氭杯湩昭牯❭㬩਍††潣獮⁴敭獳条䕥⁬‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧浤湩洭獥慳敧⤧഻ †椠⁦氨杯湩瑂⥮笠氠杯湩瑂⹮楤慳汢摥㴠椠䱳慯楤杮※潬楧䉮湴琮硥䍴湯整瑮㴠椠䱳慯楤杮㼠✠迢₳潌杧湩⁧湩⸮✮㨠✠鿰邔䰠杯椠❮※ൽ †椠⁦昨牯⥭映牯⹭畱牥卹汥捥潴䅲汬✨湩異❴⸩潦䕲捡⡨⁩㸽椠搮獩扡敬⁤‽獩潌摡湩⥧഻ †椠⁦洨獥慳敧汅☠…獩潌摡湩⥧笠洠獥慳敧汅琮硥䍴湯整瑮㴠✠桃捥楫杮愠浤湩挠敲敤瑮慩獬⸮✮※敭獳条䕥⹬汣獡乳浡⁥‽愧浤湩洭獥慳敧㬧素਍ൽഊ愊祳据映湵瑣潩⁮慨摮敬摁業䱮杯湩攨敶瑮 ൻ †椠⁦攨敶瑮 ൻ †††攠敶瑮瀮敲敶瑮敄慦汵⡴㬩਍††††癥湥⹴瑳灯牐灯条瑡潩⡮㬩਍††ൽ †挠湯瑳甠敳湲浡⁥‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧浤湩甭敳湲浡❥⸩慶畬⹥牴浩⤨഻ †挠湯瑳瀠獡睳牯⁤‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧浤湩瀭獡睳牯❤⸩慶畬㭥਍††潣獮⁴敭獳条䕥⁬‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧浤湩洭獥慳敧⤧഻ഊ †椠⁦ℨ獵牥慮敭簠⁼瀡獡睳牯⥤笠洠獥慳敧汅琮硥䍴湯整瑮㴠✠獕牥慮敭愠摮瀠獡睳牯⁤牡⁥敲畱物摥✮※敭獳条䕥⹬汣獡乳浡⁥‽愧浤湩洭獥慳敧攠牲牯㬧爠瑥牵㭮素਍਍††敳䱴杯湩潌摡湩⡧牴敵㬩਍††牴⁹ൻ †††挠湯瑳爠獥潰獮⁥‽睡楡⁴畡桴湥楴慣整摁業⡮獵牥慮敭‬慰獳潷摲㬩਍††††敳䱴杯湩潌摡湩⡧慦獬⥥഻ †††椠⁦爨獥潰獮⹥歯 ൻ †††††椠䅳浤湩潌杧摥湉㴠琠畲㭥਍††††††畣牲湥䅴浤湩獕牥慮敭㴠甠敳湲浡㭥਍††††††敳獳潩卮潴慲敧献瑥瑉浥✨摡業彮敳獳潩❮‬半乏献牴湩楧祦笨ഠ †††††††甠敳湲浡ⱥഠ †††††††愠浤湩潔敫㩮爠獥潰獮⹥摡業呮歯湥簠⁼✧‬਍††††††††獣晲潔敫㩮爠獥潰獮⹥獣晲潔敫⁮籼✠Ⱗഠ †††††††琠浩獥慴灭›慄整渮睯⤨ഠ †††††素⤩഻ †††††椠⁦爨獥潰獮⹥獣晲潔敫⥮猠獥楳湯瑓牯条⹥敳䥴整⡭愧浤湩损牳彦潴敫❮‬敲灳湯敳挮牳呦歯湥㬩਍††††††晩⠠敲灳湯敳愮浤湩潔敫⥮猠獥楳湯瑓牯条⹥敳䥴整⡭愧浤湩瑟歯湥Ⱗ爠獥潰獮⹥摡業呮歯湥㬩਍††††††晩⠠敲灳湯敳椮即灵牥獵牥 敳獳潩卮潴慲敧献瑥瑉浥✨獩獟灵牥獵牥Ⱗ✠牴敵⤧഻ †††††攠獬⁥敳獳潩卮潴慲敧爮浥癯䥥整⡭椧彳畳数畲敳❲㬩਍††††††敳獳潩卮潴慲敧献瑥瑉浥✨摡業彮獵牥慮敭Ⱗ甠敳湲浡⥥഻ †††††ഠ †††††搠捯浵湥⹴敧䕴敬敭瑮祂摉✨摡業⵮潬楧⵮潦浲⤧献祴敬搮獩汰祡㴠✠潮敮㬧਍††††††潤畣敭瑮朮瑥汅浥湥䉴䥹⡤昧牯潧⵴慰獳潷摲氭湩❫⸩瑳汹⹥楤灳慬⁹‽渧湯❥഻ †††††挠湯瑳栠牥⁯‽潤畣敭瑮焮敵祲敓敬瑣牯✨愮浤湩栭牥❯㬩਍††††††晩⠠敨潲 敨潲献祴敬搮獩汰祡㴠✠潮敮㬧਍††††††敲摮牥摁業偮湡汥⤨഻ †††††挠敨正敐摮湩䑧癥捩呥慲獮敦割煥敵瑳⡳㬩਍††††††敲敳䥴慮瑣癩瑩呹浩牥⤨഻ †††††ഠ †††††搠捯浵湥⹴摡䕤敶瑮楌瑳湥牥✨汣捩❫‬敲敳䥴慮瑣癩瑩呹浩牥㬩਍††††††潤畣敭瑮愮摤癅湥䱴獩整敮⡲欧祥潤湷Ⱗ爠獥瑥湉捡楴楶祴楔敭⥲഻ †††††搠捯浵湥⹴摡䕤敶瑮楌瑳湥牥✨潴捵獨慴瑲Ⱗ爠獥瑥湉捡楴楶祴楔敭⥲഻ †††素攠獬⁥ൻ †††††洠獥慳敧汅琮硥䍴湯整瑮㴠爠獥潰獮⹥敭獳条⁥籼✠湉慶楬⁤摡業⁮牣摥湥楴污⹳㬧਍††††††敭獳条䕥⹬汣獡乳浡⁥‽愧浤湩洭獥慳敧攠牲牯㬧਍††††ൽ †素挠瑡档⠠牥潲⥲笠਍††††敳䱴杯湩潌摡湩⡧慦獬⥥഻ †††洠獥慳敧汅琮硥䍴湯整瑮㴠✠潃汵⁤潮⁴敲捡⁨桴⁥敳癲牥✮഻ †††洠獥慳敧汅挮慬獳慎敭㴠✠摡業⵮敭獳条⁥牥潲❲഻ †素਍ൽഊ⼊‪㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽਍†䤠䥎ൔ †㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽㴽⨠യഊ昊湵瑣潩⁮湩瑩摁業䅮灰⤨笠਍††湩瑩桔浥⡥㬩਍††湩瑩敒牦獥䉨瑵潴⡮㬩਍††湩瑩汁偬獡睳牯呤杯汧獥⤨഻ †ഠ †挠湯瑳猠癡摥敓獳潩⁮‽敳獳潩卮潴慲敧朮瑥瑉浥✨摡業彮敳獳潩❮㬩਍††晩⠠慳敶卤獥楳湯 ൻ †††琠祲笠਍††††††潣獮⁴敳獳潩⁮‽半乏瀮牡敳猨癡摥敓獳潩⥮഻ †††††椠⁦猨獥楳湯甮敳湲浡⁥☦猠獥楳湯琮浩獥慴灭☠…䐨瑡⹥潮⡷ ‭敳獳潩⹮楴敭瑳浡⁰‼㘳〰〰⤰ ൻ †††††††椠䅳浤湩潌杧摥湉㴠琠畲㭥਍††††††††畣牲湥䅴浤湩獕牥慮敭㴠猠獥楳湯甮敳湲浡㭥਍††††††††晩⠠敳獳潩⹮摡業呮歯湥 敳獳潩卮潴慲敧献瑥瑉浥✨摡業彮潴敫❮‬敳獳潩⹮摡業呮歯湥㬩਍††††††††晩⠠敳獳潩⹮獣晲潔敫⥮猠獥楳湯瑓牯条⹥敳䥴整⡭愧浤湩损牳彦潴敫❮‬敳獳潩⹮獣晲潔敫⥮഻ †††††††猠獥楳湯瑓牯条⹥敳䥴整⡭愧浤湩畟敳湲浡❥‬敳獳潩⹮獵牥慮敭㬩਍††††††††潣獮⁴潦浲㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨摡業⵮潬楧⵮潦浲⤧഻ †††††††椠⁦昨牯⥭映牯⹭瑳汹⹥楤灳慬⁹‽渧湯❥഻ †††††††挠湯瑳映牯潧⁴‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤昧牯潧⵴慰獳潷摲氭湩❫㬩਍††††††††晩⠠潦杲瑯 潦杲瑯献祴敬搮獩汰祡㴠✠潮敮㬧਍††††††††潣獮⁴敨潲㴠搠捯浵湥⹴畱牥卹汥捥潴⡲⸧摡業⵮敨潲⤧഻ †††††††椠⁦栨牥⥯栠牥⹯瑳汹⹥楤灳慬⁹‽渧湯❥഻ †††††††爠湥敤䅲浤湩慐敮⡬㬩਍††††††††敲敳䥴慮瑣癩瑩呹浩牥⤨഻ †††††††搠捯浵湥⹴摡䕤敶瑮楌瑳湥牥✨汣捩❫‬敲敳䥴慮瑣癩瑩呹浩牥㬩਍††††††††潤畣敭瑮愮摤癅湥䱴獩整敮⡲欧祥潤湷Ⱗ爠獥瑥湉捡楴楶祴楔敭⥲഻ †††††††搠捯浵湥⹴摡䕤敶瑮楌瑳湥牥✨潴捵獨慴瑲Ⱗ爠獥瑥湉捡楴楶祴楔敭⥲഻ †††††素攠獬⁥ൻ †††††††栠湡汤䱥杯畯⡴慦獬⥥഻ †††††素਍††††⁽慣捴⁨攨 ⁻慨摮敬潌潧瑵昨污敳㬩素਍††ൽ †ഠ †挠湯瑳映牯⁭‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤愧浤湩氭杯湩昭牯❭㬩਍††晩⠠潦浲 ൻ †††映牯⹭摡䕤敶瑮楌瑳湥牥✨畳浢瑩Ⱗ⠠⥥㴠‾ൻ †††††攠瀮敲敶瑮敄慦汵⡴㬩਍††††††慨摮敬摁業䱮杯湩攨㬩਍††††⥽഻ †素਍††潣獮⁴潬楧䉮湴㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉✨摡業⵮潬楧⵮瑢❮㬩਍††晩⠠潬楧䉮湴 ൻ †††氠杯湩瑂⹮摡䕤敶瑮楌瑳湥牥✨汣捩❫‬攨 㸽笠਍††††††⹥牰癥湥䑴晥畡瑬⤨഻ †††††栠湡汤䅥浤湩潌楧⡮⥥഻ †††素㬩਍††ൽ †挠湯瑳映牯潧䱴湩⁫‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤昧牯潧⵴慰獳潷摲氭湩❫㬩਍††晩⠠潦杲瑯楌歮 ൻ †††映牯潧䱴湩⹫摡䕤敶瑮楌瑳湥牥✨汣捩❫‬攨 㸽笠攠瀮敲敶瑮敄慦汵⡴㬩爠湵潆杲瑯慐獳潷摲汆睯⤨※⥽഻ †素਍਍††敳呴浩潥瑵⠨ 㸽笠਍††††牴⁹ൻ †††††挠湯瑳漠敶汲祡⁳‽潤畣敭瑮焮敵祲敓敬瑣牯汁⡬⸧楤污杯漭敶汲祡‬献獥楳湯琭浩潥瑵漭敶汲祡‬昣煡洭摯污愮瑣癩❥㬩਍††††††晩⠠漡敶汲祡⁳籼漠敶汲祡⹳敬杮桴㴠㴽〠 潤畣敭瑮戮摯⹹瑳汹⹥癯牥汦睯㴠✠㬧਍††††⁽慣捴⁨攨 絻਍††ⱽㄠ〲㬩਍ൽഊ椊⁦搨捯浵湥⹴敲摡卹慴整㴠㴽✠潬摡湩❧ ൻ †搠捯浵湥⹴摡䕤敶瑮楌瑳湥牥✨佄䍍湯整瑮潌摡摥Ⱗ椠楮䅴浤湩灁⥰഻紊攠獬⁥ൻ †椠楮䅴浤湩灁⡰㬩਍ൽ
