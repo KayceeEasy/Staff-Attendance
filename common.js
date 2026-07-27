@@ -314,6 +314,17 @@ function showInlineDialog({ title, message, fields = [], confirmLabel = 'Confirm
         overlay.className = 'dialog-overlay';
         const fieldsHtml = fields.map((field, idx) => {
             const inputId = `dialog-field-${idx}`;
+            if (field.type === 'select') {
+                const optionsHtml = (field.options || []).map(opt => `
+                    <option value="${escapeHtml(opt.value)}" ${field.value === opt.value ? 'selected' : ''}>${escapeHtml(opt.label)}</option>
+                `).join('');
+                return `
+                    <select id="${inputId}" class="dialog-select" style="width:100%; padding:8px 12px; margin-bottom:12px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.88rem;">
+                        ${optionsHtml}
+                    </select>
+                `;
+            }
+
             const input = `
                 <input
                     id="${inputId}"
