@@ -243,6 +243,27 @@ async function callBackend(payload, timeoutMs = 20000) {
                 // N/A for now since we use Supabase Dashboard for user management
                 return { ok: true, users: [] };
             }
+            case 'get-hybrid-schedule': {
+                // Fetch directly from the legacy GAS endpoint since the Hybrid Scheduler still uses Google Sheets
+                const gasUrl = 'https://script.google.com/macros/s/AKfycbwKXksPAcj-dar7BkC_lAoGsVM-aF0BT81lkgToafv0natBxpb1S8iI0KD8q0NJemwksw/exec';
+                const res = await fetch(gasUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload),
+                    redirect: 'follow'
+                });
+                const text = await res.text();
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    const jsonpMatch = text.match(/^[a-zA-Z0-9_$]+\((.*)\);?$/s);
+                    if (jsonpMatch) {
+                        const inner = JSON.parse(jsonpMatch[1]);
+                        return inner.result || inner;
+                    }
+                    return { ok: false, message: 'Invalid response from legacy GAS' };
+                }
+            }
             default:
                 // For unmapped endpoints, return false so the UI knows it's not implemented yet
                 return { ok: false, allowed: false, message: `Endpoint '${mode}' is not implemented in Supabase yet.` };
