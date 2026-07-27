@@ -17,7 +17,7 @@ const STORAGE_KEYS = {
 // Supabase Initialization
 const supabaseUrl = 'https://akhditjeiwjuzvubnacw.supabase.co';
 const supabaseKey = 'sb_publishable_9BkVRtmi-6UG15Va5xNHbw_R7J_hKhi';
-const supabase = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
+const supabaseClient = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
 
 
 /* ---------- HTML Escaping ---------- */
@@ -130,7 +130,7 @@ async function callBackendDeduplicated(payload, timeoutMs = 20000) {
    Routes requests to Supabase (PostgreSQL + Edge RPCs). */
 
 async function callBackend(payload, timeoutMs = 20000) {
-    if (!supabase) return { ok: false, message: 'Supabase client not loaded.' };
+    if (!supabaseClient) return { ok: false, message: 'Supabase client not loaded.' };
     const adminToken = payload.adminToken || safeSession.getItem('admin_token') || '';
     const mode = payload.mode;
     
@@ -138,14 +138,14 @@ async function callBackend(payload, timeoutMs = 20000) {
         switch (mode) {
             case 'admin-login': {
                 // True Supabase Auth Login
-                const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+                const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
                     email: payload.email,
                     password: payload.password
                 });
                 if (authError) throw authError;
                 
                 // Fetch their role from admin_roles
-                const { data: roleData, error: roleError } = await supabase.from('admin_roles').select('role').eq('id', authData.user.id).single();
+                const { data: roleData, error: roleError } = await supabaseClient.from('admin_roles').select('role').eq('id', authData.user.id).single();
                 if (roleError) throw roleError;
 
                 return {
@@ -157,11 +157,11 @@ async function callBackend(payload, timeoutMs = 20000) {
                 };
             }
             case 'admin-logout': {
-                await supabase.auth.signOut();
+                await supabaseClient.auth.signOut();
                 return { ok: true, message: 'Logged out.' };
             }
             case 'attendance': {
-                const { data, error } = await supabase.rpc('process_attendance', {
+                const { data, error } = await supabaseClient.rpc('process_attendance', {
                     p_name: payload.name,
                     p_action: payload.action,
                     p_lat: payload.lat,
@@ -174,28 +174,28 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return normalizeBackendResponse(data);
             }
             case 'list-staff': {
-                const { data, error } = await supabase.from('staff').select('*').order('name');
+                const { data, error } = await supabaseClient.from('staff').select('*').order('name');
                 if (error) throw error;
                 return { ok: true, allowed: true, staff: data };
             }
             case 'list-logs': {
-                const { data, error } = await supabase.from('attendance_logs').select('*').order('id', { ascending: false }).limit(200);
+                const { data, error } = await supabaseClient.from('attendance_logs').select('*').order('id', { ascending: false }).limit(200);
                 if (error) throw error;
                 return { ok: true, allowed: true, logs: data };
             }
             case 'list-distance-alerts': {
-                const { data, error } = await supabase.from('distance_alerts').select('*').order('id', { ascending: false }).limit(200);
+                const { data, error } = await supabaseClient.from('distance_alerts').select('*').order('id', { ascending: false }).limit(200);
                 if (error) throw error;
                 return { ok: true, allowed: true, logs: data }; // admin.js expects 'logs' property for alerts too sometimes, or 'alerts'
             }
             case 'list-audit-logs': {
-                const { data, error } = await supabase.from('audit_logs').select('*').order('id', { ascending: false }).limit(200);
+                const { data, error } = await supabaseClient.from('audit_logs').select('*').order('id', { ascending: false }).limit(200);
                 if (error) throw error;
                 return { ok: true, allowed: true, logs: data };
             }
             case 'log-analytics': {
                 // Not strictly necessary for core function, but we can log it
-                const { error } = await supabase.from('audit_logs').insert([{
+                const { error } = await supabaseClient.from('audit_logs').insert([{
                     date: new Date().toLocaleDateString(),
                     time: new Date().toLocaleTimeString(),
                     category: 'Analytics',
@@ -207,35 +207,35 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, message: 'Logged' };
             }
             case 'add-staff': {
-                const { error } = await supabase.from('staff').insert([{ name: payload.name }]);
+                const { error } = await supabaseClient.from('staff').insert([{ name: payload.name }]);
                 if (error) throw error;
                 return { ok: true, message: 'Staff added successfully.' };
             }
             case 'remove-staff': {
-                const { error } = await supabase.from('staff').delete().eq('name', payload.name);
+                const { error } = await supabaseClient.from('staff').delete().eq('name', payload.name);
                 if (error) throw error;
                 return { ok: true, message: 'Staff removed successfully.' };
             }
             case 'reset-staff-lock': {
-                const { error } = await supabase.from('staff').update({ device_id: null }).eq('name', payload.name);
+                const { error } = await supabaseClient.from('staff').update({ device_id: null }).eq('name', payload.name);
                 if (error) throw error;
                 return { ok: true, message: 'Device lock reset.' };
             }
             case 'reset-all-locks': {
                 // Supabase doesn't easily allow update all without a filter if RLS is tricky, but we can do neq
-                const { error } = await supabase.from('staff').update({ device_id: null }).neq('name', 'invalid_dummy_name_123');
+                const { error } = await supabaseClient.from('staff').update({ device_id: null }).neq('name', 'invalid_dummy_name_123');
                 if (error) throw error;
                 return { ok: true, message: 'All device locks reset.' };
             }
             case 'get-config': {
-                const { data, error } = await supabase.from('app_config').select('*');
+                const { data, error } = await supabaseClient.from('app_config').select('*');
                 if (error) throw error;
                 const configObj = {};
                 data.forEach(row => configObj[row.key] = row.value);
                 return { ok: true, config: configObj };
             }
             case 'update-config': {
-                const { error } = await supabase.from('app_config').update({ value: payload.value }).eq('key', payload.key);
+                const { error } = await supabaseClient.from('app_config').update({ value: payload.value }).eq('key', payload.key);
                 if (error) throw error;
                 return { ok: true, message: 'Configuration updated.' };
             }
