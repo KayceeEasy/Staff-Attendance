@@ -1667,7 +1667,10 @@ function renderAdminPanel() {
     const isSuper = sessionStorage.getItem('is_superuser') === 'true';
     const roleTier = sessionStorage.getItem('admin_role_tier') || 'admin';
     const badgeMap = { developer: '👑', admin: '🏢', sub_admin: '🛡️', team_lead: '👥' };
-    const devBadgeHtml = `<span class="admin-badge" title="${roleTier}" style="margin-left: auto; align-self: center; cursor:help;">${badgeMap[roleTier] || '🔐'}</span>`;
+    const badgeContainer = document.getElementById('topbar-badge-container');
+    if (badgeContainer) {
+        badgeContainer.innerHTML = `<span class="admin-badge" title="${roleTier}" style="font-size:1.2rem; cursor:help;">${badgeMap[roleTier] || '🔐'}</span>`;
+    }
 
     panelHost.innerHTML = `
         <div class="admin-tabs">
@@ -1677,7 +1680,6 @@ function renderAdminPanel() {
             <button class="tab-btn" data-tab="analytics" title="Analytics"><span class="tab-icon">📈</span><span class="tab-label">Analytics</span></button>
             <button class="tab-btn" data-tab="config" title="Config"><span class="tab-icon">⚙️</span><span class="tab-label">Config</span></button>
             <button class="tab-btn" data-tab="account" title="Account"><span class="tab-icon">🔐</span><span class="tab-label">Account</span></button>
-            ${devBadgeHtml}
         </div>
         
         <div id="tab-dashboard" class="tab-content active">
