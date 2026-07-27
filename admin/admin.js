@@ -471,6 +471,7 @@ async function loadAdminUsersList() {
                     </div>
                     ${canManage ? `
                         <div class="staff-actions" style="display:flex; gap:6px;">
+                            <button class="admin-btn secondary small" type="button" data-edit-admin-role="${escapeHtml(u.username)}" data-current-role="${escapeHtml(u.role)}" title="Edit Role">✏️ Edit</button>
                             <button class="admin-btn secondary small" type="button" data-reset-admin-pw="${escapeHtml(u.username)}" title="Reset Password">🔑 Reset</button>
                             <button class="admin-btn secondary small danger" type="button" data-remove-admin="${escapeHtml(u.username)}" title="Remove Admin">🗑 Remove</button>
                         </div>
@@ -491,6 +492,33 @@ async function loadAdminUsersList() {
                     showToast(res.message || 'Admin user removed.', res.ok ? 'success' : 'error');
                     if (res.ok) loadAdminUsersList();
                 }
+            });
+        });
+
+        // Bind edit role buttons
+        container.querySelectorAll('[data-edit-admin-role]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const target = btn.getAttribute('data-edit-admin-role');
+                const currentRole = btn.getAttribute('data-current-role');
+                
+                const fields = [
+                    { placeholder: 'New Role Tier', type: 'select', value: currentRole, options: [
+                        { value: 'admin', label: 'Super Admin' },
+                        { value: 'sub_admin', label: 'Sub-Admin' },
+                        { value: 'team_lead', label: 'Team Lead' }
+                    ]}
+                ];
+                
+                if (isSuper) {
+                    fields[0].options.unshift({ value: 'developer', label: 'Developer (Superuser)' });
+                }
+
+                const result = await showInlineDialog({ title: `Edit Role: ${target}`, fields, confirmLabel: 'Update' });
+                if (!result) return;
+                
+                const res = await callBackend({ mode: 'update-admin-role', targetUsername: target, newRole: result[0] });
+                showToast(res.message, res.ok ? 'success' : 'error');
+                if (res.ok) loadAdminUsersList();
             });
         });
 
@@ -524,51 +552,38 @@ async function loadAdminUsersList() {
 
 async function handleAddAdminUser() {
     const isSuper = sessionStorage.getItem('is_superuser') === 'true';
+    const currentTier = sessionStorage.getItem('admin_role_tier') || 'admin';
     
-    // Build stealthed role options — Superuser can create other Superusers
-    let roleOptionsHtml = '';
-    if (isSuper) {
-        roleOptionsHtml = `
-            <option value="developer">👑 Superuser</option>
-            <option value="admin" selected>🏢 Super Admin</option>
-            <option value="sub_admin">🛡️ Sub-Admin</option>
-            <option value="team_lead">👥 Team Lead</option>
-        `;
-    } else {
-        // Regular admin can only create lower tiers
-        roleOptionsHtml = `
-            <option value="sub_admin" selected>🛡️ Sub-Admin</option>
-            <option value="team_lead">👥 Team Lead</option>
-        `;
+    const options = [];
+    if (currentTier === 'developer' || currentTier === 'admin' || currentTier === 'sub_admin' || currentTier === 'team_lead') {
+        options.push({ value: 'team_lead', label: 'Team Lead' });
+    }
+    if (currentTier === 'developer' || currentTier === 'admin' || currentTier === 'sub_admin') {
+        options.unshift({ value: 'sub_admin', label: 'Sub-Admin' });
+    }
+    if (currentTier === 'developer' || currentTier === 'admin') {
+        options.unshift({ value: 'admin', label: 'Super Admin' });
+    }
+    if (currentTier === 'developer') {
+        options.unshift({ value: 'developer', label: 'Developer (Superuser)' });
     }
 
-    const customHtml = `
-        <div style="display:flex; flex-direction:column; gap:10px; text-align:left; margin-top:8px;">
-            <label style="font-size:0.82rem; font-weight:600; color:var(--text);">Permission Tier</label>
-            <select id="add-admin-role-select" style="padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.88rem;">
-                ${roleOptionsHtml}
-            </select>
-        </div>
-    `;
+    const fields = [
+        { placeholder: 'New Username' },
+        { placeholder: 'Temporary Password', type: 'password' },
+        { placeholder: 'Role Tier', type: 'select', options: options }
+    ];
 
     const result = await showInlineDialog({
         title: 'Add Admin User',
-        message: 'Create a new admin account for this tenant.',
-        fields: [
-            { placeholder: 'Username (e.g. john_hr)' },
-            { placeholder: 'Password', type: 'password' }
-        ],
-        customContentHtml: customHtml,
-        confirmLabel: 'Create Admin'
+        fields,
+        confirmLabel: 'Create'
     });
 
     if (!result || !result[0] || !result[1]) return;
     const newUsername = result[0].trim();
     const newPass = result[1];
-
-    // Read the role from the captured custom select value (saved by showInlineDialog before overlay removal)
-    let selectedRole = window['_dialogVal_add-admin-role-select'] || (isSuper ? 'admin' : 'sub_admin');
-    delete window['_dialogVal_add-admin-role-select'];
+    const selectedRole = result[2] || (isSuper ? 'admin' : 'sub_admin');
 
     const passHash = await sha256Hex(newPass);
     const res = await callBackend({
@@ -1562,22 +1577,25 @@ async function loadAnalytics(filterType = null, customFrom = null, customTo = nu
     
     const host = document.getElementById('analytics-content');
     
+    let hasLoadedFromCache = false;
     // Check in-memory or localStorage cache for 0ms instant rendering
     if (analyticsData && filterType === 'all' && !customFrom) {
         renderAnalytics();
-    } else {
+        hasLoadedFromCache = true;
+    } else if (filterType === 'all' && !customFrom) {
         try {
             const stored = localStorage.getItem('admin_cache_analytics');
-            if (stored && filterType === 'all' && !customFrom) {
+            if (stored) {
                 const parsed = JSON.parse(stored);
                 analyticsData = parsed.analyticsData;
                 deviceEventsAll = parsed.deviceEventsAll || [];
                 renderAnalytics();
+                hasLoadedFromCache = true;
             }
         } catch (e) {}
     }
 
-    if (host && !isSilent) {
+    if (host && !isSilent && !hasLoadedFromCache) {
         host.innerHTML = `
             <div class="skeleton-box skeleton-card" style="margin-bottom:12px;"></div>
             <div class="skeleton-box skeleton-row"></div>
@@ -1631,7 +1649,9 @@ async function loadAnalytics(filterType = null, customFrom = null, customTo = nu
         deviceEventsPage = 1;
 
         renderAnalytics();
-        try { localStorage.setItem('admin_cache_analytics', JSON.stringify({ analyticsData, deviceEventsAll })); } catch (e) {}
+        if (filterType === 'all' && !customFrom) {
+            try { localStorage.setItem('admin_cache_analytics', JSON.stringify({ analyticsData, deviceEventsAll })); } catch (e) {}
+        }
     } catch (error) {
         if (host && !analyticsData) host.innerHTML = '<div class="staff-list-state">Failed to load analytics.</div>';
         else if (host) showToast('Could not refresh analytics data (offline).', 'error');
@@ -1645,7 +1665,9 @@ async function loadAnalytics(filterType = null, customFrom = null, customTo = nu
 function renderAdminPanel() {
     const panelHost = document.getElementById('admin-panel-host');
     const isSuper = sessionStorage.getItem('is_superuser') === 'true';
-    const devBadgeHtml = isSuper ? `<span class="developer-badge" title="Elevated Developer Superuser Session" style="margin-left: auto; align-self: center;">👑 Developer Mode</span>` : '';
+    const roleTier = sessionStorage.getItem('admin_role_tier') || 'admin';
+    const badgeMap = { developer: '👑', admin: '🏢', sub_admin: '🛡️', team_lead: '👥' };
+    const devBadgeHtml = `<span class="admin-badge" title="${roleTier}" style="margin-left: auto; align-self: center; cursor:help;">${badgeMap[roleTier] || '🔐'}</span>`;
 
     panelHost.innerHTML = `
         <div class="admin-tabs">
@@ -2203,8 +2225,14 @@ async function handleAdminLogin(event) {
             }));
             if (response.csrfToken) sessionStorage.setItem('admin_csrf_token', response.csrfToken);
             if (response.adminToken) sessionStorage.setItem('admin_token', response.adminToken);
-            if (response.isSuperuser) sessionStorage.setItem('is_superuser', 'true');
-            else sessionStorage.removeItem('is_superuser');
+            
+            if (response.role === 'developer') {
+                sessionStorage.setItem('is_superuser', 'true');
+                sessionStorage.setItem('admin_role_tier', 'developer');
+            } else {
+                sessionStorage.setItem('is_superuser', 'false');
+                sessionStorage.setItem('admin_role_tier', response.role || 'admin');
+            }
             sessionStorage.setItem('admin_username', username);
             
             document.getElementById('admin-login-form').style.display = 'none';
