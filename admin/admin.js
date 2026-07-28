@@ -467,18 +467,30 @@ async function loadAdminUsersList() {
             const isSelf = rawUser === currentAdminUsername || displayName === currentAdminUsername;
             const isDevAccount = u.role === 'developer';
             const canManage = !isSelf && (isSuper || !isDevAccount);
+            const roleColors = {
+                developer: 'var(--primary)',
+                admin: '#6366f1',
+                sub_admin: '#f59e0b',
+                team_lead: '#10b981'
+            };
+            const roleColor = roleColors[u.role] || 'var(--text-muted)';
 
             return `
-                <div class="staff-card" style="margin-bottom:8px; padding:12px 14px;">
-                    <div class="staff-info" style="flex:1;">
-                        <strong>${escapeHtml(displayName)}</strong>
-                        <span class="staff-device" style="margin-left:10px; font-weight:600; font-size:0.78rem;">${roleLabels[u.role] || u.role}</span>
-                        ${isSelf ? '<span style="margin-left:6px; font-size:0.7rem; color:var(--primary); font-weight:600;">(You)</span>' : ''}
+                <div class="admin-user-card" data-username="${escapeHtml(u.username)}">
+                    <div class="admin-user-card-info">
+                        <div class="admin-user-card-name">
+                            <span class="admin-user-avatar">${escapeHtml(displayName.charAt(0).toUpperCase())}</span>
+                            <div>
+                                <div style="font-weight:700; font-size:0.95rem; color:var(--text);">${escapeHtml(displayName)}${isSelf ? ' <span style="font-size:0.72rem; color:var(--primary); font-weight:600;">(You)</span>' : ''}</div>
+                                ${u.email ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-top:1px;">${escapeHtml(u.email)}</div>` : ''}
+                            </div>
+                        </div>
+                        <span class="admin-role-badge" style="background:${roleColor}22; color:${roleColor}; border:1px solid ${roleColor}44;">${roleLabels[u.role] || u.role}</span>
                     </div>
                     ${canManage ? `
-                        <div class="staff-actions" style="display:flex; gap:6px;">
-                            <button class="admin-btn secondary small" type="button" data-edit-admin-role="${escapeHtml(u.username)}" data-current-role="${escapeHtml(u.role)}" title="Edit Role">✏️ Edit</button>
-                            <button class="admin-btn secondary small" type="button" data-reset-admin-pw="${escapeHtml(u.username)}" title="Reset Password">🔑 Reset</button>
+                        <div class="admin-user-card-actions">
+                            <button class="admin-btn secondary small" type="button" data-edit-admin-role="${escapeHtml(u.username)}" data-current-role="${escapeHtml(u.role)}" title="Edit Admin">✏️ Edit</button>
+                            <button class="admin-btn secondary small" type="button" data-reset-admin-pw="${escapeHtml(u.username)}" title="Reset Password">🔑 Reset PW</button>
                             <button class="admin-btn secondary small danger" type="button" data-remove-admin="${escapeHtml(u.username)}" title="Remove Admin">🗑 Remove</button>
                         </div>
                     ` : ''}
@@ -487,6 +499,65 @@ async function loadAdminUsersList() {
         }).join('');
 
         container.innerHTML = rowsHtml || '<div class="staff-list-state">No delegated admin users.</div>';
+        // Inject card styles if not already present
+        if (!document.getElementById('admin-user-card-styles')) {
+            const styleEl = document.createElement('style');
+            styleEl.id = 'admin-user-card-styles';
+            styleEl.textContent = `
+                .admin-user-card {
+                    background: var(--surface-2, #1e2130);
+                    border: 1px solid var(--border, rgba(255,255,255,0.08));
+                    border-radius: 12px;
+                    padding: 14px 16px;
+                    margin-bottom: 10px;
+                    transition: box-shadow 0.18s, border-color 0.18s;
+                }
+                .admin-user-card:hover {
+                    box-shadow: 0 4px 18px rgba(0,0,0,0.18);
+                    border-color: var(--primary, #818cf8)44;
+                }
+                .admin-user-card-info {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                }
+                .admin-user-card-name {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }
+                .admin-user-avatar {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 50%;
+                    background: linear-gradient(135deg, var(--primary, #818cf8), #6366f1);
+                    color: #fff;
+                    font-weight: 700;
+                    font-size: 1rem;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex-shrink: 0;
+                }
+                .admin-role-badge {
+                    font-size: 0.72rem;
+                    font-weight: 700;
+                    padding: 3px 10px;
+                    border-radius: 20px;
+                    white-space: nowrap;
+                    letter-spacing: 0.03em;
+                }
+                .admin-user-card-actions {
+                    display: flex;
+                    gap: 6px;
+                    margin-top: 12px;
+                    flex-wrap: wrap;
+                }
+            `;
+            document.head.appendChild(styleEl);
+        }
 
         // Bind remove buttons
         container.querySelectorAll('[data-remove-admin]').forEach(btn => {
@@ -505,24 +576,37 @@ async function loadAdminUsersList() {
         container.querySelectorAll('[data-edit-admin-role]').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const target = btn.getAttribute('data-edit-admin-role');
-                const currentRole = btn.getAttribute('data-current-role');
-                
-                const fields = [
-                    { placeholder: 'New Role Tier', type: 'select', value: currentRole, options: [
-                        { value: 'admin', label: 'Super Admin' },
-                        { value: 'sub_admin', label: 'Sub-Admin' },
-                        { value: 'team_lead', label: 'Team Lead' }
-                    ]}
+                const u = users.find(x => x.username === target || x.username === target) || {};
+                const roleOptions = [
+                    { value: 'admin', label: '🏢 Super Admin' },
+                    { value: 'sub_admin', label: '🛡️ Sub-Admin' },
+                    { value: 'team_lead', label: '👥 Team Lead' }
                 ];
-                
                 if (isSuper) {
-                    fields[0].options.unshift({ value: 'developer', label: 'Developer (Superuser)' });
+                    roleOptions.unshift({ value: 'developer', label: '👑 Developer (Superuser)' });
                 }
-
-                const result = await showInlineDialog({ title: `Edit Role: ${target}`, fields, confirmLabel: 'Update' });
+                const fields = [
+                    { label: 'Username', placeholder: 'Username', value: u.username || target },
+                    { label: 'Email', type: 'email', placeholder: 'Email address', value: u.email || '' },
+                    { label: 'New Password', type: 'password', placeholder: 'Leave blank to keep current', optional: true },
+                    { label: 'Role Tier', type: 'select', value: u.role, options: roleOptions }
+                ];
+                const result = await showInlineDialog({
+                    title: `Edit Admin: ${target}`,
+                    message: 'Update fields below. Leave password blank to keep existing.',
+                    fields,
+                    confirmLabel: 'Save Changes'
+                });
                 if (!result) return;
-                
-                const res = await callBackend({ mode: 'update-admin-role', targetUsername: target, newRole: result[0] });
+                const [newUsername, email, password, newRole] = result;
+                const res = await callBackend({
+                    mode: 'update-admin-user',
+                    targetUsername: target,
+                    newUsername: newUsername || target,
+                    email,
+                    password: password || '',
+                    tier: newRole
+                });
                 showToast(res.message, res.ok ? 'success' : 'error');
                 if (res.ok) loadAdminUsersList();
             });
@@ -536,8 +620,8 @@ async function loadAdminUsersList() {
                     title: `Reset Password: ${target}`,
                     message: 'Enter a new password for this admin user.',
                     fields: [
-                        { placeholder: 'New password', type: 'password', autocomplete: 'new-password' },
-                        { placeholder: 'Confirm password', type: 'password', autocomplete: 'new-password' }
+                        { label: 'New Password', placeholder: 'New password', type: 'password', autocomplete: 'new-password' },
+                        { label: 'Confirm Password', placeholder: 'Confirm password', type: 'password', autocomplete: 'new-password' }
                     ],
                     confirmLabel: 'Reset Password'
                 });
@@ -546,8 +630,8 @@ async function loadAdminUsersList() {
                     showToast('Passwords do not match.', 'error');
                     return;
                 }
-                const passHash = await sha256Hex(result[0]);
-                const res = await callBackend({ mode: 'admin-reset-user-password', targetUsername: target, newPasswordHash: passHash });
+                // Send plain-text password — Auth hashes it internally
+                const res = await callBackend({ mode: 'admin-reset-user-password', targetUsername: target, newPassword: result[0] });
                 showToast(res.message || 'Password reset successfully.', res.ok ? 'success' : 'error');
             });
         });

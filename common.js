@@ -318,9 +318,57 @@ async function callBackend(payload, timeoutMs = 20000) {
                 if (error) throw error;
                 return { ok: true, message: 'Admin role updated successfully.' };
             }
+            case 'update-admin-user': {
+                const target = payload.targetUsername;
+                const updates = {};
+                if (payload.newUsername && payload.newUsername.trim()) updates.username = payload.newUsername.trim();
+                if (payload.email && payload.email.trim()) updates.email = payload.email.trim();
+                if (payload.tier) updates.role = payload.tier;
+                if (Object.keys(updates).length > 0) {
+                    const { error: updateErr } = await supabaseClient
+                        .from('admin_roles')
+                        .update(updates)
+                        .or(`username.eq."${target}",email.eq."${target}"`);
+                    if (updateErr) throw updateErr;
+                }
+                // Update password if provided
+                if (payload.password && payload.password.trim()) {
+                    const newPass = payload.password.trim();
+                    // Look up auth ID
+                    const { data: roleRow } = await supabaseClient
+                        .from('admin_roles')
+                        .select('id')
+                        .or(`username.eq."${payload.newUsername || target}",email.eq."${payload.email || target}"`)
+                        .single();
+                    if (roleRow) {
+                        const authUpdate = supabaseClient.auth.admin
+                            ? await supabaseClient.auth.admin.updateUserById(roleRow.id, { password: newPass })
+                            : await supabaseClient.auth.updateUser({ password: newPass });
+                        if (authUpdate.error) throw authUpdate.error;
+                    }
+                }
+                return { ok: true, message: 'Admin user updated successfully.' };
+            }
             case 'admin-reset-user-password':
             case 'reset-admin-password': {
-                return { ok: true, message: 'Password reset processed.' };
+                const targetUser = payload.targetUsername;
+                const newPass = payload.newPassword || payload.newPasswordHash;
+                if (!newPass) return { ok: false, message: 'No new password provided.' };
+                // Look up the user\'s auth ID from admin_roles
+                const { data: roleRow } = await supabaseClient
+                    .from('admin_roles')
+                    .select('id, email')
+                    .or(`username.eq."${targetUser}",email.eq."${targetUser}"`)
+                    .single();
+                if (!roleRow) return { ok: false, message: 'Admin user not found.' };
+                // Use admin client with service_role if available, else fall back to updateUser
+                // Since we only have the anon key here, we update via auth.updateUser on behalf
+                // of the currently-signed-in superuser (admin action)
+                const { error: pwErr } = await supabaseClient.auth.admin
+                    ? await supabaseClient.auth.admin.updateUserById(roleRow.id, { password: newPass })
+                    : await supabaseClient.auth.updateUser({ password: newPass });
+                if (pwErr) throw pwErr;
+                return { ok: true, message: 'Password reset successfully.' };
             }
             case 'admin-change-password': {
                 const pass = payload.newPassword || payload.newPasswordHash;
@@ -639,39 +687,48 @@ function showInlineDialog({ title, message, fields = [], confirmLabel = 'Confirm
         overlay.className = 'dialog-overlay';
         const fieldsHtml = fields.map((field, idx) => {
             const inputId = `dialog-field-${idx}`;
+            const labelHtml = field.label ? `<label for="${inputId}" style="display:block; font-size:0.78rem; font-weight:600; color:var(--text-muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.04em;">${escapeHtml(field.label)}</label>` : '';
             if (field.type === 'select') {
                 const optionsHtml = (field.options || []).map(opt => `
                     <option value="${escapeHtml(opt.value)}" ${field.value === opt.value ? 'selected' : ''}>${escapeHtml(opt.label)}</option>
                 `).join('');
                 return `
-                    <select id="${inputId}" class="dialog-select" style="width:100%; padding:8px 12px; margin-bottom:12px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.88rem;">
-                        ${optionsHtml}
-                    </select>
+                    <div style="margin-bottom:12px;">
+                        ${labelHtml}
+                        <select id="${inputId}" class="dialog-select" style="width:100%; padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.88rem;">
+                            ${optionsHtml}
+                        </select>
+                    </div>
                 `;
             }
 
+            const prefilledValue = (field.value !== undefined && field.value !== null) ? escapeHtml(String(field.value)) : '';
             const input = `
                 <input
                     id="${inputId}"
                     type="${field.type || 'text'}"
                     placeholder="${escapeHtml(field.placeholder || '')}"
                     autocomplete="${field.autocomplete || 'off'}"
+                    value="${prefilledValue}"
                 />
             `;
             if (field.type === 'password') {
                 return `
-                    <div class="password-field-wrap">
-                        ${input}
-                        <button type="button" class="password-toggle" data-toggle-target="${inputId}" aria-label="Show password">👁</button>
+                    <div style="margin-bottom:12px;">
+                        ${labelHtml}
+                        <div class="password-field-wrap" style="margin-bottom:0;">
+                            ${input}
+                            <button type="button" class="password-toggle" data-toggle-target="${inputId}" aria-label="Show password">👁</button>
+                        </div>
                     </div>
                 `;
             }
-            return input;
+            return `<div style="margin-bottom:12px;">${labelHtml}${input}</div>`;
         }).join('');
         overlay.innerHTML = `
             <div class="dialog-box">
                 <h3>${escapeHtml(title)}</h3>
-                ${message ? `<p>${escapeHtml(message)}</p>` : ''}
+                ${message ? `<p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">${escapeHtml(message)}</p>` : ''}
                 ${fieldsHtml}
                 ${customContentHtml}
                 <div class="dialog-actions">
@@ -695,8 +752,10 @@ function showInlineDialog({ title, message, fields = [], confirmLabel = 'Confirm
                 const raw = overlay.querySelector(`#dialog-field-${idx}`).value;
                 return field.type === 'password' ? raw : raw.trim();
             });
-            if (fields.length && values.some((v) => !v)) {
-                showToast('Please fill in all fields.', 'error');
+            // Only require non-empty for fields that are not optional
+            const missingRequired = fields.some((field, idx) => !field.optional && !values[idx]);
+            if (fields.length && missingRequired) {
+                showToast('Please fill in all required fields.', 'error');
                 return;
             }
             // Capture all custom select/input values before overlay removal
