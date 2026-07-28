@@ -381,14 +381,20 @@ async function loadConfigValues() {
             const radiusEl = document.getElementById('config-radius-current');
             const cutoffEl = document.getElementById('config-late-cutoff-current');
 
-            if (latEl && cfg.officeLat !== undefined) latEl.textContent = cfg.officeLat;
-            if (lonEl && cfg.officeLon !== undefined) lonEl.textContent = cfg.officeLon;
-            if (radiusEl && cfg.radiusMeters !== undefined) radiusEl.textContent = cfg.radiusMeters + ' meters';
-            if (cutoffEl && cfg.lateCutoffMinutes !== undefined) cutoffEl.textContent = formatMinutesAsTime(cfg.lateCutoffMinutes);
+            const officeLat = cfg.OFFICE_LAT !== undefined ? cfg.OFFICE_LAT : cfg.officeLat;
+            const officeLon = cfg.OFFICE_LON !== undefined ? cfg.OFFICE_LON : cfg.officeLon;
+            const radiusMeters = cfg.RADIUS_METERS !== undefined ? cfg.RADIUS_METERS : cfg.radiusMeters;
+            const lateCutoffMinutes = cfg.LATE_CUTOFF_MINUTES !== undefined ? cfg.LATE_CUTOFF_MINUTES : cfg.lateCutoffMinutes;
+            const workDays = cfg.WORK_DAYS !== undefined ? cfg.WORK_DAYS : cfg.workDays;
 
-            if (cfg.workDays !== undefined) {
+            if (latEl && officeLat !== undefined) latEl.textContent = officeLat;
+            if (lonEl && officeLon !== undefined) lonEl.textContent = officeLon;
+            if (radiusEl && radiusMeters !== undefined) radiusEl.textContent = radiusMeters + ' meters';
+            if (cutoffEl && lateCutoffMinutes !== undefined) cutoffEl.textContent = formatMinutesAsTime(lateCutoffMinutes);
+
+            if (workDays !== undefined) {
                 const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-                const parts = cfg.workDays.split('_').map(Number);
+                const parts = String(workDays).split('_').map(Number);
                 if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
                     const labelEl = document.getElementById('config-workdays-current');
                     if (labelEl) labelEl.textContent = `${dayNames[parts[0]]} – ${dayNames[parts[1]]}`;
