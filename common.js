@@ -322,6 +322,43 @@ async function callBackend(payload, timeoutMs = 20000) {
             case 'reset-admin-password': {
                 return { ok: true, message: 'Password reset processed.' };
             }
+            case 'admin-change-password': {
+                if (payload.newPassword) {
+                    const { error } = await supabaseClient.auth.updateUser({ password: payload.newPassword });
+                    if (error) throw error;
+                }
+                return { ok: true, message: 'Password updated successfully.' };
+            }
+            case 'admin-set-recovery-email': {
+                const username = payload.username || safeSession.getItem('admin_username') || 'admin';
+                const { error } = await supabaseClient.from('admin_roles').update({ email: payload.email }).or(`username.eq."${username}",email.eq."${username}"`);
+                if (error) {
+                    await supabaseClient.from('app_config').upsert([{ key: 'RECOVERY_EMAIL', value: payload.email }], { onConflict: 'key' });
+                }
+                return { ok: true, message: 'Recovery email saved successfully.' };
+            }
+            case 'get-recovery-email': {
+                const username = safeSession.getItem('admin_username') || 'admin';
+                const { data } = await supabaseClient.from('admin_roles').select('email').or(`username.eq."${username}",email.eq."${username}"`).limit(1);
+                let email = (data && data[0] && data[0].email) ? data[0].email : null;
+                if (!email) {
+                    const { data: cfg } = await supabaseClient.from('app_config').select('value').eq('key', 'RECOVERY_EMAIL').single();
+                    if (cfg) email = cfg.value;
+                }
+                return { ok: true, email: email };
+            }
+            case 'admin-forgot-password-request': {
+                if (payload.username && payload.username.includes('@')) {
+                    await supabaseClient.auth.resetPasswordForEmail(payload.username);
+                }
+                return { ok: true, message: 'Password reset request processed.' };
+            }
+            case 'admin-forgot-password-confirm': {
+                if (payload.newPasswordHash || payload.newPassword) {
+                    await supabaseClient.auth.updateUser({ password: payload.newPassword || payload.newPasswordHash });
+                }
+                return { ok: true, message: 'Password reset successful.' };
+            }
             case 'get-hybrid-schedule': {
                 const formattedKey = formatWeekKeyFromDmy(payload.weekStart);
                 const { data, error } = await supabaseClient
