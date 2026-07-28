@@ -285,16 +285,30 @@ async function callBackend(payload, timeoutMs = 20000) {
                 const username = (payload.newUsername || payload.username || '').trim();
                 const email = (payload.email || `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@lifecard.local`).trim();
                 const password = payload.password || payload.newPassword || 'AdminPass123!';
-                
+                const role = payload.role || payload.tier || 'admin';
+
+                // Save current admin session BEFORE signUp (signUp logs in as the new user)
+                const { data: currentSessionData } = await supabaseClient.auth.getSession();
+                const currentSession = currentSessionData?.session;
+
                 const { data: authData, error: authError } = await supabaseClient.auth.signUp({
                     email: email,
                     password: password
                 });
                 if (authError) throw authError;
+
+                // Restore original admin session immediately so insert runs as the superuser
+                if (currentSession) {
+                    await supabaseClient.auth.setSession({
+                        access_token: currentSession.access_token,
+                        refresh_token: currentSession.refresh_token
+                    });
+                }
+
                 if (authData && authData.user) {
                     const { error: roleError } = await supabaseClient.from('admin_roles').upsert([{
                         id: authData.user.id,
-                        role: payload.role || 'admin',
+                        role: role,
                         email: email,
                         username: username
                     }], { onConflict: 'id' });
@@ -304,7 +318,15 @@ async function callBackend(payload, timeoutMs = 20000) {
             }
             case 'remove-admin-user': {
                 const target = payload.targetUsername || payload.userId;
-                const { error } = await supabaseClient.from('admin_roles').delete().or(`id.eq."${target}",username.eq."${target}",email.eq."${target}"`);
+                // Only include id filter if target looks like a UUID (avoid cast error)
+                const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target);
+                let delQuery = supabaseClient.from('admin_roles').delete();
+                if (isUuid) {
+                    delQuery = delQuery.or(`id.eq."${target}",username.eq."${target}",email.eq."${target}"`);
+                } else {
+                    delQuery = delQuery.or(`username.eq."${target}",email.eq."${target}"`);
+                }
+                const { error } = await delQuery;
                 if (error) throw error;
                 return { ok: true, message: 'Admin user removed.' };
             }
@@ -370,6 +392,27 @@ async function callBackend(payload, timeoutMs = 20000) {
             case 'admin-change-password': {
                 const pass = payload.newPassword || payload.newPasswordHash;
                 if (pass) {
+                    // Make sure the Supabase client's session is fresh before calling updateUser
+                    let session = null;
+                    try {
+                        const { data: sessData } = await supabaseClient.auth.getSession();
+                        session = sessData?.session || null;
+                    } catch(e) {}
+                    if (!session) {
+                        // Try a token refresh in case the access token is just expired
+                        try {
+                            const { data: refreshData } = await supabaseClient.auth.refreshSession();
+                            session = refreshData?.session || null;
+                        } catch(e) {}
+                    }
+                    if (!session) {
+                        return { ok: false, message: 'No active admin session — please log in again before changing your password.' };
+                    }
+                    // Re-assert the session so the client sends the correct Bearer token
+                    await supabaseClient.auth.setSession({
+                        access_token: session.access_token,
+                        refresh_token: session.refresh_token
+                    });
                     const { error } = await supabaseClient.auth.updateUser({ password: pass });
                     if (error) throw error;
                 }
