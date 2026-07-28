@@ -31,11 +31,7 @@ async function authenticateAdmin(email, password) {
 }
 
 async function changeAdminPassword(username, currentPassword, newPassword) {
-    const currentPasswordHash = await sha256Hex(currentPassword);
-    const newPasswordHash = await sha256Hex(newPassword);
-    const adminToken = safeSession.getItem('admin_token') || currentPasswordHash;
-    const csrfToken = safeSession.getItem('admin_csrf_token') || '';
-    return callBackend({ mode: 'admin-change-password', username, currentPasswordHash, newPasswordHash, adminToken, csrfToken });
+    return callBackend({ mode: 'admin-change-password', username, newPassword });
 }
 
 async function setRecoveryEmail(username, currentPassword, email) {
@@ -470,7 +466,7 @@ async function loadAdminUsersList() {
             const displayName = rawUser.includes('@') ? rawUser.split('@')[0] : rawUser;
             const isSelf = rawUser === currentAdminUsername || displayName === currentAdminUsername;
             const isDevAccount = u.role === 'developer';
-            const canManage = !isSelf && !isDevAccount;
+            const canManage = !isSelf && (isSuper || !isDevAccount);
 
             return `
                 <div class="staff-card" style="margin-bottom:8px; padding:12px 14px;">
@@ -859,13 +855,25 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
                 });
                 if (candidate) scheduleKey = candidate;
             }
-            const staffSchedules = scheduleKey ? (schedule[scheduleKey] || []) : [];
-            const daySchedule = staffSchedules.find(s => normalizeDateKey(s.date) === dayKey);
+            const staffSchedules = scheduleKey ? (schedule[scheduleKey] || null) : null;
+            const dayName = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'][idx];
+            let locationVal = '';
+
+            if (Array.isArray(staffSchedules)) {
+                const daySched = staffSchedules.find(s => normalizeDateKey(s.date) === dayKey || String(s.day || '').toLowerCase() === dayName.toLowerCase());
+                locationVal = daySched?.location || daySched?.type || '';
+            } else if (typeof staffSchedules === 'object' && staffSchedules !== null) {
+                const val = staffSchedules[dayName] || staffSchedules[dayName.toLowerCase()] || staffSchedules[idx];
+                if (typeof val === 'string') locationVal = val;
+                else if (typeof val === 'object' && val !== null) locationVal = val.location || val.type || '';
+            }
+
+            const isWfh = String(locationVal || '').trim().toLowerCase() === 'home';
 
             matrix[name][idx] = {
                 logs: dayLogs,
-                schedule: daySchedule || null,
-                isWfh: String(daySchedule?.location || '').trim().toLowerCase() === 'home'
+                schedule: staffSchedules,
+                isWfh: isWfh
             };
         });
     });

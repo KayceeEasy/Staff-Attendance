@@ -323,27 +323,36 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, message: 'Password reset processed.' };
             }
             case 'admin-change-password': {
-                if (payload.newPassword) {
-                    const { error } = await supabaseClient.auth.updateUser({ password: payload.newPassword });
+                const pass = payload.newPassword || payload.newPasswordHash;
+                if (pass) {
+                    const { error } = await supabaseClient.auth.updateUser({ password: pass });
                     if (error) throw error;
                 }
-                return { ok: true, message: 'Password updated successfully.' };
+                return { ok: true, message: 'Password updated successfully!' };
             }
             case 'admin-set-recovery-email': {
-                const username = payload.username || safeSession.getItem('admin_username') || 'admin';
-                const { error } = await supabaseClient.from('admin_roles').update({ email: payload.email }).or(`username.eq."${username}",email.eq."${username}"`);
-                if (error) {
-                    await supabaseClient.from('app_config').upsert([{ key: 'RECOVERY_EMAIL', value: payload.email }], { onConflict: 'key' });
+                const email = payload.email;
+                if (email) {
+                    await supabaseClient.from('app_config').upsert([{ key: 'RECOVERY_EMAIL', value: email }], { onConflict: 'key' });
+                    const { data: userData } = await supabaseClient.auth.getUser();
+                    if (userData && userData.user) {
+                        await supabaseClient.from('admin_roles').update({ email: email }).eq('id', userData.user.id);
+                    }
                 }
                 return { ok: true, message: 'Recovery email saved successfully.' };
             }
             case 'get-recovery-email': {
-                const username = safeSession.getItem('admin_username') || 'admin';
-                const { data } = await supabaseClient.from('admin_roles').select('email').or(`username.eq."${username}",email.eq."${username}"`).limit(1);
-                let email = (data && data[0] && data[0].email) ? data[0].email : null;
+                let email = null;
+                try {
+                    const { data: userData } = await supabaseClient.auth.getUser();
+                    if (userData && userData.user) {
+                        const { data: rData } = await supabaseClient.from('admin_roles').select('email').eq('id', userData.user.id).single();
+                        if (rData && rData.email) email = rData.email;
+                    }
+                } catch(e) {}
                 if (!email) {
                     const { data: cfg } = await supabaseClient.from('app_config').select('value').eq('key', 'RECOVERY_EMAIL').single();
-                    if (cfg) email = cfg.value;
+                    if (cfg && cfg.value) email = cfg.value;
                 }
                 return { ok: true, email: email };
             }
