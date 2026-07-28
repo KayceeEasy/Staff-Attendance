@@ -740,8 +740,7 @@ function triggerOfflineSyncNotification(name, action) {
 }
 
 async function handleAttendanceResponse(data) {
-    const resultString = (data && data.raw) || (typeof data === 'string' ? data : null);
-    if (!resultString) {
+    if (!data || !data.raw) {
         setMessage('Unexpected response from server.', 'msg-late');
         syncInProgress = false;
         activeSubmission = null;
@@ -749,14 +748,14 @@ async function handleAttendanceResponse(data) {
         return;
     }
 
-    const [status, text, distanceStr] = resultString.split('|');
+    const { status, message: text, distance: distanceStr } = data.raw;
     const isSuccess = ['WELCOME', 'NORMAL', 'LATE'].includes(status);
 
     if (isSuccess) {
         setMessage(text || 'Action recorded.', (status === 'WELCOME' || status === 'NORMAL') ? 'msg-welcome' : 'msg-late');
         playWindowsSound(status === 'WELCOME' || status === 'NORMAL');
     } else {
-        setMessage(status || 'Action denied.', 'msg-late');
+        setMessage(text || status || 'Action denied.', 'msg-late');
         playWindowsSound(false);
     }
 

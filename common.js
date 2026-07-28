@@ -169,9 +169,14 @@ async function callBackend(payload, timeoutMs = 20000) {
                     p_device_id: payload.deviceId || ''
                 });
                 if (error) throw error;
-                // Supabase rpc returns json directly, normalize if needed
-                if (typeof data === 'string') return normalizeBackendResponse(data);
-                return normalizeBackendResponse(data);
+                return {
+                    ok: data.ok,
+                    allowed: data.ok,
+                    message: data.message,
+                    status: data.status,
+                    distance: data.distance,
+                    raw: data
+                };
             }
             case 'list-staff': {
                 const { data, error } = await supabaseClient.from('staff').select('*').order('name');
