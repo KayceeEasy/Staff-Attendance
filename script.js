@@ -217,10 +217,70 @@ function updateDistanceLabel(distanceStr) {
     label.textContent = `~${dist.toFixed(0)} meters from office`;
 }
 
-/* ---------- Device ownership (server-validated) ---------- */
+/* ---------- Device ownership & Passkey authentication ---------- */
+
+async function authenticateStaffWithPasskey(name) {
+    if (!supabaseClient) return { ok: false, allowed: false, message: 'Client not ready' };
+    
+    // Check if device authorization is valid via server RPC first
+    const claim = await callBackend({ mode: 'claim-account', name, deviceId });
+    if (!claim.ok) {
+        return { ok: false, allowed: false, message: claim.message || 'Device authorization failed.' };
+    }
+
+    // Check existing auth session
+    try {
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        if (sessionData && sessionData.session) {
+            return { ok: true, allowed: true };
+        }
+    } catch (e) {
+        console.warn('Session check error:', e);
+    }
+
+    // Try Passkey sign-in if browser supports it
+    if (window.PublicKeyCredential && supabaseClient.auth && supabaseClient.auth.signInWithPasskey) {
+        try {
+            const { data: passkeyData, error: passkeyError } = await supabaseClient.auth.signInWithPasskey();
+            if (!passkeyError && passkeyData) {
+                return { ok: true, allowed: true };
+            }
+        } catch (e) {
+            console.warn('Passkey sign-in skipped/cancelled, falling back to password session:', e);
+        }
+    }
+
+    // Silent password authentication (first setup)
+    try {
+        const { error: signInError } = await supabaseClient.auth.signInWithPassword({
+            email: claim.email,
+            password: claim.password
+        });
+        if (signInError) {
+            return { ok: false, allowed: false, message: 'Auth failed: ' + signInError.message };
+        }
+
+        // Prompt passkey enrollment on new device registration
+        if (window.PublicKeyCredential && supabaseClient.auth && supabaseClient.auth.registerPasskey) {
+            setTimeout(async () => {
+                try {
+                    const { error: regError } = await supabaseClient.auth.registerPasskey();
+                    if (!regError) {
+                        showToast('Passkey / FaceID registered for fast sign-in!', 'success');
+                    }
+                } catch (e) {
+                    console.warn('Passkey registration skipped:', e);
+                }
+            }, 600);
+        }
+        return { ok: true, allowed: true };
+    } catch (err) {
+        return { ok: false, allowed: false, message: 'Authentication error.' };
+    }
+}
 
 function verifyDeviceOwnership(name) {
-    return callBackend({ mode: OWNERSHIP_MODES.verify, deviceId, name: name || '' });
+    return authenticateStaffWithPasskey(name);
 }
 
 function registerDeviceOwnership(name) {

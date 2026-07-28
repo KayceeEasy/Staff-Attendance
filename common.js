@@ -17,7 +17,11 @@ const STORAGE_KEYS = {
 // Supabase Initialization
 const supabaseUrl = 'https://akhditjeiwjuzvubnacw.supabase.co';
 const supabaseKey = 'sb_publishable_9BkVRtmi-6UG15Va5xNHbw_R7J_hKhi';
-const supabaseClient = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
+const supabaseClient = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey, {
+    auth: {
+        experimental: { passkey: true }
+    }
+}) : null;
 
 
 /* ---------- HTML Escaping ---------- */
@@ -264,6 +268,20 @@ async function callBackend(payload, timeoutMs = 20000) {
                 }
                 
                 return data.schedule_data;
+            }
+            case 'claim-account': {
+                const { data, error } = await supabaseClient.rpc('claim_account', {
+                    p_name: payload.name,
+                    p_device_id: payload.deviceId || ''
+                });
+                if (error) throw error;
+                return {
+                    ok: data.ok,
+                    allowed: data.ok,
+                    email: data.email,
+                    password: data.password,
+                    message: data.message
+                };
             }
             case 'verify-owner':
             case 'verify-user': {
