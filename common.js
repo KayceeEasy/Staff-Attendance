@@ -39,11 +39,8 @@ function formatWeekKeyFromDmy(dmyStr) {
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const monMonth = monthNames[monday.getMonth()];
     const friMonth = monthNames[friday.getMonth()];
-    if (monMonth === friMonth) {
-        return `${monMonth} ${monday.getDate()} - ${friday.getDate()}, ${year}`;
-    } else {
-        return `${monMonth} ${monday.getDate()} - ${friMonth} ${friday.getDate()}, ${year}`;
-    }
+    // Always include both month names to match GAS-saved keys: "July 27 - July 31, 2026"
+    return `${monMonth} ${monday.getDate()} - ${friMonth} ${friday.getDate()}, ${year}`;
 }
 
 function escapeHtml(value) {
@@ -417,18 +414,55 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, message: 'Password reset successful.' };
             }
             case 'get-hybrid-schedule': {
-                const formattedKey = formatWeekKeyFromDmy(payload.weekStart);
-                const { data, error } = await supabaseClient
-                    .from('hybrid_schedules')
-                    .select('schedule_data')
-                    .or(`week_key.eq."${formattedKey}",week_key.eq."${payload.weekStart}"`)
-                    .limit(1);
-                
-                if (error || !data || !data.length) {
+                const rawKey = payload.weekStart;
+                const formattedKey = formatWeekKeyFromDmy(rawKey);
+                // Build all candidate formats to try
+                const candidates = [formattedKey, rawKey];
+                // Also try the short-form (no second month name) for legacy data
+                if (formattedKey !== rawKey) {
+                    const parts2 = formattedKey.split(' - ');
+                    if (parts2.length === 2) {
+                        const shortEnd = parts2[1].replace(/^\w+ /, '');
+                        candidates.push(`${parts2[0]} - ${shortEnd}`);
+                    }
+                }
+
+                let scheduleData = null;
+                // Try exact match on each candidate key
+                for (const key of candidates) {
+                    const { data, error } = await supabaseClient
+                        .from('hybrid_schedules')
+                        .select('schedule_data, week_key')
+                        .eq('week_key', key)
+                        .limit(1);
+                    if (!error && data && data.length) {
+                        scheduleData = data[0].schedule_data;
+                        break;
+                    }
+                }
+
+                // Fallback: fetch recent rows and fuzzy-match the week_key by year + month
+                if (!scheduleData) {
+                    const year = formattedKey.match(/(\d{4})/)?.[1];
+                    const monName = formattedKey.split(' ')[0];
+                    if (year && monName) {
+                        const { data: allRows } = await supabaseClient
+                            .from('hybrid_schedules')
+                            .select('schedule_data, week_key')
+                            .order('week_key', { ascending: false })
+                            .limit(20);
+                        const match = (allRows || []).find(r =>
+                            r.week_key && r.week_key.includes(year) && r.week_key.includes(monName)
+                        );
+                        if (match) scheduleData = match.schedule_data;
+                    }
+                }
+
+                if (!scheduleData) {
                     return { ok: true, allowed: true, schedule: {} };
                 }
-                
-                let parsedSchedule = data[0].schedule_data;
+
+                let parsedSchedule = scheduleData;
                 if (typeof parsedSchedule === 'string') {
                     try { parsedSchedule = JSON.parse(parsedSchedule); } catch(e) {}
                 }
