@@ -260,6 +260,46 @@ async function callBackend(payload, timeoutMs = 20000) {
                 
                 return data.schedule_data;
             }
+            case 'verify-owner':
+            case 'verify-user': {
+                const { data, error } = await supabaseClient.from('staff').select('device_id').eq('name', payload.name).single();
+                if (error) return { ok: false, allowed: false, message: 'Staff member not found.' };
+                if (!data.device_id) return { ok: true, allowed: true, message: 'No device locked yet.' };
+                if (data.device_id === payload.deviceId) return { ok: true, allowed: true, message: 'Device verified.' };
+                
+                // If it doesn't match, we need to return the conflictOwner name so the UI can display it
+                // We don't store owner name on the device, we store device on the owner. 
+                // So let's find who owns this device.
+                const { data: conflictData } = await supabaseClient.from('staff').select('name').eq('device_id', payload.deviceId).single();
+                const conflictOwner = conflictData ? conflictData.name : 'another user';
+                return { ok: false, allowed: false, message: `This device is already registered to ${conflictOwner}. Device sharing is not allowed.` };
+            }
+            case 'register-owner': {
+                // Read current device_id
+                const { data, error } = await supabaseClient.from('staff').select('device_id').eq('name', payload.name).single();
+                if (error) return { ok: false, allowed: false, message: 'Staff member not found.' };
+                
+                // If already registered to this device, success
+                if (data.device_id === payload.deviceId) return { ok: true, allowed: true };
+                
+                // If registered to a DIFFERENT device, fail
+                if (data.device_id) return { ok: false, allowed: false, message: 'Already registered to another device.' };
+                
+                // Otherwise, register it
+                const { error: updateError } = await supabaseClient.from('staff').update({ device_id: payload.deviceId }).eq('name', payload.name);
+                if (updateError) throw updateError;
+                return { ok: true, allowed: true, message: 'Device registered successfully.' };
+            }
+            case 'reassign-owner': {
+                // Check if the resetCodeHash matches the dev or admin password
+                // This is a bit tricky without a backend, but we'll try to validate it
+                // Actually, the original GAS implementation checked if `payload.resetCodeHash` matched `accounts[..].passwordHash`
+                // For Supabase, the admin would normally use the admin dashboard to reset locks.
+                // If the user tries to do it from the frontend via reassign-owner, let's just let the admin dashboard handle it via `reset-staff-lock`.
+                // The frontend `reassignDeviceOwnership` is a fallback that might not be fully needed since admin panel works.
+                // Let's implement it by checking if the resetCode matches a config value or just reject it and tell them to see admin.
+                return { ok: false, allowed: false, message: 'Please see the administrator to reset your device lock.' };
+            }
             default:
                 // For unmapped endpoints, return false so the UI knows it's not implemented yet
                 return { ok: false, allowed: false, message: `Endpoint '${mode}' is not implemented in Supabase yet.` };
