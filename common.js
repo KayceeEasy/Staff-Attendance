@@ -296,14 +296,29 @@ async function callBackend(payload, timeoutMs = 20000) {
                     .single();
                 
                 if (error) {
-                    // It's perfectly normal for a week to not have a schedule yet
                     if (error.code === 'PGRST116') {
-                        return { ok: true, data: {} };
+                        return { ok: true, allowed: true, schedule: {} };
                     }
                     throw error;
                 }
                 
-                return data.schedule_data;
+                let parsedSchedule = data.schedule_data;
+                if (typeof parsedSchedule === 'string') {
+                    try { parsedSchedule = JSON.parse(parsedSchedule); } catch(e) {}
+                }
+                return { ok: true, allowed: true, schedule: parsedSchedule };
+            }
+            case 'save-hybrid-schedule':
+            case 'update-hybrid-schedule': {
+                const { error } = await supabaseClient
+                    .from('hybrid_schedules')
+                    .upsert({
+                        week_key: payload.weekStart,
+                        schedule_data: payload.scheduleData || payload.schedule,
+                        timestamp: new Date().toISOString()
+                    }, { onConflict: 'week_key' });
+                if (error) throw error;
+                return { ok: true, message: 'Hybrid schedule saved.' };
             }
             case 'claim-account': {
                 const { data, error } = await supabaseClient.rpc('claim_account', {
