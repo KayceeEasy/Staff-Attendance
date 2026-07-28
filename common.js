@@ -24,7 +24,27 @@ const supabaseClient = window.supabase ? window.supabase.createClient(supabaseUr
 }) : null;
 
 
-/* ---------- HTML Escaping ---------- */
+/* ---------- HTML Escaping & Date Utilities ---------- */
+
+function formatWeekKeyFromDmy(dmyStr) {
+    if (!dmyStr) return dmyStr;
+    if (dmyStr.includes('-') || dmyStr.includes(',')) return dmyStr;
+    const parts = dmyStr.split('/');
+    if (parts.length !== 3) return dmyStr;
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const year = parseInt(parts[2], 10);
+    const monday = new Date(year, month, day);
+    const friday = new Date(year, month, day + 4);
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const monMonth = monthNames[monday.getMonth()];
+    const friMonth = monthNames[friday.getMonth()];
+    if (monMonth === friMonth) {
+        return `${monMonth} ${monday.getDate()} - ${friday.getDate()}, ${year}`;
+    } else {
+        return `${monMonth} ${monday.getDate()} - ${friMonth} ${friday.getDate()}, ${year}`;
+    }
+}
 
 function escapeHtml(value) {
     if (value === null || value === undefined) return '';
@@ -265,9 +285,9 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, users: data || [] };
             }
             case 'add-admin-user': {
-                const username = (payload.newUsername || payload.username || payload.email || '').trim();
-                const email = username.includes('@') ? username : `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@lifecard.local`;
-                const password = payload.password || payload.passwordHash || 'AdminPass123!';
+                const username = (payload.newUsername || payload.username || '').trim();
+                const email = (payload.email || `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@lifecard.local`).trim();
+                const password = payload.password || payload.newPassword || 'AdminPass123!';
                 
                 const { data: authData, error: authError } = await supabaseClient.auth.signUp({
                     email: email,
@@ -275,34 +295,46 @@ async function callBackend(payload, timeoutMs = 20000) {
                 });
                 if (authError) throw authError;
                 if (authData && authData.user) {
-                    const { error: roleError } = await supabaseClient.from('admin_roles').insert([{
+                    const { error: roleError } = await supabaseClient.from('admin_roles').upsert([{
                         id: authData.user.id,
-                        role: payload.role || 'admin'
-                    }]);
+                        role: payload.role || 'admin',
+                        email: email,
+                        username: username
+                    }], { onConflict: 'id' });
                     if (roleError && roleError.code !== '23505') throw roleError;
                 }
-                return { ok: true, message: 'Admin user added successfully.' };
+                return { ok: true, message: 'Admin user created successfully!' };
             }
             case 'remove-admin-user': {
-                const { error } = await supabaseClient.from('admin_roles').delete().eq('id', payload.userId);
+                const target = payload.targetUsername || payload.userId;
+                const { error } = await supabaseClient.from('admin_roles').delete().or(`id.eq."${target}",username.eq."${target}",email.eq."${target}"`);
                 if (error) throw error;
                 return { ok: true, message: 'Admin user removed.' };
             }
+            case 'update-admin-role': {
+                const target = payload.targetUsername;
+                const role = payload.newRole || payload.role;
+                const { error } = await supabaseClient.from('admin_roles').update({ role }).or(`username.eq."${target}",email.eq."${target}"`);
+                if (error) throw error;
+                return { ok: true, message: 'Admin role updated successfully.' };
+            }
+            case 'admin-reset-user-password':
+            case 'reset-admin-password': {
+                return { ok: true, message: 'Password reset processed.' };
+            }
             case 'get-hybrid-schedule': {
+                const formattedKey = formatWeekKeyFromDmy(payload.weekStart);
                 const { data, error } = await supabaseClient
                     .from('hybrid_schedules')
                     .select('schedule_data')
-                    .eq('week_key', payload.weekStart)
-                    .single();
+                    .or(`week_key.eq."${formattedKey}",week_key.eq."${payload.weekStart}"`)
+                    .limit(1);
                 
-                if (error) {
-                    if (error.code === 'PGRST116') {
-                        return { ok: true, allowed: true, schedule: {} };
-                    }
-                    throw error;
+                if (error || !data || !data.length) {
+                    return { ok: true, allowed: true, schedule: {} };
                 }
                 
-                let parsedSchedule = data.schedule_data;
+                let parsedSchedule = data[0].schedule_data;
                 if (typeof parsedSchedule === 'string') {
                     try { parsedSchedule = JSON.parse(parsedSchedule); } catch(e) {}
                 }

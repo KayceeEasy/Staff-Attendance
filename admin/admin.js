@@ -573,8 +573,9 @@ async function handleAddAdminUser() {
     }
 
     const fields = [
-        { placeholder: 'New Username' },
-        { placeholder: 'Temporary Password', type: 'password' },
+        { placeholder: 'Username' },
+        { placeholder: 'Email Address', type: 'email' },
+        { placeholder: 'Password', type: 'password', autocomplete: 'new-password' },
         { placeholder: 'Role Tier', type: 'select', options: options }
     ];
 
@@ -584,16 +585,17 @@ async function handleAddAdminUser() {
         confirmLabel: 'Create'
     });
 
-    if (!result || !result[0] || !result[1]) return;
+    if (!result || !result[0] || !result[1] || !result[2]) return;
     const newUsername = result[0].trim();
-    const newPass = result[1];
-    const selectedRole = result[2] || (isSuper ? 'admin' : 'sub_admin');
+    const email = result[1].trim();
+    const newPass = result[2];
+    const selectedRole = result[3] || (isSuper ? 'admin' : 'sub_admin');
 
-    const passHash = await sha256Hex(newPass);
     const res = await callBackend({
         mode: 'add-admin-user',
         newUsername,
-        passwordHash: passHash,
+        email,
+        password: newPass,
         role: selectedRole
     });
 
