@@ -1079,11 +1079,24 @@ function triggerInstall() {
     }
 
     if (isRunningStandalone()) {
-        showToast('This app is already installed.', 'success', 3000);
+        showToast('This app is already running as an installed PWA.', 'success', 3000);
         return;
     }
 
-    showToast('Use your browser’s install option if the prompt does not appear.', 'default', 4000);
+    const isIos = /ipad|iphone|ipod/i.test(navigator.userAgent) && !window.MSStream;
+    if (isIos) {
+        showInlineDialog({
+            title: '📲 Install on iPhone / iPad',
+            message: 'To install Lifecard Staff Attendance on your device:\n\n1. Tap the Share button (⎋) at the bottom of your Safari screen.\n2. Scroll down and tap "Add to Home Screen" (➕).\n3. Tap "Add" in the top-right corner.',
+            confirmLabel: 'Got it'
+        });
+    } else {
+        showInlineDialog({
+            title: '📲 Install App',
+            message: 'To install Lifecard Staff Attendance:\n\n1. Tap the browser menu (3 dots ⋮ or ☰).\n2. Select "Install app" or "Add to Home screen".',
+            confirmLabel: 'Got it'
+        });
+    }
 }
 
 window.addEventListener('beforeinstallprompt', (e) => {

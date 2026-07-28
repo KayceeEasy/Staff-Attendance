@@ -14,6 +14,8 @@ let allStaffList = [];
 let cachedWeekData = {};
 let currentWeekStart = null;
 let hybridScheduleCache = {};
+let logsSortField = 'id';
+let logsSortAsc = false;
 
 // Session timeout (15 min idle sliding window inactivity → 60s countdown)
 let inactivityTimer = null;
@@ -954,18 +956,20 @@ function renderStaffList(staff) {
         </div>
     `;
 
-    const rowsHtml = filteredStaff.map((entry) => `
+    const rowsHtml = filteredStaff.map((entry) => {
+        const isLocked = Boolean(entry.device_id || entry.deviceId);
+        return `
         <div class="staff-row">
             <div class="staff-name-cell">${escapeHtml(entry.name)}</div>
             <div class="staff-device-cell">
-                <span class="status-pill-small ${entry.deviceId ? 'late' : 'synced'}">${entry.deviceId ? '🔒 Locked' : '🔓 Unlocked'}</span>
+                <span class="status-pill-small ${isLocked ? 'late' : 'synced'}">${isLocked ? '🔒 Locked' : '🔓 Unlocked'}</span>
             </div>
             <div class="staff-actions">
                 <button class="admin-btn secondary small" type="button" title="Clear device lock for ${escapeHtml(entry.name)}" data-reset-name="${escapeHtml(entry.name)}">🔓 Reset</button>
                 <button class="admin-btn secondary small danger" type="button" title="Remove ${escapeHtml(entry.name)}" data-remove-name="${escapeHtml(entry.name)}">🗑 Remove</button>
             </div>
         </div>
-    `).join('');
+    `;}).join('');
 
     if (!setHtmlIfChanged(staffList, headerHtml + rowsHtml)) return;
 
@@ -1185,11 +1189,21 @@ function renderLogsTable() {
     const startIdx = (logsCurrentPage - 1) * logsPageSize;
     const pageLogs = logs.slice(startIdx, startIdx + logsPageSize);
 
+    const sortIndicator = (field) => {
+        if (logsSortField !== field) return '';
+        return logsSortAsc ? ' ▲' : ' ▼';
+    };
+
     host.innerHTML = `
         <div class="logs-table-wrapper">
             <div class="logs-table">
-                <div class="logs-row logs-head">
-                    <span>Date</span><span>Name</span><span>Action</span><span>Time</span><span>Status</span><span>Distance</span>
+                <div class="logs-row logs-head" style="user-select:none;">
+                    <span style="cursor:pointer;" data-sort-field="date">Date${sortIndicator('date')}</span>
+                    <span style="cursor:pointer;" data-sort-field="name">Name${sortIndicator('name')}</span>
+                    <span style="cursor:pointer;" data-sort-field="action">Action${sortIndicator('action')}</span>
+                    <span style="cursor:pointer;" data-sort-field="time">Time${sortIndicator('time')}</span>
+                    <span style="cursor:pointer;" data-sort-field="status">Status${sortIndicator('status')}</span>
+                    <span>Distance</span>
                 </div>
                 ${pageLogs.map(entry => `
                     <div class="logs-row">
@@ -1219,6 +1233,24 @@ function renderLogsTable() {
             <button id="export-logs-btn" class="admin-btn secondary small" type="button">📥 Export CSV</button>
         </div>
     `;
+
+    host.querySelectorAll('[data-sort-field]').forEach((header) => {
+        header.addEventListener('click', () => {
+            const field = header.getAttribute('data-sort-field');
+            if (logsSortField === field) {
+                logsSortAsc = !logsSortAsc;
+            } else {
+                logsSortField = field;
+                logsSortAsc = true;
+            }
+            logsAllRecords.sort((a, b) => {
+                const valA = String(a[field] || '').toLowerCase();
+                const valB = String(b[field] || '').toLowerCase();
+                return logsSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            });
+            renderLogsTable();
+        });
+    });
 
     document.getElementById('logs-page-size')?.addEventListener('change', (e) => {
         logsPageSize = parseInt(e.target.value, 10) || 20;

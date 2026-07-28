@@ -188,7 +188,18 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, allowed: true, staff: data };
             }
             case 'list-logs': {
-                const { data, error } = await supabaseClient.from('attendance_logs').select('*').order('id', { ascending: false }).limit(200);
+                let query = supabaseClient.from('attendance_logs').select('*');
+                if (payload.name) {
+                    query = query.ilike('name', `%${payload.name}%`);
+                }
+                if (payload.fromDate) {
+                    query = query.gte('date', payload.fromDate);
+                }
+                if (payload.toDate) {
+                    query = query.lte('date', payload.toDate);
+                }
+                query = query.order('id', { ascending: false }).limit(payload.limit || 500);
+                const { data, error } = await query;
                 if (error) throw error;
                 return { ok: true, allowed: true, logs: data };
             }
@@ -249,8 +260,29 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, message: 'Configuration updated.' };
             }
             case 'list-admin-users': {
-                // N/A for now since we use Supabase Dashboard for user management
-                return { ok: true, users: [] };
+                const { data, error } = await supabaseClient.from('admin_roles').select('*');
+                if (error) throw error;
+                return { ok: true, users: data || [] };
+            }
+            case 'add-admin-user': {
+                const { data: authData, error: authError } = await supabaseClient.auth.signUp({
+                    email: payload.email,
+                    password: payload.password
+                });
+                if (authError) throw authError;
+                if (authData && authData.user) {
+                    const { error: roleError } = await supabaseClient.from('admin_roles').insert([{
+                        id: authData.user.id,
+                        role: payload.role || 'admin'
+                    }]);
+                    if (roleError) throw roleError;
+                }
+                return { ok: true, message: 'Admin user added successfully.' };
+            }
+            case 'remove-admin-user': {
+                const { error } = await supabaseClient.from('admin_roles').delete().eq('id', payload.userId);
+                if (error) throw error;
+                return { ok: true, message: 'Admin user removed.' };
             }
             case 'get-hybrid-schedule': {
                 const { data, error } = await supabaseClient
