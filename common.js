@@ -265,9 +265,13 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, users: data || [] };
             }
             case 'add-admin-user': {
+                const username = (payload.newUsername || payload.username || payload.email || '').trim();
+                const email = username.includes('@') ? username : `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@lifecard.local`;
+                const password = payload.password || payload.passwordHash || 'AdminPass123!';
+                
                 const { data: authData, error: authError } = await supabaseClient.auth.signUp({
-                    email: payload.email,
-                    password: payload.password
+                    email: email,
+                    password: password
                 });
                 if (authError) throw authError;
                 if (authData && authData.user) {
@@ -275,7 +279,7 @@ async function callBackend(payload, timeoutMs = 20000) {
                         id: authData.user.id,
                         role: payload.role || 'admin'
                     }]);
-                    if (roleError) throw roleError;
+                    if (roleError && roleError.code !== '23505') throw roleError;
                 }
                 return { ok: true, message: 'Admin user added successfully.' };
             }

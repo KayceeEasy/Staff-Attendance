@@ -460,14 +460,16 @@ async function loadAdminUsersList() {
             // Hide developer superuser row from non-developer admins
             if (u.role === 'developer' && !isSuper) return '';
             
-            const isSelf = u.username === currentAdminUsername;
+            const rawUser = u.username || u.name || u.email || 'Admin';
+            const displayName = rawUser.includes('@') ? rawUser.split('@')[0] : rawUser;
+            const isSelf = rawUser === currentAdminUsername || displayName === currentAdminUsername;
             const isDevAccount = u.role === 'developer';
             const canManage = !isSelf && !isDevAccount;
 
             return `
                 <div class="staff-card" style="margin-bottom:8px; padding:12px 14px;">
                     <div class="staff-info" style="flex:1;">
-                        <strong>${escapeHtml(u.username)}</strong>
+                        <strong>${escapeHtml(displayName)}</strong>
                         <span class="staff-device" style="margin-left:10px; font-weight:600; font-size:0.78rem;">${roleLabels[u.role] || u.role}</span>
                         ${isSelf ? '<span style="margin-left:6px; font-size:0.7rem; color:var(--primary); font-weight:600;">(You)</span>' : ''}
                     </div>
