@@ -198,7 +198,7 @@ async function callBackend(payload, timeoutMs = 20000) {
                 if (payload.toDate) {
                     query = query.lte('date', payload.toDate);
                 }
-                query = query.order('id', { ascending: false }).limit(payload.limit || 500);
+                query = query.order('created_at', { ascending: false }).limit(payload.limit || 500);
                 const { data, error } = await query;
                 if (error) throw error;
                 return { ok: true, allowed: true, logs: data };
