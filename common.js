@@ -288,7 +288,7 @@ async function callBackend(payload, timeoutMs = 20000) {
                 const password = payload.password || payload.newPassword || 'AdminPass123!';
                 const role = payload.role || payload.tier || 'admin';
 
-                // Save current admin session BEFORE signUp (signUp logs in as the new user)
+                // Save current admin session BEFORE signUp
                 const { data: currentSessionData } = await supabaseClient.auth.getSession();
                 const currentSession = currentSessionData?.session;
 
@@ -298,7 +298,7 @@ async function callBackend(payload, timeoutMs = 20000) {
                 });
                 if (authError) throw authError;
 
-                // Restore original admin session immediately so insert runs as the superuser
+                // Immediately restore current admin session
                 if (currentSession) {
                     await supabaseClient.auth.setSession({
                         access_token: currentSession.access_token,
@@ -306,31 +306,33 @@ async function callBackend(payload, timeoutMs = 20000) {
                     });
                 }
 
-                if (authData && authData.user) {
-                    // Try RPC function first (bypasses RLS via SECURITY DEFINER)
-                    const { error: rpcError } = await supabaseClient.rpc('admin_upsert_role', {
-                        p_id: authData.user.id,
-                        p_username: username,
-                        p_email: email,
-                        p_role: role
-                    });
+                const newUserId = authData && authData.user ? authData.user.id : null;
+                if (!newUserId) throw new Error('User creation returned no valid ID.');
 
-                    if (rpcError) {
-                        console.warn('RPC admin_upsert_role error, trying direct table upsert:', rpcError.message);
-                        const { error: roleError } = await supabaseClient.from('admin_roles').upsert([{
-                            id: authData.user.id,
-                            role: role,
-                            email: email,
-                            username: username
-                        }], { onConflict: 'id' });
-                        if (roleError) throw roleError;
-                    }
+                // Call SECURITY DEFINER RPC function to insert role cleanly
+                const { error: rpcError } = await supabaseClient.rpc('admin_upsert_role', {
+                    p_id: newUserId,
+                    p_username: username,
+                    p_email: email,
+                    p_role: role
+                });
+
+                if (rpcError) {
+                    console.error('admin_upsert_role RPC Error:', rpcError);
+                    // Try direct table upsert fallback
+                    const { error: roleError } = await supabaseClient.from('admin_roles').upsert([{
+                        id: newUserId,
+                        role: role,
+                        email: email,
+                        username: username
+                    }], { onConflict: 'id' });
+                    if (roleError) throw roleError;
                 }
+
                 return { ok: true, message: 'Admin user created successfully!' };
             }
             case 'remove-admin-user': {
                 const target = payload.targetUsername || payload.userId;
-                // Only include id filter if target looks like a UUID (avoid cast error)
                 const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target);
                 let delQuery = supabaseClient.from('admin_roles').delete();
                 if (isUuid) {
@@ -362,20 +364,16 @@ async function callBackend(payload, timeoutMs = 20000) {
                         .or(`username.eq."${target}",email.eq."${target}"`);
                     if (updateErr) throw updateErr;
                 }
-                // Update password if provided
                 if (payload.password && payload.password.trim()) {
                     const newPass = payload.password.trim();
-                    // Look up auth ID
                     const { data: roleRow } = await supabaseClient
                         .from('admin_roles')
                         .select('id')
                         .or(`username.eq."${payload.newUsername || target}",email.eq."${payload.email || target}"`)
                         .single();
                     if (roleRow) {
-                        const authUpdate = supabaseClient.auth.admin
-                            ? await supabaseClient.auth.admin.updateUserById(roleRow.id, { password: newPass })
-                            : await supabaseClient.auth.updateUser({ password: newPass });
-                        if (authUpdate.error) throw authUpdate.error;
+                        const { error: authErr } = await supabaseClient.auth.updateUser({ password: newPass });
+                        if (authErr) throw authErr;
                     }
                 }
                 return { ok: true, message: 'Admin user updated successfully.' };
