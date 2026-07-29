@@ -323,7 +323,7 @@ async function callBackend(payload, timeoutMs = 20000) {
                             email: email,
                             username: username
                         }], { onConflict: 'id' });
-                        if (roleError && roleError.code !== '23505') throw roleError;
+                        if (roleError) throw roleError;
                     }
                 }
                 return { ok: true, message: 'Admin user created successfully!' };
