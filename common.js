@@ -307,13 +307,24 @@ async function callBackend(payload, timeoutMs = 20000) {
                 }
 
                 if (authData && authData.user) {
-                    const { error: roleError } = await supabaseClient.from('admin_roles').upsert([{
-                        id: authData.user.id,
-                        role: role,
-                        email: email,
-                        username: username
-                    }], { onConflict: 'id' });
-                    if (roleError && roleError.code !== '23505') throw roleError;
+                    // Try RPC function first (bypasses RLS via SECURITY DEFINER)
+                    const { error: rpcError } = await supabaseClient.rpc('admin_upsert_role', {
+                        p_id: authData.user.id,
+                        p_username: username,
+                        p_email: email,
+                        p_role: role
+                    });
+
+                    if (rpcError) {
+                        // Fallback to direct table upsert if RPC is not created yet
+                        const { error: roleError } = await supabaseClient.from('admin_roles').upsert([{
+                            id: authData.user.id,
+                            role: role,
+                            email: email,
+                            username: username
+                        }], { onConflict: 'id' });
+                        if (roleError && roleError.code !== '23505') throw roleError;
+                    }
                 }
                 return { ok: true, message: 'Admin user created successfully!' };
             }
