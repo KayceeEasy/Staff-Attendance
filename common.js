@@ -223,12 +223,13 @@ async function callBackend(payload, timeoutMs = 20000) {
             case 'list-distance-alerts': {
                 const { data, error } = await supabaseClient.from('distance_alerts').select('*').order('id', { ascending: false }).limit(200);
                 if (error) throw error;
-                return { ok: true, allowed: true, logs: data }; // admin.js expects 'logs' property for alerts too sometimes, or 'alerts'
+                return { ok: true, allowed: true, alerts: data };
             }
-            case 'list-audit-logs': {
+            case 'list-audit-logs':
+            case 'list-analytics': {
                 const { data, error } = await supabaseClient.from('audit_logs').select('*').order('id', { ascending: false }).limit(200);
                 if (error) throw error;
-                return { ok: true, allowed: true, logs: data };
+                return { ok: true, allowed: true, events: data };
             }
             case 'log-analytics': {
                 // Not strictly necessary for core function, but we can log it

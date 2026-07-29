@@ -1449,9 +1449,17 @@ function processAnalyticsData(logs, schedule, filterType = 'all', customFromDate
         if (!staffCounts[name]) {
             staffCounts[name] = { in: 0, out: 0, late: 0, earlyOut: 0, wfhDays: 0, daysPresent: new Set() };
         }
-        days.forEach(d => {
-            if (d.location === 'home') staffCounts[name].wfhDays++;
-        });
+        if (Array.isArray(days)) {
+            // Array format: [{date, location}, ...] or [{day, location}, ...]
+            days.forEach(d => {
+                if (String(d.location || '').toLowerCase() === 'home') staffCounts[name].wfhDays++;
+            });
+        } else if (days && typeof days === 'object') {
+            // Plain object format from GAS: { Monday: "Office", Tuesday: "Home", ... }
+            Object.values(days).forEach(loc => {
+                if (String(loc || '').toLowerCase() === 'home') staffCounts[name].wfhDays++;
+            });
+        }
     });
     
     const totalDaysInRange = totalDays.size;
@@ -1761,8 +1769,8 @@ async function loadAnalytics(filterType = null, customFrom = null, customTo = nu
             })
             : [];
 
-        const geofenceEvents = (alertsResponse.ok && Array.isArray(alertsResponse.alerts))
-            ? alertsResponse.alerts.map(a => ({
+        const geofenceEvents = (alertsResponse.ok && (Array.isArray(alertsResponse.alerts) || Array.isArray(alertsResponse.logs)))
+            ? (alertsResponse.alerts || alertsResponse.logs || []).map(a => ({
                 type: 'LOCATION_ALERT',
                 details: `${a.name} attempted ${a.action} from ~${a.distance}m away (outside office radius)`,
                 time: `${a.date} ${a.time}`,
@@ -1770,10 +1778,10 @@ async function loadAnalytics(filterType = null, customFrom = null, customTo = nu
             }))
             : [];
 
-        const auditEvents = (auditResponse.ok && Array.isArray(auditResponse.events))
-            ? auditResponse.events.map(a => ({
-                type: a.eventType || a.category || 'SYSTEM_AUDIT',
-                details: `${a.user ? a.user + ': ' : ''}${a.details || ''}`,
+        const auditEvents = (auditResponse.ok && (Array.isArray(auditResponse.events) || Array.isArray(auditResponse.logs)))
+            ? (auditResponse.events || auditResponse.logs || []).map(a => ({
+                type: a.event_type || a.eventType || a.category || 'SYSTEM_AUDIT',
+                details: `${a.user_staff || a.user ? (a.user_staff || a.user) + ': ' : ''}${a.details || ''}`,
                 time: `${a.date || ''} ${a.time || ''}`.trim(),
                 sortValue: parseEventTimestamp(a.date, a.time)
             }))
