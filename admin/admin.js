@@ -1976,13 +1976,6 @@ function renderAdminPanel() {
                     <button id="logout-btn" class="admin-btn secondary small danger" type="button">Logout</button>
                 </div>
             </div>
-
-            <div id="admin-user-management-section" class="dashboard-section" style="margin-top:2rem;">
-                <h4>👥 Admin Users & Permission Tiers</h4>
-                <p class="admin-intro">Manage delegated admin accounts and access levels.</p>
-                <div id="admin-users-list" style="margin-bottom:1rem;"><div class="staff-list-state">Loading admin users...</div></div>
-                <button id="add-admin-user-btn" class="admin-btn secondary small" type="button">➕ Add Admin User</button>
-            </div>
         </div>
     `;
 
