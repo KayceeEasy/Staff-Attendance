@@ -316,7 +316,7 @@ async function callBackend(payload, timeoutMs = 20000) {
                     });
 
                     if (rpcError) {
-                        // Fallback to direct table upsert if RPC is not created yet
+                        console.warn('RPC admin_upsert_role error, trying direct table upsert:', rpcError.message);
                         const { error: roleError } = await supabaseClient.from('admin_roles').upsert([{
                             id: authData.user.id,
                             role: role,
