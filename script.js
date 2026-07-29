@@ -238,19 +238,7 @@ async function authenticateStaffWithPasskey(name) {
         console.warn('Session check error:', e);
     }
 
-    // Try Passkey sign-in if browser supports it
-    if (window.PublicKeyCredential && supabaseClient.auth && supabaseClient.auth.signInWithPasskey) {
-        try {
-            const { data: passkeyData, error: passkeyError } = await supabaseClient.auth.signInWithPasskey();
-            if (!passkeyError && passkeyData) {
-                return { ok: true, allowed: true };
-            }
-        } catch (e) {
-            console.warn('Passkey sign-in skipped/cancelled, falling back to password session:', e);
-        }
-    }
-
-    // Silent password authentication (first setup)
+    // Silent password authentication via account claim credentials
     try {
         const { error: signInError } = await supabaseClient.auth.signInWithPassword({
             email: claim.email,
@@ -258,20 +246,6 @@ async function authenticateStaffWithPasskey(name) {
         });
         if (signInError) {
             return { ok: false, allowed: false, message: 'Auth failed: ' + signInError.message };
-        }
-
-        // Prompt passkey enrollment on new device registration
-        if (window.PublicKeyCredential && supabaseClient.auth && supabaseClient.auth.registerPasskey) {
-            setTimeout(async () => {
-                try {
-                    const { error: regError } = await supabaseClient.auth.registerPasskey();
-                    if (!regError) {
-                        showToast('Passkey / FaceID registered for fast sign-in!', 'success');
-                    }
-                } catch (e) {
-                    console.warn('Passkey registration skipped:', e);
-                }
-            }, 600);
         }
         return { ok: true, allowed: true };
     } catch (err) {

@@ -17,11 +17,7 @@ const STORAGE_KEYS = {
 // Supabase Initialization
 const supabaseUrl = 'https://akhditjeiwjuzvubnacw.supabase.co';
 const supabaseKey = 'sb_publishable_9BkVRtmi-6UG15Va5xNHbw_R7J_hKhi';
-const supabaseClient = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey, {
-    auth: {
-        experimental: { passkey: true }
-    }
-}) : null;
+const supabaseClient = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
 
 
 /* ---------- HTML Escaping & Date Utilities ---------- */
