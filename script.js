@@ -852,6 +852,7 @@ async function handleAttendanceResponse(data) {
 
     syncInProgress = false;
     updateSignInButtonsState();
+    refreshRecentLogsFromDb();
     flushPendingQueue();
 }
 
@@ -998,10 +999,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const staffNameSelect = document.getElementById('staff-name');
     if (staffNameSelect) {
         staffNameSelect.addEventListener('change', () => {
-            if (staffNameSelect.value) {
-                safeStorage.setItem('saved_name', staffNameSelect.value);
+            const name = staffNameSelect.value;
+            if (name) {
+                safeStorage.setItem('saved_name', name);
+                syncScheduleToMobileNative(name);
+                refreshRecentLogsFromDb();
             } else {
                 safeStorage.removeItem('saved_name');
+                syncScheduleToMobileNative(null);
             }
             updateSignInButtonsState();
         });
@@ -1017,6 +1022,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     requestLocation();
     flushPendingQueue();
     loadStaffDropdown();
+
+    // Auto-refresh DB logs and sync schedule on load
+    const initialName = safeStorage.getItem('saved_name') || getLocalDeviceLockHint();
+    if (initialName) {
+        setTimeout(() => {
+            syncScheduleToMobileNative(initialName);
+            refreshRecentLogsFromDb();
+        }, 800);
+    }
 
 
 
@@ -1385,3 +1399,114 @@ document.addEventListener('DOMContentLoaded', () => {
     initFaqModal();
     initPrivacyModal();
 });
+
+async function refreshRecentLogsFromDb() {
+    const nameSelect = document.getElementById('staff-name');
+    const selectedName = nameSelect ? nameSelect.value : '';
+    const nameToFetch = selectedName || getLocalDeviceLockHint() || safeStorage.getItem('saved_name') || '';
+
+    if (!nameToFetch) return;
+    if (!navigator.onLine) return;
+
+    try {
+        const response = await callBackend({ mode: 'list-logs', name: nameToFetch, limit: 10 });
+        if (response && response.ok && Array.isArray(response.logs)) {
+            const localLogs = readStoredJson(STORAGE_KEYS.recentLog, []);
+            
+            // Keep local pending/failed/offline entries
+            const pendingLogs = localLogs.filter(entry => 
+                entry && (entry.status === 'pending' || entry.status === 'failed' || entry.status === 'offline')
+            );
+            
+            // Map DB logs
+            const dbLogs = response.logs.map(log => ({
+                id: log.id || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                name: log.name,
+                action: log.action,
+                timestamp: new Date(log.created_at || `${log.date} ${log.time}`).toISOString(),
+                status: 'synced'
+            }));
+            
+            // Merge & Deduplicate
+            const merged = [...pendingLogs];
+            
+            dbLogs.forEach(dbLog => {
+                const dbLogTime = new Date(dbLog.timestamp).getTime();
+                // Check if this log is already represented in pendingLogs (e.g. within 5 minutes name/action match)
+                const isPendingDuplicate = pendingLogs.some(p => {
+                    const pTime = new Date(p.timestamp).getTime();
+                    return p.name === dbLog.name && 
+                        p.action === dbLog.action && 
+                        Math.abs(pTime - dbLogTime) < 5 * 60 * 1000;
+                });
+                if (!isPendingDuplicate) {
+                    merged.push(dbLog);
+                }
+            });
+            
+            // Sort by timestamp descending
+            merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            
+            // Slice to MAX_HISTORY_ITEMS
+            const finalLogs = merged.slice(0, MAX_HISTORY_ITEMS);
+            
+            writeStoredJson(STORAGE_KEYS.recentLog, finalLogs);
+            renderRecentLog();
+            
+            const lastSyncedSpan = document.getElementById('last-synced');
+            if (lastSyncedSpan) {
+                const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                lastSyncedSpan.textContent = `Last synced: ${nowStr}`;
+            }
+        }
+    } catch (err) {
+        console.warn('refreshRecentLogsFromDb failed:', err.message);
+    }
+}
+
+async function syncScheduleToMobileNative(name) {
+    if (!name) {
+        if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
+            try {
+                window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'UPDATE_SCHEDULE',
+                    name: null,
+                    schedule: null
+                }));
+            } catch (e) {}
+        }
+        return;
+    }
+    if (!(window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function')) {
+        return;
+    }
+
+    try {
+        // Get current week's Monday date
+        const today = new Date();
+        const day = today.getDay();
+        const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(today.getFullYear(), today.getMonth(), diff);
+        
+        // Format DMY
+        const dd = String(monday.getDate()).padStart(2, '0');
+        const mm = String(monday.getMonth() + 1).padStart(2, '0');
+        const yyyy = monday.getFullYear();
+        const weekStartStr = `${dd}/${mm}/${yyyy}`;
+
+        // Call database via get-hybrid-schedule
+        const response = await callBackend({ mode: 'get-hybrid-schedule', weekStart: weekStartStr });
+        if (response && response.ok && response.schedule) {
+            const scheduleData = response.schedule[name];
+            if (scheduleData) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'UPDATE_SCHEDULE',
+                    name: name,
+                    schedule: scheduleData
+                }));
+            }
+        }
+    } catch (error) {
+        console.warn('Failed to sync WFH schedule to mobile native:', error.message);
+    }
+}
