@@ -1627,7 +1627,7 @@ function renderAnalytics() {
         
         <div class="analytics-section">
             <h4>🔴 Device & System Audit Events</h4>
-            <p class="admin-intro">Real-time log entries recorded from Google Sheets Audit Log, Distance Alerts, and device security events.</p>
+            <p class="admin-intro">Real-time log entries recorded from Database Audit Log, Distance Alerts, and device security events.</p>
             ${deviceEvents.length > 0 ? `
             <div class="logs-table-wrapper">
                 <div class="logs-table" style="min-width:500px">
