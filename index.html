@@ -600,8 +600,22 @@
     <script src="script.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register(window.APP_PATHS.sw)
+            // Force browser to bypass HTTP cache when checking for Service Worker updates
+            navigator.serviceWorker.register(window.APP_PATHS.sw, { updateViaCache: 'none' })
+                .then(reg => {
+                    // Force check for updates immediately on load/open
+                    reg.update();
+                })
                 .catch(err => console.log('SW registration failed: ', err));
+
+            // Auto-reload the page when a new Service Worker takes control
+            let refreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!refreshing) {
+                    refreshing = true;
+                    window.location.reload();
+                }
+            });
         }
     </script>
 </body>
