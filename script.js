@@ -776,8 +776,15 @@ function triggerOfflineSyncNotification(name, action) {
 }
 
 async function handleAttendanceResponse(data) {
-    if (!data || !data.raw) {
-        setMessage('Unexpected response from server.', 'msg-late');
+    if (!data) {
+        setMessage('Unexpected response from server (empty response).', 'msg-late');
+        syncInProgress = false;
+        activeSubmission = null;
+        updateSignInButtonsState();
+        return;
+    }
+    if (!data.raw) {
+        setMessage(data.message || 'Unexpected response from server (missing raw data).', 'msg-late');
         syncInProgress = false;
         activeSubmission = null;
         updateSignInButtonsState();
