@@ -1746,10 +1746,12 @@ async function loadAnalytics(filterType = null, customFrom = null, customTo = nu
     }
     
     try {
-        const allSchedule = Object.values(cachedWeekData).reduce((acc, w) => ({ ...acc, ...(w.schedule || {}) }), {});
+        const allSchedule = Object.values(cachedWeekData).reduce((acc, w) => ({ ...acc, ...((w && w.schedule) || {}) }), {});
         
         const [attendanceLogs, analyticsResponse, alertsResponse, auditResponse] = await Promise.all([
-            fetchLogs({ limit: 1000 }).then(r => (r.ok && Array.isArray(r.logs)) ? r.logs : []),
+            fetchLogs({ limit: 1000 })
+                .then(r => (r && r.ok && Array.isArray(r.logs)) ? r.logs : [])
+                .catch((err) => { console.warn('fetchLogs failed:', err); return []; }),
             callBackend({ mode: 'list-analytics', limit: 50 }).catch((err) => { console.warn('list-analytics fetch failed:', err); return { ok: false, events: [] }; }),
             fetchDistanceAlerts(100).catch((err) => { console.warn('list-distance-alerts fetch failed:', err); return { ok: false, alerts: [] }; }),
             fetchAuditLogs(100).catch((err) => { console.warn('list-audit-logs fetch failed:', err); return { ok: false, events: [] }; })
@@ -1795,6 +1797,7 @@ async function loadAnalytics(filterType = null, customFrom = null, customTo = nu
             try { safeStorage.setItem('admin_cache_analytics', JSON.stringify({ analyticsData, deviceEventsAll })); } catch (e) {}
         }
     } catch (error) {
+        console.error('loadAnalytics failed:', error);
         if (host && !analyticsData) host.innerHTML = '<div class="staff-list-state">Failed to load analytics.</div>';
         else if (host) showToast('Could not refresh analytics data (offline).', 'error');
     }
