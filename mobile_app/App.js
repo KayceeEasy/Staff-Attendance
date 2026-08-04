@@ -5,7 +5,9 @@ import {
   Text,
   TouchableOpacity,
   StatusBar,
-  Platform
+  Platform,
+  ScrollView,
+  RefreshControl
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import NetInfo from '@react-native-community/netinfo';
@@ -71,6 +73,8 @@ TaskManager.defineTask(BACKGROUND_GEOFENCE_TASK, async ({ data: { eventType, reg
 export default function App() {
   const webViewRef = useRef(null);
   const [isConnected, setIsConnected] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshEnabled, setRefreshEnabled] = useState(true);
 
   useEffect(() => {
     // Listen for network connection changes and auto-recover WebView when back online
@@ -100,7 +104,18 @@ export default function App() {
       // 2. Request Push Notification Permissions & Schedule Evening Reminder
       const { status: notifStatus } = await Notifications.requestPermissionsAsync();
       if (notifStatus === 'granted') {
-        scheduleEveningSignOutReminder();
+        try {
+          const savedScheduleStr = await SecureStore.getItemAsync('staff_schedule');
+          if (savedScheduleStr) {
+            const savedSchedule = JSON.parse(savedScheduleStr);
+            await scheduleSignOutRemindersForWeek(savedSchedule);
+          } else {
+            await scheduleSignOutRemindersForWeek(null);
+          }
+        } catch (e) {
+          console.warn('Could not load saved schedule on startup, using default:', e);
+          await scheduleSignOutRemindersForWeek(null);
+        }
       }
     })();
 
@@ -124,25 +139,67 @@ export default function App() {
     }
   };
 
-  const scheduleEveningSignOutReminder = async () => {
+  const scheduleSignOutRemindersForWeek = async (schedule) => {
     try {
       await Notifications.cancelAllScheduledNotificationsAsync();
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "🔔 Sign-Out Reminder",
-          body: "Office hours are concluding. Don't forget to sign out before leaving!",
-          data: { action: 'SIGN_OUT' },
-          channelId: 'default',
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
-          hour: 16,
-          minute: 45,
-        },
-      });
+      
+      let finalSchedule = schedule;
+      if (!finalSchedule || typeof finalSchedule !== 'object') {
+        // Fallback: Default to standard Monday-Friday office schedule
+        finalSchedule = {
+          'Monday': 'Office',
+          'Tuesday': 'Office',
+          'Wednesday': 'Office',
+          'Thursday': 'Office',
+          'Friday': 'Office'
+        };
+      }
+
+      const dayMapping = {
+        'Monday': 2,
+        'Tuesday': 3,
+        'Wednesday': 4,
+        'Thursday': 5,
+        'Friday': 6
+      };
+
+      let scheduledCount = 0;
+      for (const [dayName, locationVal] of Object.entries(finalSchedule)) {
+        const isOffice = String(locationVal || '').trim().toLowerCase() === 'office';
+        const weekdayIndex = dayMapping[dayName];
+        
+        if (isOffice && weekdayIndex) {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: "🔔 Sign-Out Reminder",
+              body: "Office hours are concluding. Don't forget to sign out before leaving!",
+              data: { action: 'SIGN_OUT' },
+              channelId: 'default',
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+              weekday: weekdayIndex,
+              hour: 16,
+              minute: 45,
+            },
+          });
+          scheduledCount++;
+        }
+      }
+      console.log(`Scheduled ${scheduledCount} office-day weekly sign-out reminders.`);
     } catch (e) {
-      console.warn('Could not schedule sign-out reminder:', e);
+      console.warn('Could not schedule weekly sign-out reminders:', e);
     }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    webViewRef.current?.reload();
+  };
+
+  const handleScroll = (event) => {
+    const y = event.nativeEvent.contentOffset.y;
+    setRefreshEnabled(y <= 0);
   };
 
   const handleWebViewMessage = async (event) => {
@@ -159,6 +216,16 @@ export default function App() {
           },
           trigger: null,
         });
+      } else if (data.type === 'UPDATE_SCHEDULE') {
+        if (data.name && data.schedule) {
+          await SecureStore.setItemAsync('staff_name', data.name);
+          await SecureStore.setItemAsync('staff_schedule', JSON.stringify(data.schedule));
+          await scheduleSignOutRemindersForWeek(data.schedule);
+        } else {
+          await SecureStore.deleteItemAsync('staff_name');
+          await SecureStore.deleteItemAsync('staff_schedule');
+          await scheduleSignOutRemindersForWeek(null);
+        }
       }
     } catch (e) {
       console.warn('WebView message error:', e);
@@ -191,24 +258,40 @@ export default function App() {
         translucent={true} 
         hidden={true} 
       />
-      <WebView
-        ref={webViewRef}
-        source={{ uri: PWA_URL }}
-        style={styles.webview}
-        userAgent="LifecardApp/1.0 (MobileNative)"
-        injectedJavaScript="window.isNativeMobileApp = true; true;"
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-        geolocationEnabled={true}
-        startInLoadingState={true}
-        scalesPageToFit={true}
-        allowsInlineMediaPlayback={true}
-        onMessage={handleWebViewMessage}
-        renderError={renderOfflineFallback}
-        onPermissionRequest={(event) => {
-          event.grant();
-        }}
-      />
+      <ScrollView
+        contentContainerStyle={styles.scrollViewContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            enabled={refreshEnabled}
+            progressViewOffset={Platform.OS === 'ios' ? 0 : 30}
+            colors={['#10b981']}
+            tintColor="#10b981"
+          />
+        }
+      >
+        <WebView
+          ref={webViewRef}
+          source={{ uri: PWA_URL }}
+          style={styles.webview}
+          userAgent="LifecardApp/1.0 (MobileNative)"
+          injectedJavaScript="window.isNativeMobileApp = true; true;"
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          geolocationEnabled={true}
+          startInLoadingState={true}
+          scalesPageToFit={true}
+          allowsInlineMediaPlayback={true}
+          onMessage={handleWebViewMessage}
+          renderError={renderOfflineFallback}
+          onPermissionRequest={(event) => {
+            event.grant();
+          }}
+          onScroll={handleScroll}
+          onLoadEnd={() => setRefreshing(false)}
+        />
+      </ScrollView>
     </View>
   );
 }
@@ -217,6 +300,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
+  },
+  scrollViewContent: {
+    flex: 1,
   },
   webview: {
     flex: 1,
