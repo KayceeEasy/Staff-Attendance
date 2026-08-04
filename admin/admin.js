@@ -1837,7 +1837,6 @@ function renderAdminPanel() {
                 <div class="dashboard-actions">
                     <span id="refresh-label" class="refresh-label"></span>
                     <button id="refresh-today-btn" class="admin-btn secondary small" type="button">🔄</button>
-                    <a id="sheets-link-btn" class="icon-btn" href="https://docs.google.com/spreadsheets/d/1v9f0aL2tWK5HNk2TJrw5gntAjfZP2_vbXO3Ix85K6Pw/edit?gid=0#gid=0" target="_blank" rel="noopener" title="Open Google Sheets backend" aria-label="Open Google Sheets backend">📗</a>
                 </div>
             </div>
             <div id="today-attendance-list"><div class="staff-list-state">Loading this week...</div></div>
@@ -2006,10 +2005,7 @@ function renderAdminPanel() {
     document.getElementById('reset-all-locks-btn').addEventListener('click', handleResetAllLocks);
     document.getElementById('staff-admin-search')?.addEventListener('input', () => renderStaffList(allStaffList));
 
-    callBackend({ mode: 'get-sheet-url' }).then((res) => {
-        const btn = document.getElementById('sheets-link-btn');
-        if (btn && res && res.ok && res.url) btn.href = res.url;
-    }).catch(() => {});
+
 
     document.getElementById('logs-filter-btn').addEventListener('click', loadLogsViewer);
     document.getElementById('logs-filter-name-select').addEventListener('change', loadLogsViewer);
