@@ -1627,7 +1627,7 @@ function renderAnalytics() {
         
         <div class="analytics-section">
             <h4>🔴 Device & System Audit Events</h4>
-            <p class="admin-intro">Real-time log entries recorded from Google Sheets Audit Log, Distance Alerts, and device security events.</p>
+            <p class="admin-intro">Real-time log entries recorded from Database Audit Log, Distance Alerts, and device security events.</p>
             ${deviceEvents.length > 0 ? `
             <div class="logs-table-wrapper">
                 <div class="logs-table" style="min-width:500px">
@@ -1846,7 +1846,7 @@ function renderAdminPanel() {
             </div>
             <div class="dashboard-quick-actions">
                 <button id="dashboard-export-btn" class="admin-btn secondary small" type="button">📥 Export Week</button>
-                <a class="admin-btn secondary small" href="https://kayceeeasy.github.io/Hybrid-Scheduler/" target="_blank" rel="noopener" style="text-decoration:none;">📅 Hybrid Scheduler</a>
+                <a class="admin-btn secondary small" href="https://kayceeeasy.github.io/Hybrid-Scheduler/?key=admin" target="_blank" rel="noopener" style="text-decoration:none;">📅 Hybrid Scheduler</a>
             </div>
         </div>
         
