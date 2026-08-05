@@ -604,7 +604,7 @@
             navigator.serviceWorker.register(window.APP_PATHS.sw, { updateViaCache: 'none' })
                 .then(reg => {
                     // Force check for updates immediately on load/open
-                    reg.update();
+                    reg.update().catch(err => console.log('SW update check failed: ', err));
                 })
                 .catch(err => console.log('SW registration failed: ', err));
 
