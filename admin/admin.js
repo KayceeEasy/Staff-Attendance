@@ -796,7 +796,6 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
 
         row['Days Present'] = presentCount;
         row['Days Late'] = lateCount;
-        row['Days WFH'] = wfhCount;
         row['Days on Leave'] = leaveCount;
         row['Days Missed'] = missedCount;
 
@@ -919,7 +918,6 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
         rowCellsHtml += `
             <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; background: #f8fafc; font-weight: bold; color: #0f172a;">${staffPresent}</td>
             <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; background: #fdf2f2; color: #9b1c1c; font-weight: bold;">${staffLate}</td>
-            <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; background: #f0fdf4; color: #166534; font-weight: bold;">${staffWfh}</td>
             <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; background: #f3e8ff; color: #6b21a8; font-weight: bold;">${staffLeave}</td>
             <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; background: #fffbeb; color: #854d0e; font-weight: bold;">${staffMissed}</td>
         `;
@@ -949,16 +947,15 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                 <thead>
                     <tr style="background: #f1f5f9; border: 1px solid #cbd5e1; text-align: left;">
                         <th style="padding: 10px; border: 1px solid #cbd5e1;">Staff Name</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 11%;">Mon ${weekDays[0]}</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 11%;">Tue ${weekDays[1]}</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 11%;">Wed ${weekDays[2]}</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 11%;">Thu ${weekDays[3]}</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 11%;">Fri ${weekDays[4]}</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #e2e8f0; width: 6%;">Pres</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #fee2e2; color: #991b1b; width: 6%;">Late</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #dcfce7; color: #166534; width: 6%;">WFH</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #f3e8ff; color: #6b21a8; width: 6%;">Leave</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #fef9c3; color: #854d0e; width: 6%;">Miss</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 12%;">Mon ${weekDays[0]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 12%;">Tue ${weekDays[1]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 12%;">Wed ${weekDays[2]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 12%;">Thu ${weekDays[3]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 12%;">Fri ${weekDays[4]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #e2e8f0; width: 6.5%;">Pres</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #fee2e2; color: #991b1b; width: 6.5%;">Late</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #f3e8ff; color: #6b21a8; width: 6.5%;">Leave</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #fef9c3; color: #854d0e; width: 6.5%;">Miss</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -966,7 +963,7 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                 </tbody>
             </table>
             
-            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 15px; margin-top: 20px;">
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 15px; margin-top: 20px;">
                 <div style="text-align: center;">
                     <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 4px;">Attendance Rate</div>
                     <div style="font-size: 20px; font-weight: bold; color: #0f172a;">${attendanceRate}%</div>
@@ -978,10 +975,6 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                 <div style="text-align: center;">
                     <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 4px;">Total Sign-Ins</div>
                     <div style="font-size: 20px; font-weight: bold; color: #0f172a;">${totalPresent} <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">(${totalLates} late)</span></div>
-                </div>
-                <div style="text-align: center;">
-                    <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 4px;">Work-From-Home</div>
-                    <div style="font-size: 20px; font-weight: bold; color: #0f172a;">${totalWfh} days</div>
                 </div>
                 <div style="text-align: center;">
                     <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 4px;">Staff on Leave</div>
