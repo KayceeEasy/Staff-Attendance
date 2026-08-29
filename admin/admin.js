@@ -731,6 +731,11 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
         const normalizedStaffName = String(name || '').trim().toLowerCase();
         const row = { Staff: name };
 
+        let presentCount = 0;
+        let lateCount = 0;
+        let wfhCount = 0;
+        let missedCount = 0;
+
         weekDays.forEach((day, idx) => {
             const columnLabel = `${dayNames[idx]} ${day}`;
             const dayKey = normalizeDateKey(day);
@@ -749,28 +754,276 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
                 });
                 if (candidate) scheduleKey = candidate;
             }
-            const staffSchedules = scheduleKey ? (schedule[scheduleKey] || []) : [];
-            const daySchedule = staffSchedules.find(s => normalizeDateKey(s.date) === dayKey);
-            const isWfh = String(daySchedule?.location || '').trim().toLowerCase() === 'home';
+            const staffSchedules = scheduleKey ? (schedule[scheduleKey] || null) : null;
+            const dayName = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'][idx];
+            let locationVal = '';
 
+            if (Array.isArray(staffSchedules)) {
+                const daySched = staffSchedules.find(s => normalizeDateKey(s.date) === dayKey || String(s.day || '').toLowerCase() === dayName.toLowerCase());
+                locationVal = daySched?.location || daySched?.type || '';
+            } else if (typeof staffSchedules === 'object' && staffSchedules !== null) {
+                const val = staffSchedules[dayName] || staffSchedules[dayName.toLowerCase()] || staffSchedules[idx];
+                if (typeof val === 'string') locationVal = val;
+                else if (typeof val === 'object' && val !== null) locationVal = val.location || val.type || '';
+            }
+            const isWfh = String(locationVal || '').trim().toLowerCase() === 'home';
             const inLog = dayLogs.find(l => String(l.action || '').trim().toUpperCase() === 'IN');
 
-            let cellText = '\u2014';
-            if (isWfh) {
-                cellText = '\ud83c\udfe0 Home';
-            } else if (inLog) {
+            let cellText = '—';
+            if (inLog) {
+                presentCount++;
                 const isLate = inLog.status && String(inLog.status).trim().toUpperCase() === 'LATE';
-                cellText = `\u2713 ${inLog.time || ''}`.trim();
-                if (isLate) cellText += ' (Late)';
+                cellText = inLog.time || 'Present';
+                if (isLate) {
+                    lateCount++;
+                    cellText += ' (Late)';
+                }
+            } else if (isWfh) {
+                wfhCount++;
+                cellText = 'WFH';
+            } else {
+                missedCount++;
+                cellText = 'Missed';
             }
 
             row[columnLabel] = cellText;
         });
 
+        row['Days Present'] = presentCount;
+        row['Days Late'] = lateCount;
+        row['Days WFH'] = wfhCount;
+        row['Days Missed'] = missedCount;
+
         return row;
     });
 
     exportToCSV(rows, 'attendance_matrix_week');
+}
+
+function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
+    const monday = parseDmyDate(weekStartStr);
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+    const weekDays = [];
+    for (let i = 0; i < 5; i++) {
+        const day = new Date(monday);
+        day.setDate(monday.getDate() + i);
+        weekDays.push(formatDateDMY(day));
+    }
+    const friday = new Date(monday);
+    friday.setDate(monday.getDate() + 4);
+    const weekRangeStr = `${formatDateDMY(monday)} - ${formatDateDMY(friday)}`;
+
+    const allStaff = new Set();
+    Object.keys(schedule || {}).forEach(name => allStaff.add(name));
+    (logs || []).forEach(entry => allStaff.add(entry.name));
+    if (allStaffList.length) allStaffList.forEach(s => allStaff.add(s.name));
+    const sortedStaff = Array.from(allStaff).sort((a, b) => a.localeCompare(b));
+
+    if (!sortedStaff.length) { showToast('No staff data to export.', 'error'); return; }
+
+    const scheduleNameIndex = buildScheduleNameIndex(schedule);
+
+    let tableRowsHtml = '';
+    let totalPresent = 0;
+    let totalLates = 0;
+    let totalWfh = 0;
+    let totalMissed = 0;
+
+    sortedStaff.forEach(name => {
+        const normalizedStaffName = String(name || '').trim().toLowerCase();
+        let rowCellsHtml = `<td style="padding: 8px 10px; border: 1px solid #cbd5e1; font-weight: 600; text-align: left; color: #0f172a;">${escapeHtml(name)}</td>`;
+        
+        let staffPresent = 0;
+        let staffLate = 0;
+        let staffWfh = 0;
+        let staffMissed = 0;
+
+        let scheduleKey = scheduleNameIndex[normalizedStaffName] || null;
+        if (!scheduleKey) {
+            const candidate = Object.keys(schedule || {}).find(k => {
+                const nk = String(k || '').trim().toLowerCase();
+                return nk === normalizedStaffName || nk.includes(normalizedStaffName) || normalizedStaffName.includes(nk);
+            });
+            if (candidate) scheduleKey = candidate;
+        }
+        const staffSchedules = scheduleKey ? (schedule[scheduleKey] || null) : null;
+
+        weekDays.forEach((day, idx) => {
+            const dayKey = normalizeDateKey(day);
+
+            const dayLogs = (logs || []).filter(l => {
+                const logName = String(l.name || '').trim().toLowerCase();
+                const logDateKey = normalizeDateKey(l.date || l.timestamp || '');
+                return logName === normalizedStaffName && logDateKey === dayKey;
+            });
+
+            const dayName = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'][idx];
+            let locationVal = '';
+
+            if (Array.isArray(staffSchedules)) {
+                const daySched = staffSchedules.find(s => normalizeDateKey(s.date) === dayKey || String(s.day || '').toLowerCase() === dayName.toLowerCase());
+                locationVal = daySched?.location || daySched?.type || '';
+            } else if (typeof staffSchedules === 'object' && staffSchedules !== null) {
+                const val = staffSchedules[dayName] || staffSchedules[dayName.toLowerCase()] || staffSchedules[idx];
+                if (typeof val === 'string') locationVal = val;
+                else if (typeof val === 'object' && val !== null) locationVal = val.location || val.type || '';
+            }
+            const isWfh = String(locationVal || '').trim().toLowerCase() === 'home';
+            const inLog = dayLogs.find(l => String(l.action || '').trim().toUpperCase() === 'IN');
+
+            let cellContent = '—';
+            let cellStyle = 'padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; color: #64748b;';
+
+            if (inLog) {
+                staffPresent++;
+                totalPresent++;
+                const isLate = inLog.status && String(inLog.status).trim().toUpperCase() === 'LATE';
+                if (isLate) {
+                    staffLate++;
+                    totalLates++;
+                    cellContent = `⚠️ ${inLog.time || 'Present'} (Late)`;
+                    cellStyle += ' background: #fdf2f2; color: #9b1c1c; font-weight: 500;';
+                } else {
+                    cellContent = `✓ ${inLog.time || 'Present'}`;
+                    cellStyle += ' background: #f8fafc; color: #0f172a;';
+                }
+            } else if (isWfh) {
+                staffWfh++;
+                totalWfh++;
+                cellContent = '🏠 WFH';
+                cellStyle += ' background: #f0fdf4; color: #166534; font-weight: 500;';
+            } else {
+                staffMissed++;
+                totalMissed++;
+                cellContent = '❌ Missed';
+                cellStyle += ' background: #fffbeb; color: #854d0e;';
+            }
+
+            rowCellsHtml += `<td style="${cellStyle}">${cellContent}</td>`;
+        });
+
+        rowCellsHtml += `
+            <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; background: #f8fafc; font-weight: bold; color: #0f172a;">${staffPresent}</td>
+            <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; background: #fdf2f2; color: #9b1c1c; font-weight: bold;">${staffLate}</td>
+            <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; background: #f0fdf4; color: #166534; font-weight: bold;">${staffWfh}</td>
+            <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; background: #fffbeb; color: #854d0e; font-weight: bold;">${staffMissed}</td>
+        `;
+
+        tableRowsHtml += `<tr style="border-bottom: 1px solid #cbd5e1;">${rowCellsHtml}</tr>`;
+    });
+
+    const totalWorkingDays = totalPresent + totalWfh + totalMissed;
+    const attendanceRate = totalWorkingDays > 0 ? Math.round(((totalPresent + totalWfh) / totalWorkingDays) * 100) : 0;
+    const onTimeRate = totalPresent > 0 ? Math.round(((totalPresent - totalLates) / totalPresent) * 100) : 0;
+
+    const printDiv = document.createElement('div');
+    printDiv.id = 'print-report-container';
+    printDiv.innerHTML = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 20px; color: #1e293b; max-width: 1000px; margin: 0 auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; margin-bottom: 20px;">
+                <div>
+                    <h1 style="margin: 0; font-size: 22px; color: #0f172a;">Lifecard Staff Attendance Report</h1>
+                    <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">Weekly Matrix & Metrics Summary</p>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 13px; font-weight: bold; color: #0f172a; padding: 6px 12px; background: #f1f5f9; border-radius: 4px;">📅 Week: ${weekRangeStr}</div>
+                </div>
+            </div>
+            
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px;">
+                <thead>
+                    <tr style="background: #f1f5f9; border: 1px solid #cbd5e1; text-align: left;">
+                        <th style="padding: 10px; border: 1px solid #cbd5e1;">Staff Name</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 13%;">Mon ${weekDays[0]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 13%;">Tue ${weekDays[1]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 13%;">Wed ${weekDays[2]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 13%;">Thu ${weekDays[3]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 13%;">Fri ${weekDays[4]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #e2e8f0; width: 6%;">Pres</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #fee2e2; color: #991b1b; width: 6%;">Late</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #dcfce7; color: #166534; width: 6%;">WFH</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #fef9c3; color: #854d0e; width: 6%;">Miss</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tableRowsHtml}
+                </tbody>
+            </table>
+            
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 15px; margin-top: 20px;">
+                <div style="text-align: center;">
+                    <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 4px;">Attendance Rate</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #0f172a;">${attendanceRate}%</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 4px;">On-Time Rate</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #166534;">${onTimeRate}%</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 4px;">Total Sign-Ins</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #0f172a;">${totalPresent} <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">(${totalLates} late)</span></div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 4px;">Work-From-Home</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #0f172a;">${totalWfh} days</div>
+                </div>
+            </div>
+            
+            <div style="margin-top: 30px; font-size: 9px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 10px;">
+                Report generated on ${new Date().toLocaleString()} • Lifecard Attendance Systems
+            </div>
+        </div>
+    `;
+
+    const styleTag = document.createElement('style');
+    styleTag.id = 'print-report-style';
+    styleTag.textContent = `
+        @media print {
+            body > * { display: none !important; }
+            #print-report-container { display: block !important; }
+            #print-report-container * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+    `;
+
+    document.body.appendChild(printDiv);
+    document.body.appendChild(styleTag);
+    
+    window.print();
+    
+    setTimeout(() => {
+        printDiv.remove();
+        styleTag.remove();
+    }, 500);
+}
+
+async function handleExportWeek(weekData, weekStartStr) {
+    const formatChoice = await showInlineDialog({
+        title: 'Export Attendance Report',
+        message: `Select the format to download this week's report (${weekStartStr}):`,
+        fields: [
+            {
+                type: 'select',
+                options: [
+                    { label: 'Excel/CSV Spreadsheet (HR Matrix)', value: 'csv' },
+                    { label: 'PDF Report (Ready to Print)', value: 'pdf' }
+                ],
+                value: 'csv'
+            }
+        ],
+        confirmLabel: 'Export',
+        cancelLabel: 'Cancel'
+    });
+    if (!formatChoice || !formatChoice[0]) return;
+    const format = formatChoice[0];
+
+    const logs = weekData.logs || [];
+    const schedule = weekData.schedule || {};
+
+    if (format === 'csv') {
+        exportWeekMatrixToCSV(logs, schedule, weekStartStr);
+    } else if (format === 'pdf') {
+        exportWeekMatrixToPDF(logs, schedule, weekStartStr);
+    }
 }
 
 /* ============================================================
@@ -807,8 +1060,14 @@ async function loadWeekData(isSilent = false) {
     }
 
     if (cachedWeekData[weekBeingLoaded]) {
-        renderWeekOverview(cachedWeekData[weekBeingLoaded].logs, cachedWeekData[weekBeingLoaded].schedule, weekDays);
-        renderAttendanceMatrix(cachedWeekData[weekBeingLoaded].logs, cachedWeekData[weekBeingLoaded].schedule, weekDays);
+        const cachedLogs = cachedWeekData[weekBeingLoaded].logs || [];
+        const weekDaysNormalized = weekDays.map(wd => normalizeDateKey(wd));
+        const filteredCachedLogs = cachedLogs.filter(l => {
+            const logDateNormalized = normalizeDateKey(l.date || l.timestamp || '');
+            return weekDaysNormalized.includes(logDateNormalized);
+        });
+        renderWeekOverview(filteredCachedLogs, cachedWeekData[weekBeingLoaded].schedule, weekDays);
+        renderAttendanceMatrix(filteredCachedLogs, cachedWeekData[weekBeingLoaded].schedule, weekDays);
     } else if (!isSilent) {
         document.getElementById('today-attendance-list').innerHTML = `
             <div class="summary-stat-card skeleton-box skeleton-card"></div>
@@ -822,18 +1081,19 @@ async function loadWeekData(isSilent = false) {
     
     try {
         const response = await fetchLogs({ weekStart: weekBeingLoaded, limit: 500 });
-        let logs = response.ok && Array.isArray(response.logs) ? response.logs : [];
+        const rawLogs = response.ok && Array.isArray(response.logs) ? response.logs : [];
+        
+        // Filter logs locally to only include this week's records
+        const weekDaysNormalized = weekDays.map(wd => normalizeDateKey(wd));
+        const logs = rawLogs.filter(l => {
+            const logDateNormalized = normalizeDateKey(l.date || l.timestamp || '');
+            return weekDaysNormalized.includes(logDateNormalized);
+        });
+
         const schedule = await fetchHybridSchedule(weekBeingLoaded, false);
         
         cachedWeekData[weekBeingLoaded] = { logs, schedule };
         try { safeStorage.setItem('admin_cache_week_' + weekBeingLoaded, JSON.stringify({ logs, schedule })); } catch (e) {}
-        
-        const weekDays = [];
-        for (let i = 0; i < 5; i++) {
-            const day = new Date(monday);
-            day.setDate(monday.getDate() + i);
-            weekDays.push(formatDateDMY(day));
-        }
         
         if (currentWeekStart === weekBeingLoaded) {
             renderWeekOverview(logs, schedule, weekDays);
@@ -878,18 +1138,14 @@ function renderWeekOverview(logs, schedule, weekDays) {
     const host = document.getElementById('today-attendance-list');
     if (!host) return;
     
-    if (!logs || !logs.length) {
-        host.innerHTML = '<div class="staff-list-state">No attendance records for this week.</div>';
-        return;
-    }
-    
-    const signedIn = logs.filter(s => String(s.action || '').trim().toUpperCase() === 'IN').length;
-    const lateCount = logs.filter(s => normalizeAttendanceStatus(s.status) === 'late' && String(s.action || '').trim().toUpperCase() === 'IN').length;
+    const safeLogs = Array.isArray(logs) ? logs : [];
+    const signedIn = safeLogs.filter(s => String(s.action || '').trim().toUpperCase() === 'IN').length;
+    const lateCount = safeLogs.filter(s => normalizeAttendanceStatus(s.status) === 'late' && String(s.action || '').trim().toUpperCase() === 'IN').length;
     
     setHtmlIfChanged(host, `
         <div class="today-attendance-summary">
             <div class="summary-stat-card">
-                <span class="stat-number">${logs.length}</span>
+                <span class="stat-number">${safeLogs.length}</span>
                 <span class="stat-label">Total Actions</span>
             </div>
             <div class="summary-stat-card signed-in-bg">
@@ -1994,10 +2250,10 @@ function renderAdminPanel() {
     });
     document.getElementById('week-prev-btn').addEventListener('click', () => navigateWeek('prev'));
     document.getElementById('week-next-btn').addEventListener('click', () => navigateWeek('next'));
-    document.getElementById('dashboard-export-btn').addEventListener('click', () => {
+    document.getElementById('dashboard-export-btn').addEventListener('click', async () => {
         const weekData = cachedWeekData[currentWeekStart];
         if (!weekData) { showToast('No week data to export.', 'error'); return; }
-        exportWeekMatrixToCSV(weekData.logs || [], weekData.schedule || {}, currentWeekStart);
+        await handleExportWeek(weekData, currentWeekStart);
     });
 
     document.getElementById('add-staff-btn').addEventListener('click', handleAddStaff);
