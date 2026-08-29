@@ -709,6 +709,9 @@ function exportToCSV(data, filename) {
 
 function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
     const monday = parseDmyDate(weekStartStr);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const formattedHumanDate = `${monday.getDate()}_${months[monday.getMonth()]}_${monday.getFullYear()}`;
+    const fileName = `Attendance Report-Week Starting-${formattedHumanDate}`;
     const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
     const weekDays = [];
     for (let i = 0; i < 5; i++) {
@@ -807,11 +810,14 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
         return row;
     });
 
-    exportToCSV(rows, 'attendance_matrix_week');
+    exportToCSV(rows, fileName);
 }
 
 function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
     const monday = parseDmyDate(weekStartStr);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const formattedHumanDate = `${monday.getDate()}_${months[monday.getMonth()]}_${monday.getFullYear()}`;
+    const fileName = `Attendance Report-Week Starting-${formattedHumanDate}`;
     const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
     const weekDays = [];
     for (let i = 0; i < 5; i++) {
@@ -1012,7 +1018,10 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
     document.body.appendChild(printDiv);
     document.body.appendChild(styleTag);
     
+    const originalTitle = document.title;
+    document.title = fileName;
     window.print();
+    document.title = originalTitle;
     
     setTimeout(() => {
         printDiv.remove();
