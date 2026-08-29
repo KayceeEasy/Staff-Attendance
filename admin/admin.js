@@ -2128,7 +2128,7 @@ function renderAdminPanel() {
             </div>
             <div class="dashboard-quick-actions">
                 <button id="dashboard-export-btn" class="admin-btn secondary small" type="button">📥 Export Week</button>
-                <a class="admin-btn secondary small" href="../hybrid-scheduler/?key=admin" target="_blank" rel="noopener" style="text-decoration:none;">📅 Hybrid Scheduler</a>
+                <a class="admin-btn secondary small" href="../hybrid/?key=admin" target="_blank" rel="noopener" style="text-decoration:none;">📅 Hybrid Scheduler</a>
             </div>
         </div>
         
