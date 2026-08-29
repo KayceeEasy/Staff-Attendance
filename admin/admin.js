@@ -722,12 +722,16 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
     (logs || []).forEach(entry => allStaff.add(entry.name));
     if (allStaffList.length) allStaffList.forEach(s => allStaff.add(s.name));
     const sortedStaff = Array.from(allStaff).sort((a, b) => a.localeCompare(b));
+    const filteredStaff = sortedStaff.filter(name => {
+        const lowerName = String(name || '').trim().toLowerCase();
+        return lowerName !== 'kenneth' && !lowerName.startsWith('kenneth ');
+    });
 
-    if (!sortedStaff.length) { showToast('No staff data to export for this week.', 'error'); return; }
+    if (!filteredStaff.length) { showToast('No staff data to export for this week.', 'error'); return; }
 
     const scheduleNameIndex = buildScheduleNameIndex(schedule);
 
-    const rows = sortedStaff.map(name => {
+    const rows = filteredStaff.map(name => {
         const normalizedStaffName = String(name || '').trim().toLowerCase();
         const row = { Staff: name };
 
@@ -785,7 +789,7 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
                 cellText = 'Leave';
             } else if (isWfh) {
                 wfhCount++;
-                cellText = 'WFH';
+                cellText = '—';
             } else {
                 missedCount++;
                 cellText = 'Missed';
@@ -823,8 +827,12 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
     (logs || []).forEach(entry => allStaff.add(entry.name));
     if (allStaffList.length) allStaffList.forEach(s => allStaff.add(s.name));
     const sortedStaff = Array.from(allStaff).sort((a, b) => a.localeCompare(b));
+    const filteredStaff = sortedStaff.filter(name => {
+        const lowerName = String(name || '').trim().toLowerCase();
+        return lowerName !== 'kenneth' && !lowerName.startsWith('kenneth ');
+    });
 
-    if (!sortedStaff.length) { showToast('No staff data to export.', 'error'); return; }
+    if (!filteredStaff.length) { showToast('No staff data to export.', 'error'); return; }
 
     const scheduleNameIndex = buildScheduleNameIndex(schedule);
 
@@ -835,7 +843,7 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
     let totalLeave = 0;
     let totalMissed = 0;
 
-    sortedStaff.forEach(name => {
+    filteredStaff.forEach(name => {
         const normalizedStaffName = String(name || '').trim().toLowerCase();
         let rowCellsHtml = `<td style="padding: 8px 10px; border: 1px solid #cbd5e1; font-weight: 600; text-align: left; color: #0f172a;">${escapeHtml(name)}</td>`;
         
@@ -903,8 +911,8 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
             } else if (isWfh) {
                 staffWfh++;
                 totalWfh++;
-                cellContent = '🏠 WFH';
-                cellStyle += ' background: #f0fdf4; color: #166534; font-weight: 500;';
+                cellContent = '—';
+                cellStyle += ' background: #f8fafc; color: #94a3b8;';
             } else {
                 staffMissed++;
                 totalMissed++;
