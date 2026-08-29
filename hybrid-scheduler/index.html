@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lifecard Hybrid Schedule</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="stylesheet" href="style.css">
+    <!-- Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="../config.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body id="main-body">
+
+<div class="container">
+    <header>
+        <div class="brand">
+            <h1>Staff Hybrid Schedule</h1>
+            <small id="display-date-range"></small>
+            <div id="sync-status"></div>
+        </div>
+        
+        <div id="admin-controls">
+            <button class="btn-gen" onclick="generateNew()"><i data-lucide="refresh-cw"></i> Regenerate</button>
+            <button class="btn-dl" onclick="downloadImage()"><i data-lucide="download"></i> Download JPG</button>
+            <button class="btn-wa" onclick="shareWhatsApp()"><i data-lucide="image"></i> WhatsApp</button>
+            <button class="btn-mail" onclick="shareGmail()"><i data-lucide="mail"></i> Gmail</button>
+        </div>
+    </header>
+
+    <div class="table-container">
+        <div id="capture-zone" class="table-area">
+            <table>
+                <thead>
+                    <tr id="table-head-days">
+                        <th>Staff Name</th>
+                        <!-- Days injected by JS -->
+                        <th class="counter-header" data-html2canvas-ignore>Home Days</th>
+                    </tr>
+                </thead>
+                <tbody id="schedule-body">
+                    <!-- Rows injected by JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <section class="history-section">
+        <h3>Schedule History</h3>
+        <div id="history-container" class="history-grid">
+            <p class="loading-text">Synchronizing with cloud...</p>
+        </div>
+    </section>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

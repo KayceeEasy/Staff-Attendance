@@ -724,7 +724,10 @@ function initAllPasswordToggles(root = document) {
 function formatTimestamp(isoString) {
     if (!isoString) return 'Pending';
     const date = new Date(isoString);
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+    if (isNaN(date.getTime())) return 'Pending';
+    const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    const timeStr = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+    return `${dateStr}, ${timeStr}`;
 }
 
 function formatDateDisplay(isoString) {

@@ -1,0 +1,150 @@
+:root {
+    --primary: #2563eb;
+    --office-bg: #dcfce7;
+    --office-text: #166534;
+    --home-bg: #f1f5f9;
+    --home-text: #475569;
+    --border: #e2e8f0;
+    --error: #C00000;
+    --success: #22c55e;
+}
+
+body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background-color: #f8fafc;
+    margin: 0;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.container {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    width: 100%;
+    max-width: 1100px;
+    box-sizing: border-box;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid var(--border);
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.brand h1 { margin: 0; font-size: 1.25rem; color: #1e293b; }
+#display-date-range { font-weight: 700; color: var(--primary); font-size: 0.9rem; }
+
+/* Admin Controls */
+#admin-controls { display: none; gap: 8px; flex-wrap: wrap; }
+
+button {
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    transition: 0.2s;
+}
+
+.btn-gen { background: var(--primary); color: white; }
+.btn-wa { background: #25d366; color: white; }
+.btn-mail { background: #ea4335; color: white; }
+.btn-dl { background: #64748b; color: white; }
+button:active { transform: scale(0.95); }
+
+/* Table Optimization */
+.table-container {
+    width: 100%;
+    overflow-x: auto; /* Enables horizontal scroll on mobile */
+    margin-bottom: 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+.table-area { background: white; min-width: 750px; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+th {
+    background: #f8fafc;
+    padding: 12px;
+    border: 1px solid var(--border);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: #64748b;
+}
+
+td {
+    padding: 6px;
+    border: 1px solid var(--border);
+    text-align: center;
+}
+
+.name-cell {
+    text-align: left;
+    font-weight: 700;
+    width: 150px;
+    padding-left: 12px;
+    background: #fdfdfd;
+    position: sticky; /* Keeps names visible when scrolling days */
+    left: 0;
+    z-index: 2;
+    border-right: 2px solid var(--border);
+}
+
+.dept-label { font-size: 0.6rem; font-weight: 400; color: #94a3b8; display: block; }
+
+.badge {
+    display: inline-block;
+    padding: 10px 0;
+    width: 95%;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    user-select: none;
+}
+
+.admin-mode .badge { cursor: grab; }
+
+.status-office { background: var(--office-bg); color: var(--office-text); border: 1px solid #bbf7d0; }
+.status-home { background: #ac1616; color: #e8dede; border: 1px solid #7a1f1f; }
+
+.counter-cell { width: 70px; font-weight: 800; background: #fcfcfc; }
+.counter-val { font-size: 1rem; display: block; }
+.count-ok { color: var(--success); }
+.count-bad { color: var(--error); }
+.counter-label { font-size: 0.55rem; color: #94a3b8; font-weight: 400; }
+
+/* History Section */
+.history-section { margin-top: 2rem; width: 100%; }
+.history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 10px; }
+.history-card { background: white; border: 1px solid var(--border); padding: 10px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px; }
+.history-card.active { border-color: var(--primary); background: #eff6ff; }
+.history-info { font-size: 0.8rem; font-weight: 700; }
+
+#sync-status { font-size: 0.7rem; margin-top: 4px; color: #94a3b8; }
+.spin { animation: rotate 2s infinite linear; }
+@keyframes rotate { from {transform:rotate(0deg);} to {transform:rotate(360deg);} }
+
+@media (max-width: 600px) {
+    header { flex-direction: column; align-items: flex-start; }
+    #admin-controls { width: 100%; justify-content: space-between; }
+    button { flex: 1 1 45%; justify-content: center; }
+}
