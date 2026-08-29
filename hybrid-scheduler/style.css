@@ -125,6 +125,7 @@ td {
 
 .status-office { background: var(--office-bg); color: var(--office-text); border: 1px solid #bbf7d0; }
 .status-home { background: #ac1616; color: #e8dede; border: 1px solid #7a1f1f; }
+.status-leave { background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }
 
 .counter-cell { width: 70px; font-weight: 800; background: #fcfcfc; }
 .counter-val { font-size: 1rem; display: block; }

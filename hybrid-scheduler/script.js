@@ -216,7 +216,7 @@ function renderTable() {
             td.dataset.day = day;
 
             const badge = document.createElement('div');
-            badge.className = `badge ${status === 'Office' ? 'status-office' : 'status-home'}`;
+            badge.className = `badge status-${String(status || 'Office').toLowerCase()}`;
             badge.innerText = status;
 
             if (IS_ADMIN) {
@@ -233,7 +233,11 @@ function renderTable() {
                     }
                 });
                 badge.onclick = () => {
-                    currentData[person.name][day] = (status === 'Office' ? 'Home' : 'Office');
+                    let nextStatus = 'Office';
+                    if (status === 'Office') nextStatus = 'Home';
+                    else if (status === 'Home') nextStatus = 'Leave';
+                    else if (status === 'Leave') nextStatus = 'Office';
+                    currentData[person.name][day] = nextStatus;
                     renderTable();
                     autoSync();
                 };

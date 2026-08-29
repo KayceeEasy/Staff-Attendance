@@ -734,6 +734,7 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
         let presentCount = 0;
         let lateCount = 0;
         let wfhCount = 0;
+        let leaveCount = 0;
         let missedCount = 0;
 
         weekDays.forEach((day, idx) => {
@@ -767,6 +768,7 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
                 else if (typeof val === 'object' && val !== null) locationVal = val.location || val.type || '';
             }
             const isWfh = String(locationVal || '').trim().toLowerCase() === 'home';
+            const isLeave = String(locationVal || '').trim().toLowerCase() === 'leave';
             const inLog = dayLogs.find(l => String(l.action || '').trim().toUpperCase() === 'IN');
 
             let cellText = '—';
@@ -778,6 +780,9 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
                     lateCount++;
                     cellText += ' (Late)';
                 }
+            } else if (isLeave) {
+                leaveCount++;
+                cellText = 'Leave';
             } else if (isWfh) {
                 wfhCount++;
                 cellText = 'WFH';
@@ -792,6 +797,7 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
         row['Days Present'] = presentCount;
         row['Days Late'] = lateCount;
         row['Days WFH'] = wfhCount;
+        row['Days on Leave'] = leaveCount;
         row['Days Missed'] = missedCount;
 
         return row;
@@ -827,6 +833,7 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
     let totalPresent = 0;
     let totalLates = 0;
     let totalWfh = 0;
+    let totalLeave = 0;
     let totalMissed = 0;
 
     sortedStaff.forEach(name => {
@@ -836,6 +843,7 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
         let staffPresent = 0;
         let staffLate = 0;
         let staffWfh = 0;
+        let staffLeave = 0;
         let staffMissed = 0;
 
         let scheduleKey = scheduleNameIndex[normalizedStaffName] || null;
@@ -869,6 +877,7 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                 else if (typeof val === 'object' && val !== null) locationVal = val.location || val.type || '';
             }
             const isWfh = String(locationVal || '').trim().toLowerCase() === 'home';
+            const isLeave = String(locationVal || '').trim().toLowerCase() === 'leave';
             const inLog = dayLogs.find(l => String(l.action || '').trim().toUpperCase() === 'IN');
 
             let cellContent = '—';
@@ -887,6 +896,11 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                     cellContent = `✓ ${inLog.time || 'Present'}`;
                     cellStyle += ' background: #f8fafc; color: #0f172a;';
                 }
+            } else if (isLeave) {
+                staffLeave++;
+                totalLeave++;
+                cellContent = '🌴 Leave';
+                cellStyle += ' background: #f3e8ff; color: #6b21a8; font-weight: 500;';
             } else if (isWfh) {
                 staffWfh++;
                 totalWfh++;
@@ -906,6 +920,7 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
             <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; background: #f8fafc; font-weight: bold; color: #0f172a;">${staffPresent}</td>
             <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; background: #fdf2f2; color: #9b1c1c; font-weight: bold;">${staffLate}</td>
             <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; background: #f0fdf4; color: #166534; font-weight: bold;">${staffWfh}</td>
+            <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; background: #f3e8ff; color: #6b21a8; font-weight: bold;">${staffLeave}</td>
             <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; background: #fffbeb; color: #854d0e; font-weight: bold;">${staffMissed}</td>
         `;
 
@@ -934,14 +949,15 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                 <thead>
                     <tr style="background: #f1f5f9; border: 1px solid #cbd5e1; text-align: left;">
                         <th style="padding: 10px; border: 1px solid #cbd5e1;">Staff Name</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 13%;">Mon ${weekDays[0]}</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 13%;">Tue ${weekDays[1]}</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 13%;">Wed ${weekDays[2]}</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 13%;">Thu ${weekDays[3]}</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 13%;">Fri ${weekDays[4]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 11%;">Mon ${weekDays[0]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 11%;">Tue ${weekDays[1]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 11%;">Wed ${weekDays[2]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 11%;">Thu ${weekDays[3]}</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 11%;">Fri ${weekDays[4]}</th>
                         <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #e2e8f0; width: 6%;">Pres</th>
                         <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #fee2e2; color: #991b1b; width: 6%;">Late</th>
                         <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #dcfce7; color: #166534; width: 6%;">WFH</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #f3e8ff; color: #6b21a8; width: 6%;">Leave</th>
                         <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #fef9c3; color: #854d0e; width: 6%;">Miss</th>
                     </tr>
                 </thead>
@@ -950,7 +966,7 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                 </tbody>
             </table>
             
-            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 15px; margin-top: 20px;">
+            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 15px; margin-top: 20px;">
                 <div style="text-align: center;">
                     <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 4px;">Attendance Rate</div>
                     <div style="font-size: 20px; font-weight: bold; color: #0f172a;">${attendanceRate}%</div>
@@ -966,6 +982,10 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                 <div style="text-align: center;">
                     <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 4px;">Work-From-Home</div>
                     <div style="font-size: 20px; font-weight: bold; color: #0f172a;">${totalWfh} days</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 4px;">Staff on Leave</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #6b21a8;">${totalLeave} days</div>
                 </div>
             </div>
             
@@ -1004,8 +1024,8 @@ async function handleExportWeek(weekData, weekStartStr) {
             {
                 type: 'select',
                 options: [
-                    { label: 'Excel/CSV Spreadsheet (HR Matrix)', value: 'csv' },
-                    { label: 'PDF Report (Ready to Print)', value: 'pdf' }
+                    { label: 'Excel/CSV Spreadsheet', value: 'csv' },
+                    { label: 'PDF Report', value: 'pdf' }
                 ],
                 value: 'csv'
             }
@@ -1209,11 +1229,13 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
             }
 
             const isWfh = String(locationVal || '').trim().toLowerCase() === 'home';
+            const isLeave = String(locationVal || '').trim().toLowerCase() === 'leave';
 
             matrix[name][idx] = {
                 logs: dayLogs,
                 schedule: staffSchedules,
-                isWfh: isWfh
+                isWfh: isWfh,
+                isLeave: isLeave
             };
         });
     });
@@ -1244,6 +1266,9 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
                                     status = `✓ In<br>${escapeHtml(inLog.time || '')}`;
                                     if (isLate) status += '<br>⚠ Late';
                                     statusClass = isLate ? 'matrix-late' : 'matrix-in';
+                                } else if (cell.isLeave) {
+                                    status = '<span class="matrix-leave-emoji" aria-label="Leave">🌴</span>';
+                                    statusClass = 'matrix-leave';
                                 } else if (cell.isWfh) {
                                     status = '<span class="matrix-home-emoji" aria-label="Home">🏠</span>';
                                     statusClass = 'matrix-wfh';
@@ -1263,6 +1288,7 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
             <span class="legend-item"><span class="legend-dot matrix-in"></span> Signed In</span>
             <span class="legend-item"><span class="legend-dot matrix-late"></span> Late</span>
             <span class="legend-item"><span class="legend-dot matrix-wfh"></span> Home</span>
+            <span class="legend-item"><span class="legend-dot matrix-leave"></span> Leave</span>
             <span class="legend-item"><span class="legend-dot matrix-absent"></span> Absent</span>
         </div>
     `);

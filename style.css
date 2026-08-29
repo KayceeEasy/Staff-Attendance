@@ -738,6 +738,18 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
     color: var(--primary);
     font-weight: 600;
 }
+.matrix-cell.matrix-leave {
+    background: rgba(168, 85, 247, 0.14);
+    color: #a855f7;
+    font-weight: 600;
+}
+:root[data-theme="dark"] .matrix-cell.matrix-leave {
+    background: rgba(168, 85, 247, 0.22);
+    color: #c084fc;
+}
+.matrix-leave-emoji {
+    font-size: 1.1rem;
+}
 .matrix-cell.matrix-absent {
     background: var(--error-light);
     color: var(--error);
@@ -771,6 +783,7 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
 .legend-dot.matrix-in { background: var(--success); }
 .legend-dot.matrix-late { background: #f59e0b; }
 .legend-dot.matrix-wfh { background: var(--primary); }
+.legend-dot.matrix-leave { background: #a855f7; }
 .legend-dot.matrix-absent { background: var(--error); }
 
 .dashboard-quick-actions {
