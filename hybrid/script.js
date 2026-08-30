@@ -215,9 +215,10 @@ function renderTable() {
             td.dataset.staff = person.name;
             td.dataset.day = day;
 
+            const displayStatus = status || 'Office';
             const badge = document.createElement('div');
-            badge.className = `badge status-${String(status || 'Office').toLowerCase()}`;
-            badge.innerText = status;
+            badge.className = `badge status-${displayStatus.toLowerCase()}`;
+            badge.innerText = (displayStatus === 'Office' ? '✓ Office' : (displayStatus === 'Home' ? '🏠 Home' : '🌴 Leave'));
 
             if (IS_ADMIN) {
                 badge.draggable = true;

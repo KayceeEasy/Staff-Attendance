@@ -1018,10 +1018,13 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
     document.body.appendChild(printDiv);
     document.body.appendChild(styleTag);
     
+    const originalTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    document.documentElement.setAttribute('data-theme', 'light');
     const originalTitle = document.title;
     document.title = fileName;
     window.print();
     document.title = originalTitle;
+    document.documentElement.setAttribute('data-theme', originalTheme);
     
     setTimeout(() => {
         printDiv.remove();
