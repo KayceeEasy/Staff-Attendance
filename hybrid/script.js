@@ -366,19 +366,6 @@ async function loadHistory(updateTable = true) {
 
         const history = mergeHistory(remoteHistory, localHistory);
 
-        container.innerHTML = "";
-        history.forEach(item => {
-            const card = document.createElement('div');
-            card.className = `history-card ${item.weekKey === currentWeekKey ? 'active' : ''}`;
-            card.onclick = () => {
-                currentWeekKey = item.weekKey;
-                currentData = ensureScheduleData(item.data);
-                renderTable();
-            };
-            card.innerHTML = `<i data-lucide="calendar"></i><div class="history-info">${item.weekKey}</div>`;
-            container.appendChild(card);
-        });
-
         if (updateTable) {
             const currentRange = getWeekRange(0);
             const currentWeekEntry = history.find(item => item.weekKey === currentRange);
@@ -404,6 +391,8 @@ async function loadHistory(updateTable = true) {
                 }
             }
         }
+
+        renderHistoryCards(container, history);
     } catch (e) {
         console.warn('loadHistory from Supabase failed, falling back to local:', e);
         displayLocalHistoryOnly(container, localHistory, backup, updateTable);
@@ -414,18 +403,6 @@ async function loadHistory(updateTable = true) {
 
 function displayLocalHistoryOnly(container, localHistory, backup, updateTable) {
     const history = localHistory.length > 0 ? localHistory : backup ? [backup] : [];
-    container.innerHTML = "";
-    history.forEach(item => {
-        const card = document.createElement('div');
-        card.className = `history-card ${item.weekKey === currentWeekKey ? 'active' : ''}`;
-        card.onclick = () => {
-            currentWeekKey = item.weekKey;
-            currentData = ensureScheduleData(item.data);
-            renderTable();
-        };
-        card.innerHTML = `<i data-lucide="calendar"></i><div class="history-info">${item.weekKey}</div>`;
-        container.appendChild(card);
-    });
 
     if (updateTable) {
         const currentRange = getWeekRange(0);
@@ -451,7 +428,45 @@ function displayLocalHistoryOnly(container, localHistory, backup, updateTable) {
             }
         }
     }
+
+    renderHistoryCards(container, history);
     lucide.createIcons();
+}
+
+function renderHistoryCards(container, history) {
+    container.innerHTML = "";
+    if (history.length <= 5) {
+        renderSlice(history);
+    } else {
+        renderSlice(history.slice(0, 4));
+        
+        const moreCard = document.createElement('div');
+        moreCard.className = 'history-card more-weeks-card';
+        moreCard.innerHTML = `<i data-lucide="chevrons-down"></i><div class="history-info">Show More (${history.length - 4})</div>`;
+        moreCard.onclick = () => {
+            container.innerHTML = "";
+            renderSlice(history);
+            lucide.createIcons();
+        };
+        container.appendChild(moreCard);
+    }
+
+    function renderSlice(slice) {
+        slice.forEach(item => {
+            const card = document.createElement('div');
+            card.className = `history-card ${item.weekKey === currentWeekKey ? 'active' : ''}`;
+            card.onclick = () => {
+                currentWeekKey = item.weekKey;
+                currentData = ensureScheduleData(item.data);
+                renderTable();
+                const allCards = container.querySelectorAll('.history-card');
+                allCards.forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+            };
+            card.innerHTML = `<i data-lucide="calendar"></i><div class="history-info">${item.weekKey}</div>`;
+            container.appendChild(card);
+        });
+    }
 }
 
 async function downloadImage() {
