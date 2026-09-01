@@ -782,7 +782,12 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
             if (inLog) {
                 presentCount++;
                 const isLate = inLog.status && String(inLog.status).trim().toUpperCase() === 'LATE';
-                cellText = inLog.time || 'Present';
+                if (isWfh) {
+                    wfhCount++;
+                    cellText = `WFH (${inLog.time || 'Present'})`;
+                } else {
+                    cellText = inLog.time || 'Present';
+                }
                 if (isLate) {
                     lateCount++;
                     cellText += ' (Late)';
@@ -791,8 +796,8 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
                 leaveCount++;
                 cellText = 'Leave';
             } else if (isWfh) {
-                wfhCount++;
-                cellText = 'WFH';
+                missedCount++;
+                cellText = 'Missed (WFH)';
             } else {
                 missedCount++;
                 cellText = 'Missed';
@@ -901,14 +906,28 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                 staffPresent++;
                 totalPresent++;
                 const isLate = inLog.status && String(inLog.status).trim().toUpperCase() === 'LATE';
-                if (isLate) {
-                    staffLate++;
-                    totalLates++;
-                    cellContent = `⚠️ ${inLog.time || 'Present'} (Late)`;
-                    cellStyle += ' background: #fdf2f2; color: #9b1c1c; font-weight: 500;';
+                if (isWfh) {
+                    staffWfh++;
+                    totalWfh++;
+                    if (isLate) {
+                        staffLate++;
+                        totalLates++;
+                        cellContent = `🏠 ${inLog.time || 'Present'} (Late)`;
+                        cellStyle += ' background: #fdf2f2; color: #9b1c1c; font-weight: 500;';
+                    } else {
+                        cellContent = `🏠 ${inLog.time || 'Present'}`;
+                        cellStyle += ' background: #eff6ff; color: #1d4ed8; font-weight: 500;';
+                    }
                 } else {
-                    cellContent = `✓ ${inLog.time || 'Present'}`;
-                    cellStyle += ' background: #f8fafc; color: #0f172a;';
+                    if (isLate) {
+                        staffLate++;
+                        totalLates++;
+                        cellContent = `⚠️ ${inLog.time || 'Present'} (Late)`;
+                        cellStyle += ' background: #fdf2f2; color: #9b1c1c; font-weight: 500;';
+                    } else {
+                        cellContent = `✓ ${inLog.time || 'Present'}`;
+                        cellStyle += ' background: #f8fafc; color: #0f172a;';
+                    }
                 }
             } else if (isLeave) {
                 staffLeave++;
@@ -916,10 +935,10 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                 cellContent = '🌴 Leave';
                 cellStyle += ' background: #f3e8ff; color: #6b21a8; font-weight: 500;';
             } else if (isWfh) {
-                staffWfh++;
-                totalWfh++;
-                cellContent = '🏠 WFH';
-                cellStyle += ' background: #f0fdf4; color: #166534; font-weight: 500;';
+                staffMissed++;
+                totalMissed++;
+                cellContent = '❌ Missed (WFH)';
+                cellStyle += ' background: #fffbeb; color: #854d0e;';
             } else {
                 staffMissed++;
                 totalMissed++;
@@ -1279,15 +1298,20 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
 
                                 if (inLog) {
                                     const isLate = inLog.status && String(inLog.status).trim().toUpperCase() === 'LATE';
-                                    status = `✓ In<br>${escapeHtml(inLog.time || '')}`;
+                                    if (cell.isWfh) {
+                                        status = `🏠 In<br>${escapeHtml(inLog.time || '')}`;
+                                        statusClass = isLate ? 'matrix-late' : 'matrix-wfh';
+                                    } else {
+                                        status = `✓ In<br>${escapeHtml(inLog.time || '')}`;
+                                        statusClass = isLate ? 'matrix-late' : 'matrix-in';
+                                    }
                                     if (isLate) status += '<br>⚠ Late';
-                                    statusClass = isLate ? 'matrix-late' : 'matrix-in';
                                 } else if (cell.isLeave) {
                                     status = '<span class="matrix-leave-emoji" aria-label="Leave">🌴</span>';
                                     statusClass = 'matrix-leave';
                                 } else if (cell.isWfh) {
-                                    status = '<span class="matrix-home-emoji" aria-label="Home">🏠</span>';
-                                    statusClass = 'matrix-wfh';
+                                    status = '—';
+                                    statusClass = 'matrix-absent';
                                 } else {
                                     status = '—';
                                     statusClass = 'matrix-absent';
@@ -1301,11 +1325,11 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
             </table>
         </div>
         <div class="matrix-legend">
-            <span class="legend-item"><span class="legend-dot matrix-in"></span> Signed In</span>
+            <span class="legend-item"><span class="legend-dot matrix-in"></span> Office In</span>
+            <span class="legend-item"><span class="legend-dot matrix-wfh"></span> WFH In</span>
             <span class="legend-item"><span class="legend-dot matrix-late"></span> Late</span>
-            <span class="legend-item"><span class="legend-dot matrix-wfh"></span> Home</span>
             <span class="legend-item"><span class="legend-dot matrix-leave"></span> Leave</span>
-            <span class="legend-item"><span class="legend-dot matrix-absent"></span> Absent</span>
+            <span class="legend-item"><span class="legend-dot matrix-absent"></span> Absent / Missed</span>
         </div>
     `);
 

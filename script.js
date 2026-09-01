@@ -460,6 +460,9 @@ function populateStaffDropdown(names, preserveSelection = true) {
     }
 
     updateSignInButtonsState();
+    if (activeName) {
+        updateScheduleBanner(activeName);
+    }
 }
 
 function initSearchableStaffDropdown() {
@@ -1011,9 +1014,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 safeStorage.setItem('saved_name', name);
                 syncScheduleToMobileNative(name);
                 refreshRecentLogsFromDb();
+                updateScheduleBanner(name);
             } else {
                 safeStorage.removeItem('saved_name');
                 syncScheduleToMobileNative(null);
+                updateScheduleBanner(null);
             }
             updateSignInButtonsState();
         });
@@ -1030,12 +1035,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     flushPendingQueue();
     loadStaffDropdown();
 
-    // Auto-refresh DB logs and sync schedule on load
+    // Auto-refresh DB logs, banner and sync schedule on load
     const initialName = safeStorage.getItem('saved_name') || getLocalDeviceLockHint();
     if (initialName) {
         setTimeout(() => {
             syncScheduleToMobileNative(initialName);
             refreshRecentLogsFromDb();
+            updateScheduleBanner(initialName);
         }, 800);
     }
 
@@ -1517,3 +1523,85 @@ async function syncScheduleToMobileNative(name) {
         console.warn('Failed to sync WFH schedule to mobile native:', error.message);
     }
 }
+
+let currentScheduleCache = {};
+let currentScheduleWeekStart = '';
+
+async function updateScheduleBanner(name) {
+    const banner = document.getElementById('schedule-mode-banner');
+    if (!banner) return;
+
+    if (!name) {
+        banner.style.display = 'none';
+        banner.className = 'schedule-mode-banner';
+        banner.textContent = '';
+        return;
+    }
+
+    try {
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const today = new Date();
+        const dayName = days[today.getDay()];
+
+        const day = today.getDay();
+        const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(today.getFullYear(), today.getMonth(), diff);
+        const dd = String(monday.getDate()).padStart(2, '0');
+        const mm = String(monday.getMonth() + 1).padStart(2, '0');
+        const yyyy = monday.getFullYear();
+        const weekStartStr = `${dd}/${mm}/${yyyy}`;
+
+        let schedule = null;
+        if (currentScheduleWeekStart === weekStartStr && Object.keys(currentScheduleCache).length > 0) {
+            schedule = currentScheduleCache;
+        } else {
+            const response = await callBackend({ mode: 'get-hybrid-schedule', weekStart: weekStartStr });
+            if (response && response.ok && response.schedule) {
+                currentScheduleCache = response.schedule;
+                currentScheduleWeekStart = weekStartStr;
+                schedule = response.schedule;
+            }
+        }
+
+        let locationVal = '';
+        if (schedule) {
+            const normalizedName = String(name || '').trim().toLowerCase();
+            const candidateKey = Object.keys(schedule).find(k => {
+                const nk = String(k || '').trim().toLowerCase();
+                return nk === normalizedName || nk.includes(normalizedName) || normalizedName.includes(nk);
+            });
+            const staffSched = candidateKey ? schedule[candidateKey] : null;
+            if (staffSched) {
+                if (typeof staffSched === 'object' && !Array.isArray(staffSched)) {
+                    locationVal = staffSched[dayName] || staffSched[dayName.toLowerCase()] || '';
+                } else if (Array.isArray(staffSched)) {
+                    const found = staffSched.find(s => String(s.day || '').toLowerCase() === dayName.toLowerCase());
+                    locationVal = found?.location || found?.type || '';
+                }
+            }
+        }
+
+        const normalizedLoc = String(locationVal || '').trim().toLowerCase();
+        banner.className = 'schedule-mode-banner';
+
+        if (normalizedLoc === 'home') {
+            banner.classList.add('mode-home');
+            banner.textContent = 'Today: Home🏠';
+            banner.style.display = 'inline-flex';
+        } else if (normalizedLoc === 'leave') {
+            banner.classList.add('mode-leave');
+            banner.textContent = 'Today: Leave🌴';
+            banner.style.display = 'inline-flex';
+        } else {
+            banner.classList.add('mode-office');
+            banner.textContent = 'Today: Office💼';
+            banner.style.display = 'inline-flex';
+        }
+    } catch (e) {
+        console.warn('updateScheduleBanner error:', e.message);
+        banner.className = 'schedule-mode-banner mode-office';
+        banner.textContent = 'Today: Office💼';
+        banner.style.display = 'inline-flex';
+    }
+}
+

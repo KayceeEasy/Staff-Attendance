@@ -282,6 +282,58 @@ select { cursor: pointer; }
 .staff-option-item.selected { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #ffffff !important; font-weight: 700; }
 .staff-option-empty { padding: 12px; font-size: 0.85rem; color: var(--muted); text-align: center; }
 
+.schedule-mode-banner {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin: -4px auto 14px auto;
+    transition: all 0.2s ease-in-out;
+    animation: fadeInScale 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    box-sizing: border-box;
+    text-align: center;
+}
+
+.schedule-mode-banner.mode-office {
+    background: rgba(34, 197, 94, 0.12);
+    color: #166534;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.schedule-mode-banner.mode-home {
+    background: rgba(59, 130, 246, 0.12);
+    color: #1d4ed8;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.schedule-mode-banner.mode-leave {
+    background: rgba(168, 85, 247, 0.12);
+    color: #6b21a8;
+    border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+:root[data-theme="dark"] .schedule-mode-banner.mode-office {
+    background: rgba(34, 197, 94, 0.2);
+    color: #86efac;
+    border-color: rgba(34, 197, 94, 0.4);
+}
+
+:root[data-theme="dark"] .schedule-mode-banner.mode-home {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+    border-color: rgba(59, 130, 246, 0.4);
+}
+
+:root[data-theme="dark"] .schedule-mode-banner.mode-leave {
+    background: rgba(168, 85, 247, 0.2);
+    color: #d8b4fe;
+    border-color: rgba(168, 85, 247, 0.4);
+}
+
 .attendance-hero-container { display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 18px 0 14px; width: 100%; }
 .primary-action-zone { display: flex; align-items: center; justify-content: center; width: 100%; margin-bottom: 14px; }
 .btn-in-hero { width: clamp(150px, 48%, 200px); aspect-ratio: 1 / 1; height: auto !important; border-radius: 50% !important; flex-shrink: 0; box-sizing: border-box; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: #ffffff !important; border: none; box-shadow: 0 12px 32px var(--primary-glow), 0 4px 16px rgba(37, 99, 235, 0.35); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; position: relative; transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease, opacity 0.2s ease, background 0.2s ease; user-select: none; -webkit-tap-highlight-color: transparent; padding: 0 !important; margin: 0 auto; }
