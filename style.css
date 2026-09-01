@@ -83,12 +83,13 @@ html.theme-transitioning,
 html.theme-transitioning *,
 html.theme-transitioning *::before,
 html.theme-transitioning *::after {
-    transition: background-color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-                border-color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-                color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-                box-shadow 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-                fill 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-                stroke 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+                border-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+                color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+                fill 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+                stroke 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
     transition-delay: 0s !important;
 }
 
@@ -96,36 +97,55 @@ body {
     position: relative;
     min-height: 100dvh;
     background-color: var(--bg);
-    background-image:
-        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(96, 165, 250, 0.16) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(139, 92, 246, 0.12) 0%, transparent 60%),
-        radial-gradient(ellipse 100% 80% at 50% 50%, var(--bg-2) 0%, var(--bg) 100%);
     display: flex;
     justify-content: center;
     align-items: flex-start;
     padding: 24px 16px;
     box-sizing: border-box;
+    transition: background-color 0.4s ease, color 0.4s ease;
 }
 
+/* Light mode background gradient layer */
 body::before {
     content: "";
     position: fixed;
     inset: 0;
     pointer-events: none;
-    background: linear-gradient(130deg, rgba(255,255,255,0.16), transparent 38%, rgba(255,255,255,0.06));
-    opacity: 0.9;
+    background-image:
+        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(96, 165, 250, 0.16) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(139, 92, 246, 0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 100% 80% at 50% 50%, var(--bg-2) 0%, var(--bg) 100%);
+    opacity: 1;
+    transition: opacity 0.4s ease;
+    z-index: 0;
 }
 
-:root[data-theme="dark"] body {
+/* Dark mode background gradient layer */
+body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
     background-image:
         radial-gradient(ellipse 80% 50% at 20% -10%, rgba(30, 64, 175, 0.35) 0%, transparent 60%),
         radial-gradient(ellipse 60% 40% at 80% 110%, rgba(76, 29, 149, 0.2) 0%, transparent 60%),
         radial-gradient(ellipse 100% 80% at 50% 50%, var(--bg-2) 0%, var(--bg) 100%);
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    z-index: 0;
+}
+
+:root[data-theme="dark"] body::before {
+    opacity: 0;
+}
+
+:root[data-theme="dark"] body::after {
+    opacity: 1;
 }
 
 .card {
     position: relative;
-    background: linear-gradient(145deg, rgba(255,255,255,0.92), rgba(248,250,255,0.96));
+    background: var(--surface);
     backdrop-filter: blur(32px) saturate(180%);
     -webkit-backdrop-filter: blur(32px) saturate(180%);
     padding: 1.5rem;
@@ -136,6 +156,7 @@ body::before {
     border: 1px solid var(--border);
     text-align: center;
     box-sizing: border-box;
+    z-index: 1;
 }
 
 .card::before {
@@ -145,11 +166,7 @@ body::before {
     height: 160px;
     background: radial-gradient(circle, rgba(37, 99, 235, 0.16), transparent 70%);
     pointer-events: none;
-}
-
-:root[data-theme="dark"] .card {
-    background: linear-gradient(145deg, rgba(10, 20, 45, 0.95), rgba(8, 15, 35, 0.98));
-    border-color: var(--border-strong);
+    z-index: -1;
 }
 
 .topbar {
@@ -264,13 +281,6 @@ select:focus, input:focus {
     box-shadow: 0 0 0 3px var(--primary-glow);
     background: var(--surface);
 }
-:root[data-theme="dark"] select,
-:root[data-theme="dark"] input[type="text"],
-:root[data-theme="dark"] input[type="email"],
-:root[data-theme="dark"] input[type="date"],
-:root[data-theme="dark"] input[type="password"] {
-    background: rgba(15, 28, 55, 0.85);
-}
 select { cursor: pointer; }
 
 .staff-search-wrapper { position: relative; width: 100%; margin-bottom: 16px; text-align: left; }
@@ -278,7 +288,6 @@ select { cursor: pointer; }
 .staff-search-icon { position: absolute; left: 14px; color: var(--muted); pointer-events: none; z-index: 2; }
 .staff-search-input { width: 100%; padding: 13px 44px 13px 42px !important; border-radius: var(--radius); border: 1.5px solid var(--border); font-size: 0.95rem; background: var(--surface-2); color: var(--text); outline: none; transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease; font-family: inherit; margin-bottom: 0 !important; }
 .staff-search-input:focus, .staff-search-wrapper.open .staff-search-input { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); background: var(--surface); }
-:root[data-theme="dark"] .staff-search-input { background: rgba(15, 28, 55, 0.85); border-color: var(--border); color: var(--text); }
 
 .staff-search-clear { position: absolute; right: 36px; background: none; border: none; color: var(--muted); font-size: 0.85rem; padding: 4px 8px; cursor: pointer; border-radius: 50%; transition: color 0.15s ease, background 0.15s ease; z-index: 2; }
 .staff-search-clear:hover { color: var(--error); background: var(--error-light); }
@@ -365,8 +374,6 @@ select { cursor: pointer; }
 .btn-out-secondary:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border-strong); color: var(--error); transform: translateY(-1px); }
 .btn-out-secondary:active:not(:disabled) { transform: translateY(0); }
 
-:root[data-theme="dark"] .btn-in-hero { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); box-shadow: 0 12px 32px rgba(59, 130, 246, 0.35), 0 0 20px rgba(59, 130, 246, 0.2); }
-:root[data-theme="dark"] .btn-out-secondary { background: rgba(15, 25, 50, 0.8); border-color: var(--border); color: var(--text-2); }
 :root[data-theme="dark"] .btn-out-secondary:hover:not(:disabled) { background: rgba(220, 38, 38, 0.15); border-color: rgba(220, 38, 38, 0.4); color: #f87171; }
 
 .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px; }
@@ -390,11 +397,9 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
 .last-action { margin-top: 12px; padding: 10px 14px; border-radius: var(--radius); background: var(--surface-3); color: var(--primary); font-size: 0.8rem; font-weight: 600; border: 1px solid var(--border); letter-spacing: 0.01em; }
 
 .log-card { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2); text-align: left; }
-:root[data-theme="dark"] .log-card { background: rgba(12, 22, 45, 0.7); }
 .log-head { display: flex; justify-content: space-between; align-items: center; font-size: 0.76rem; color: var(--muted); margin-bottom: 8px; gap: 8px; }
 #log-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 #log-list li { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: 0.83rem; border: 1px solid var(--border); }
-:root[data-theme="dark"] #log-list li { background: rgba(15, 25, 50, 0.7); }
 #log-list li.empty-log { justify-content: center; color: var(--muted); font-style: italic; font-size: 0.81rem; }
 .log-left { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
 .log-name { font-weight: 700; font-size: 0.86rem; color: var(--text); max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -420,8 +425,22 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
 .admin-btn.danger { color: var(--error); border-color: var(--error-light); }
 .admin-btn.danger:hover { background: var(--error-light); }
 
-.admin-card { width: min(100%, 1100px); max-width: 100%; text-align: left; padding: 1.5rem; border-radius: var(--radius-xl); margin: 0 auto; display: block; }
-:root[data-theme="dark"] .admin-card { background: linear-gradient(145deg, rgba(8, 16, 36, 0.96), rgba(5, 10, 25, 0.98)); border-color: var(--border-strong); }
+.admin-card {
+    position: relative;
+    width: min(100%, 1100px);
+    max-width: 100%;
+    text-align: left;
+    padding: 1.5rem;
+    border-radius: var(--radius-xl);
+    margin: 0 auto;
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(32px) saturate(180%);
+    -webkit-backdrop-filter: blur(32px) saturate(180%);
+    box-shadow: var(--shadow);
+    z-index: 1;
+}
 .admin-hero { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
 .admin-badge { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; font-size: 1.3rem; box-shadow: 0 8px 24px var(--primary-glow); flex-shrink: 0; }
 .admin-card h1 { margin: 0 0 4px; font-size: 1.3rem; font-weight: 800; color: var(--text); }
