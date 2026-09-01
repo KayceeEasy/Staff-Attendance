@@ -796,8 +796,8 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
                 leaveCount++;
                 cellText = 'Leave';
             } else if (isWfh) {
-                missedCount++;
-                cellText = 'Missed (WFH)';
+                wfhCount++;
+                cellText = 'WFH';
             } else {
                 missedCount++;
                 cellText = 'Missed';
@@ -935,10 +935,10 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                 cellContent = '🌴 Leave';
                 cellStyle += ' background: #f3e8ff; color: #6b21a8; font-weight: 500;';
             } else if (isWfh) {
-                staffMissed++;
-                totalMissed++;
-                cellContent = '❌ Missed (WFH)';
-                cellStyle += ' background: #fffbeb; color: #854d0e;';
+                staffWfh++;
+                totalWfh++;
+                cellContent = '🏠 WFH';
+                cellStyle += ' background: #f0fdf4; color: #166534; font-weight: 500;';
             } else {
                 staffMissed++;
                 totalMissed++;
@@ -1310,8 +1310,8 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
                                     status = '<span class="matrix-leave-emoji" aria-label="Leave">🌴</span>';
                                     statusClass = 'matrix-leave';
                                 } else if (cell.isWfh) {
-                                    status = '—';
-                                    statusClass = 'matrix-absent';
+                                    status = '<span class="matrix-home-emoji" aria-label="Home">🏠</span>';
+                                    statusClass = 'matrix-wfh';
                                 } else {
                                     status = '—';
                                     statusClass = 'matrix-absent';
@@ -1325,11 +1325,11 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
             </table>
         </div>
         <div class="matrix-legend">
-            <span class="legend-item"><span class="legend-dot matrix-in"></span> Office In</span>
-            <span class="legend-item"><span class="legend-dot matrix-wfh"></span> WFH In</span>
+            <span class="legend-item"><span class="legend-dot matrix-in"></span> Signed In</span>
             <span class="legend-item"><span class="legend-dot matrix-late"></span> Late</span>
+            <span class="legend-item"><span class="legend-dot matrix-wfh"></span> Home</span>
             <span class="legend-item"><span class="legend-dot matrix-leave"></span> Leave</span>
-            <span class="legend-item"><span class="legend-dot matrix-absent"></span> Absent / Missed</span>
+            <span class="legend-item"><span class="legend-dot matrix-absent"></span> Absent</span>
         </div>
     `);
 
