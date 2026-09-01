@@ -628,25 +628,27 @@ function applyTheme(theme, animate = false) {
     const root = document.documentElement;
     const toggle = document.getElementById('theme-toggle');
     const isDark = theme === 'dark';
-    
-    if (animate) {
-        root.classList.add('theme-transitioning');
-        clearTimeout(window._themeTransitionTimeout);
-        window._themeTransitionTimeout = setTimeout(() => {
-            root.classList.remove('theme-transitioning');
-        }, 260);
-    }
 
-    root.setAttribute('data-theme', isDark ? 'dark' : 'light');
-    if (toggle) {
-        toggle.textContent = isDark ? 'Light' : 'Dark';
-        toggle.setAttribute('aria-pressed', String(isDark));
-        toggle.setAttribute('title', isDark ? 'Switch to light mode' : 'Switch to dark mode');
-    }
-    try {
-        safeStorage.setItem(STORAGE_KEYS.theme, isDark ? 'dark' : 'light');
-    } catch (e) {
-        console.warn('localStorage not available:', e);
+    const updateDOM = () => {
+        root.setAttribute('data-theme', isDark ? 'dark' : 'light');
+        if (toggle) {
+            toggle.textContent = isDark ? 'Light' : 'Dark';
+            toggle.setAttribute('aria-pressed', String(isDark));
+            toggle.setAttribute('title', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+        }
+        try {
+            safeStorage.setItem(STORAGE_KEYS.theme, isDark ? 'dark' : 'light');
+        } catch (e) {
+            console.warn('localStorage not available:', e);
+        }
+    };
+
+    if (animate && typeof document.startViewTransition === 'function' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        document.startViewTransition(() => {
+            updateDOM();
+        });
+    } else {
+        updateDOM();
     }
 }
 
