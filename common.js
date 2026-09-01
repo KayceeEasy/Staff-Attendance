@@ -634,7 +634,7 @@ function applyTheme(theme, animate = false) {
         clearTimeout(window._themeTransitionTimeout);
         window._themeTransitionTimeout = setTimeout(() => {
             root.classList.remove('theme-transitioning');
-        }, 450);
+        }, 260);
     }
 
     root.setAttribute('data-theme', isDark ? 'dark' : 'light');

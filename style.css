@@ -12,19 +12,19 @@
     --error:          #dc2626;
     --error-light:    rgba(220, 38, 38, 0.1);
     --warning:        #d97706;
-    --bg:             #f0f4ff;
-    --bg-2:           #e8eeff;
-    --surface:        rgba(255, 255, 255, 0.88);
-    --surface-2:      rgba(248, 250, 255, 0.92);
-    --surface-3:      rgba(238, 244, 255, 0.95);
-    --border:         rgba(203, 213, 255, 0.8);
-    --border-strong:  rgba(147, 197, 253, 0.5);
+    --bg:             #f1f5f9;
+    --bg-2:           #e2e8f0;
+    --surface:        #ffffff;
+    --surface-2:      #f8fafc;
+    --surface-3:      #f1f5f9;
+    --border:         #e2e8f0;
+    --border-strong:  #cbd5e1;
     --text:           #0f172a;
     --text-2:         #1e293b;
     --muted:          #64748b;
     --muted-2:        #94a3b8;
-    --shadow:         0 20px 64px rgba(15, 23, 42, 0.14), 0 4px 16px rgba(37, 99, 235, 0.06);
-    --shadow-soft:    0 8px 24px rgba(15, 23, 42, 0.08);
+    --shadow:         0 10px 30px rgba(15, 23, 42, 0.08), 0 2px 8px rgba(15, 23, 42, 0.04);
+    --shadow-soft:    0 4px 16px rgba(15, 23, 42, 0.06);
     --shadow-btn:     0 4px 12px rgba(37, 99, 235, 0.28);
     --glass-stroke:   rgba(255, 255, 255, 0.6);
     --radius:         14px;
@@ -42,19 +42,19 @@
     --error:          #f87171;
     --error-light:    rgba(248, 113, 113, 0.12);
     --warning:        #fbbf24;
-    --bg:             #050d1a;
-    --bg-2:           #080f1f;
-    --surface:        rgba(10, 20, 40, 0.82);
-    --surface-2:      rgba(14, 26, 50, 0.88);
-    --surface-3:      rgba(18, 34, 62, 0.92);
-    --border:         rgba(30, 50, 90, 0.85);
-    --border-strong:  rgba(59, 130, 246, 0.25);
-    --text:           #f1f5f9;
+    --bg:             #0b1120;
+    --bg-2:           #0f172a;
+    --surface:        #131d33;
+    --surface-2:      #1a2642;
+    --surface-3:      #223254;
+    --border:         #1e293b;
+    --border-strong:  #334155;
+    --text:           #f8fafc;
     --text-2:         #e2e8f0;
     --muted:          #94a3b8;
     --muted-2:        #64748b;
-    --shadow:         0 20px 64px rgba(0, 0, 0, 0.6), 0 4px 16px rgba(0, 0, 0, 0.4);
-    --shadow-soft:    0 8px 24px rgba(0, 0, 0, 0.4);
+    --shadow:         0 12px 40px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-soft:    0 6px 20px rgba(0, 0, 0, 0.35);
     --shadow-btn:     0 4px 14px rgba(96, 165, 250, 0.3);
     --glass-stroke:   rgba(255, 255, 255, 0.07);
 }
@@ -74,23 +74,42 @@ html, body {
     overscroll-behavior-y: auto;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     color: var(--text);
+    background-color: var(--bg);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* ─── Smooth Theme Transition System ─── */
+/* ─── High-Performance 120fps Smooth Theme Transition ─── */
 html.theme-transitioning,
-html.theme-transitioning *,
-html.theme-transitioning *::before,
-html.theme-transitioning *::after {
-    transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-                border-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-                color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-                box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-                opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-                fill 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-                stroke 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    transition-delay: 0s !important;
+html.theme-transitioning body,
+html.theme-transitioning .card,
+html.theme-transitioning .admin-card,
+html.theme-transitioning .staff-search-input,
+html.theme-transitioning .staff-options-list,
+html.theme-transitioning .staff-option-item,
+html.theme-transitioning .schedule-mode-banner,
+html.theme-transitioning .theme-toggle,
+html.theme-transitioning .admin-btn,
+html.theme-transitioning .log-card,
+html.theme-transitioning #log-list li,
+html.theme-transitioning .attendance-matrix th,
+html.theme-transitioning .attendance-matrix td,
+html.theme-transitioning .matrix-cell,
+html.theme-transitioning .matrix-legend,
+html.theme-transitioning .stats-card,
+html.theme-transitioning .dialog-box,
+html.theme-transitioning .table-container,
+html.theme-transitioning table,
+html.theme-transitioning th,
+html.theme-transitioning td,
+html.theme-transitioning input,
+html.theme-transitioning select,
+html.theme-transitioning button,
+html.theme-transitioning a {
+    transition: background-color 0.22s ease,
+                border-color 0.22s ease,
+                color 0.22s ease,
+                box-shadow 0.22s ease !important;
 }
 
 body {
@@ -102,71 +121,19 @@ body {
     align-items: flex-start;
     padding: 24px 16px;
     box-sizing: border-box;
-    transition: background-color 0.4s ease, color 0.4s ease;
-}
-
-/* Light mode background gradient layer */
-body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    background-image:
-        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(96, 165, 250, 0.16) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(139, 92, 246, 0.12) 0%, transparent 60%),
-        radial-gradient(ellipse 100% 80% at 50% 50%, var(--bg-2) 0%, var(--bg) 100%);
-    opacity: 1;
-    transition: opacity 0.4s ease;
-    z-index: 0;
-}
-
-/* Dark mode background gradient layer */
-body::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    background-image:
-        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(30, 64, 175, 0.35) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(76, 29, 149, 0.2) 0%, transparent 60%),
-        radial-gradient(ellipse 100% 80% at 50% 50%, var(--bg-2) 0%, var(--bg) 100%);
-    opacity: 0;
-    transition: opacity 0.4s ease;
-    z-index: 0;
-}
-
-:root[data-theme="dark"] body::before {
-    opacity: 0;
-}
-
-:root[data-theme="dark"] body::after {
-    opacity: 1;
 }
 
 .card {
     position: relative;
     background: var(--surface);
-    backdrop-filter: blur(32px) saturate(180%);
-    -webkit-backdrop-filter: blur(32px) saturate(180%);
     padding: 1.5rem;
     border-radius: var(--radius-xl);
-    box-shadow: var(--shadow), inset 0 1px 0 var(--glass-stroke);
+    box-shadow: var(--shadow);
     width: min(100%, 460px);
     margin: 0 auto;
     border: 1px solid var(--border);
     text-align: center;
     box-sizing: border-box;
-    z-index: 1;
-}
-
-.card::before {
-    content: "";
-    position: absolute;
-    inset: -20% 55% auto -20%;
-    height: 160px;
-    background: radial-gradient(circle, rgba(37, 99, 235, 0.16), transparent 70%);
-    pointer-events: none;
-    z-index: -1;
 }
 
 .topbar {
