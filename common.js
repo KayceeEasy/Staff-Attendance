@@ -624,10 +624,19 @@ function normalizeBackendResponse(data) {
 
 /* ---------- Theme ---------- */
 
-function applyTheme(theme) {
+function applyTheme(theme, animate = false) {
     const root = document.documentElement;
     const toggle = document.getElementById('theme-toggle');
     const isDark = theme === 'dark';
+    
+    if (animate) {
+        root.classList.add('theme-transitioning');
+        clearTimeout(window._themeTransitionTimeout);
+        window._themeTransitionTimeout = setTimeout(() => {
+            root.classList.remove('theme-transitioning');
+        }, 450);
+    }
+
     root.setAttribute('data-theme', isDark ? 'dark' : 'light');
     if (toggle) {
         toggle.textContent = isDark ? 'Light' : 'Dark';
@@ -653,11 +662,11 @@ function initTheme() {
     }
     
     const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    applyTheme(saved === 'dark' || (!saved && prefersDark) ? 'dark' : 'light');
+    applyTheme(saved === 'dark' || (!saved && prefersDark) ? 'dark' : 'light', false);
     
     toggle.addEventListener('click', () => {
         const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-        applyTheme(next);
+        applyTheme(next, true);
     });
 }
 
