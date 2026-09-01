@@ -1053,8 +1053,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         installBtn.addEventListener('click', triggerInstall);
         if (isRunningStandalone()) {
             installBtn.style.display = 'none';
+        } else if (deferredPrompt || window.__deferredPwaPrompt) {
+            installBtn.style.display = 'inline-flex';
         } else {
-            installBtn.style.display = 'block';
+            const isIos = /ipad|iphone|ipod/i.test(navigator.userAgent) && !window.MSStream;
+            if (isIos) {
+                installBtn.style.display = 'inline-flex';
+            }
         }
     }
 });
@@ -1069,48 +1074,49 @@ function isRunningStandalone() {
            navigator.userAgent.includes('Expo');
 }
 
-function triggerInstall() {
-    if (deferredPrompt) {
-        deferredPrompt.prompt();
-        deferredPrompt.userChoice.then(({ outcome }) => {
-            deferredPrompt = null;
-            if (outcome !== 'accepted') {
-                showToast('You can install the app anytime via the browser menu.', 'default', 4000);
-            }
-        });
+async function triggerInstall() {
+    const promptEvent = deferredPrompt || window.__deferredPwaPrompt;
+
+    if (promptEvent) {
+        promptEvent.prompt();
+        const choiceResult = await promptEvent.userChoice;
+        if (choiceResult && choiceResult.outcome === 'accepted') {
+            const btn = document.getElementById('install-btn');
+            if (btn) btn.style.display = 'none';
+        }
+        deferredPrompt = null;
+        window.__deferredPwaPrompt = null;
         return;
     }
 
     if (isRunningStandalone()) {
-        showToast('This app is already running as an installed PWA.', 'success', 3000);
+        const btn = document.getElementById('install-btn');
+        if (btn) btn.style.display = 'none';
+        showToast('App is already installed.', 'success', 3000);
         return;
     }
 
     const isIos = /ipad|iphone|ipod/i.test(navigator.userAgent) && !window.MSStream;
     if (isIos) {
-        showInlineDialog({
-            title: '📲 Install on iPhone / iPad',
-            message: 'To install Lifecard Staff Attendance on your device:\n\n1. Tap the Share button (⎋) at the bottom of your Safari screen.\n2. Scroll down and tap "Add to Home Screen" (➕).\n3. Tap "Add" in the top-right corner.',
-            confirmLabel: 'Got it'
-        });
+        showToast('To install: tap Share (⎋) and select "Add to Home Screen".', 'default', 6000);
     } else {
-        showInlineDialog({
-            title: '📲 Install App',
-            message: 'To install Lifecard Staff Attendance:\n\n1. Tap the browser menu (3 dots ⋮ or ☰).\n2. Select "Install app" or "Add to Home screen".',
-            confirmLabel: 'Got it'
-        });
+        showToast('To install: open browser menu (⋮) and select "Install app".', 'default', 6000);
     }
 }
 
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e;
+    window.__deferredPwaPrompt = e;
     const installBtn = document.getElementById('install-btn');
-    if (installBtn) installBtn.style.display = 'block';
+    if (installBtn && !isRunningStandalone()) {
+        installBtn.style.display = 'inline-flex';
+    }
 });
 
 window.addEventListener('appinstalled', () => {
     deferredPrompt = null;
+    window.__deferredPwaPrompt = null;
     const installBtn = document.getElementById('install-btn');
     if (installBtn) installBtn.style.display = 'none';
     showToast('App installed successfully!', 'success');
