@@ -415,11 +415,20 @@ async function flushPendingQueue() {
     }
 }
 
+let currentStaffTodayMode = 'office'; // 'home' | 'office' | 'leave'
+
+function isCurrentStaffWfhToday() {
+    return currentStaffTodayMode === 'home';
+}
+
 function updateSignInButtonsState() {
     const name = document.getElementById('staff-name').value;
-    const canUseButtons = Boolean(name) && Boolean(coords);
-    document.getElementById('in-btn').disabled = !canUseButtons;
-    document.getElementById('out-btn').disabled = !canUseButtons;
+    const isWfh = isCurrentStaffWfhToday();
+    const canUseButtons = Boolean(name) && (Boolean(coords) || isWfh);
+    const inBtn = document.getElementById('in-btn');
+    const outBtn = document.getElementById('out-btn');
+    if (inBtn) inBtn.disabled = !canUseButtons;
+    if (outBtn) outBtn.disabled = !canUseButtons;
 }
 
 /* ---------- Staff dropdown ---------- */
@@ -683,25 +692,30 @@ async function submit(action) {
         return;
     }
 
+    const isWfh = isCurrentStaffWfhToday();
+
     if (navigator.geolocation) {
         setMessage('Checking your current location...', 'msg-welcome');
         await getFreshCoordsForSubmit();
     }
 
-    if (!coords) {
+    if (!coords && !isWfh) {
         requestLocation();
         updateSignInButtonsState();
         showToast('Could not get your current location. Please try again.', 'error');
         return;
     }
 
+    const submitLat = coords ? coords.lat : 0;
+    const submitLon = coords ? coords.lon : 0;
+
     if (!navigator.onLine) {
-        if (!coords || !coords.lat || !coords.lon) {
+        if (!isWfh && (!coords || !coords.lat || !coords.lon)) {
             showToast('Location required. Cannot sign in without GPS.', 'error');
             updateSignInButtonsState();
             return;
         }
-        queuePendingSubmission(name, action, coords.lat, coords.lon);
+        queuePendingSubmission(name, action, submitLat, submitLon);
         setPendingAction(action, name);
         setMessage('Saved offline. Location will be verified when synced.', 'msg-late');
         return;
@@ -729,15 +743,15 @@ async function submit(action) {
     document.getElementById('out-btn').disabled = true;
     setMessage('Syncing...', 'msg-welcome');
     syncInProgress = true;
-    activeSubmission = { name, action, lat: coords.lat, lon: coords.lon };
+    activeSubmission = { name, action, lat: submitLat, lon: submitLon };
 
     try {
         const data = await callBackend({
             mode: 'attendance',
             name,
             action,
-            lat: coords.lat,
-            lon: coords.lon,
+            lat: submitLat,
+            lon: submitLon,
             deviceId
         });
         await handleAttendanceResponse(data);
@@ -745,7 +759,7 @@ async function submit(action) {
         syncInProgress = false;
         activeSubmission = null;
         setMessage('Sync failed. Saving offline and retrying...', 'msg-late');
-        queuePendingSubmission(name, action, coords.lat, coords.lon);
+        queuePendingSubmission(name, action, submitLat, submitLon);
         scheduleSyncRetry(10000);
     }
 }
@@ -900,10 +914,15 @@ function requestLocation() {
             } else if (err.code === 2) {
                 userMsg = 'Location service is disabled on your device. Please allow location, then refresh the page.';
             }
-            document.getElementById('loc-status').innerText = 'GPS REQUIRED';
-            document.getElementById('loc-status').className = 'status waiting';
+            if (isCurrentStaffWfhToday()) {
+                document.getElementById('loc-status').innerText = 'Virtual Mode 🏠';
+                document.getElementById('loc-status').className = 'status synced';
+            } else {
+                document.getElementById('loc-status').innerText = 'GPS REQUIRED';
+                document.getElementById('loc-status').className = 'status waiting';
+            }
             updateSignInButtonsState();
-            if (!locationWatchErrorShown) {
+            if (!locationWatchErrorShown && !isCurrentStaffWfhToday()) {
                 locationWatchErrorShown = true;
                 showToast(userMsg, 'error', 5000);
             }
@@ -1538,9 +1557,11 @@ async function updateScheduleBanner(name) {
     if (!banner) return;
 
     if (!name) {
+        currentStaffTodayMode = 'office';
         banner.style.display = 'none';
         banner.className = 'schedule-mode-banner';
         banner.textContent = '';
+        updateSignInButtonsState();
         return;
     }
 
@@ -1588,12 +1609,20 @@ async function updateScheduleBanner(name) {
         }
 
         const normalizedLoc = String(locationVal || '').trim().toLowerCase();
+        currentStaffTodayMode = normalizedLoc || 'office';
         banner.className = 'schedule-mode-banner';
 
         if (normalizedLoc === 'home') {
             banner.classList.add('mode-home');
             banner.textContent = 'Today: Home🏠';
             banner.style.display = 'inline-flex';
+            if (!coords) {
+                const locStatus = document.getElementById('loc-status');
+                if (locStatus) {
+                    locStatus.innerText = 'Virtual Mode 🏠';
+                    locStatus.className = 'status synced';
+                }
+            }
         } else if (normalizedLoc === 'leave') {
             banner.classList.add('mode-leave');
             banner.textContent = 'Today: Leave🌴';
@@ -1603,11 +1632,14 @@ async function updateScheduleBanner(name) {
             banner.textContent = 'Today: Office💼';
             banner.style.display = 'inline-flex';
         }
+        updateSignInButtonsState();
     } catch (e) {
         console.warn('updateScheduleBanner error:', e.message);
+        currentStaffTodayMode = 'office';
         banner.className = 'schedule-mode-banner mode-office';
         banner.textContent = 'Today: Office💼';
         banner.style.display = 'inline-flex';
+        updateSignInButtonsState();
     }
 }
 
