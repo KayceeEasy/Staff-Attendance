@@ -1072,18 +1072,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         installBtn.addEventListener('click', triggerInstall);
         if (isRunningStandalone()) {
             installBtn.style.display = 'none';
-        } else if (deferredPrompt || window.__deferredPwaPrompt) {
-            installBtn.style.display = 'inline-flex';
         } else {
-            const isIos = /ipad|iphone|ipod/i.test(navigator.userAgent) && !window.MSStream;
-            if (isIos) {
-                installBtn.style.display = 'inline-flex';
-            }
+            installBtn.style.display = 'inline-flex';
         }
     }
+
+    // Auto-prompt on iOS or web if eligible
+    setTimeout(() => {
+        attemptAutoInstallPrompt(false);
+    }, 1000);
 });
 
-/* ---------- PWA Install Prompt ---------- */
+/* ---------- PWA Install & Auto-Prompt System ---------- */
+
+let autoPromptAttempted = false;
 
 function isRunningStandalone() {
     return window.matchMedia('(display-mode: standalone)').matches ||
@@ -1091,6 +1093,40 @@ function isRunningStandalone() {
            window.isNativeMobileApp === true ||
            navigator.userAgent.includes('LifecardApp') ||
            navigator.userAgent.includes('Expo');
+}
+
+async function attemptAutoInstallPrompt(isFirstInteraction = false) {
+    if (isRunningStandalone()) return;
+
+    const promptEvent = deferredPrompt || window.__deferredPwaPrompt;
+    if (promptEvent) {
+        if (autoPromptAttempted) return;
+        try {
+            await promptEvent.prompt();
+            autoPromptAttempted = true;
+            const choiceResult = await promptEvent.userChoice;
+            if (choiceResult && choiceResult.outcome === 'accepted') {
+                const btn = document.getElementById('install-btn');
+                if (btn) btn.style.display = 'none';
+            }
+            deferredPrompt = null;
+            window.__deferredPwaPrompt = null;
+        } catch (e) {
+            console.log('Auto-prompt waiting for gesture:', e.message);
+        }
+    } else {
+        const isIos = /ipad|iphone|ipod/i.test(navigator.userAgent) && !window.MSStream;
+        if (isIos && !sessionStorage.getItem('ios_pwa_hint_shown')) {
+            sessionStorage.setItem('ios_pwa_hint_shown', 'true');
+            setTimeout(() => {
+                showInlineDialog({
+                    title: '📲 Install Lifecard App',
+                    message: 'Install Lifecard Attendance for quick 1-tap access and offline sign-in:\n\n1. Tap the Share button (⎋) at the bottom.\n2. Tap "Add to Home Screen" (➕).\n3. Tap "Add" in the top-right.',
+                    confirmLabel: 'Got it'
+                });
+            }, 1200);
+        }
+    }
 }
 
 async function triggerInstall() {
@@ -1117,9 +1153,13 @@ async function triggerInstall() {
 
     const isIos = /ipad|iphone|ipod/i.test(navigator.userAgent) && !window.MSStream;
     if (isIos) {
-        showToast('To install: tap Share (⎋) and select "Add to Home Screen".', 'default', 6000);
+        showInlineDialog({
+            title: '📲 Install Web App',
+            message: 'To install on iPhone/iPad:\n\n1. Tap the Share button (⎋) at the bottom of your screen.\n2. Scroll and select "Add to Home Screen" (➕).\n3. Tap "Add" at the top-right.',
+            confirmLabel: 'Got it'
+        });
     } else {
-        showToast('To install: open browser menu (⋮) and select "Install app".', 'default', 6000);
+        showToast('To install: open browser menu (⋮) and select "Install app" or "Add to Home screen".', 'default', 6000);
     }
 }
 
@@ -1131,7 +1171,23 @@ window.addEventListener('beforeinstallprompt', (e) => {
     if (installBtn && !isRunningStandalone()) {
         installBtn.style.display = 'inline-flex';
     }
+    // Auto-trigger prompt as soon as the browser prepares it
+    setTimeout(() => {
+        attemptAutoInstallPrompt(false);
+    }, 600);
 });
+
+// Trigger on first screen interaction if browser blocked auto-prompt without gesture
+const onFirstScreenInteraction = () => {
+    window.removeEventListener('pointerdown', onFirstScreenInteraction);
+    window.removeEventListener('click', onFirstScreenInteraction);
+    window.removeEventListener('touchstart', onFirstScreenInteraction);
+    attemptAutoInstallPrompt(true);
+};
+
+window.addEventListener('pointerdown', onFirstScreenInteraction, { once: true });
+window.addEventListener('click', onFirstScreenInteraction, { once: true });
+window.addEventListener('touchstart', onFirstScreenInteraction, { once: true });
 
 window.addEventListener('appinstalled', () => {
     deferredPrompt = null;

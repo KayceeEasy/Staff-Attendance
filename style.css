@@ -429,7 +429,7 @@ button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; transform
     font-weight: 700;
     color: var(--primary);
     font-size: 0.85rem;
-    display: none;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
