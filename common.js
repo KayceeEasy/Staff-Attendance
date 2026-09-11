@@ -632,7 +632,10 @@ function applyTheme(theme, animate = false) {
     const updateDOM = () => {
         root.setAttribute('data-theme', isDark ? 'dark' : 'light');
         if (toggle) {
-            toggle.textContent = isDark ? 'Light' : 'Dark';
+            toggle.innerHTML = isDark ? '<i data-lucide="sun" size="16"></i>' : '<i data-lucide="moon" size="16"></i>';
+            if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                window.lucide.createIcons();
+            }
             toggle.setAttribute('aria-pressed', String(isDark));
             toggle.setAttribute('title', isDark ? 'Switch to light mode' : 'Switch to dark mode');
         }
@@ -739,6 +742,34 @@ function formatTimestamp(isoString) {
     const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
     const timeStr = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
     return `${dateStr}, ${timeStr}`;
+}
+
+function formatRelativeTimestamp(isoString) {
+    if (!isoString) return 'Pending';
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return 'Pending';
+
+    const now = new Date();
+    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    const isToday = date.getFullYear() === now.getFullYear() &&
+                    date.getMonth() === now.getMonth() &&
+                    date.getDate() === now.getDate();
+
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const isYesterday = date.getFullYear() === yesterday.getFullYear() &&
+                        date.getMonth() === yesterday.getMonth() &&
+                        date.getDate() === yesterday.getDate();
+
+    if (isToday) {
+        return `Today, ${timeStr}`;
+    } else if (isYesterday) {
+        return `Yesterday, ${timeStr}`;
+    } else {
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = date.toLocaleDateString([], { month: 'short' });
+        return `${day} ${month}, ${timeStr}`;
+    }
 }
 
 function formatDateDisplay(isoString) {

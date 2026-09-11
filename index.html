@@ -17,7 +17,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=1.1" />
+    <link rel="stylesheet" href="style.css?v=7.0" />
     <link rel="manifest" href="manifest.json" />
     <link rel="icon" type="image/png" sizes="192x192" href="image/png/icon-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="image/png/icon-512.png" />
@@ -47,10 +47,17 @@
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <div id="main-content" class="card" role="main" aria-label="Staff Attendance App">
         <div class="topbar">
-            <div class="eyebrow">Staff Attendance</div>
+            <div class="topbar-brand">
+                <div class="eyebrow">Staff Attendance</div>
+                <div id="live-clock" class="live-clock" aria-live="polite">--:-- --</div>
+            </div>
             <div class="topbar-actions">
-                <button id="refresh-btn" class="theme-toggle" type="button" aria-label="Refresh app" title="Refresh">Refresh</button>
-                <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch theme">Dark</button>
+                <button id="refresh-btn" class="topbar-icon-btn" type="button" aria-label="Refresh app" title="Refresh">
+                    <i data-lucide="rotate-cw" size="16"></i>
+                </button>
+                <button id="theme-toggle" class="topbar-icon-btn" type="button" aria-label="Switch theme" title="Toggle Theme">
+                    <i data-lucide="moon" size="16"></i>
+                </button>
             </div>
         </div>
         <div class="loc-status-bar">
@@ -92,22 +99,16 @@
             <option>Paschaline</option><option>Uche</option><option>Valentine</option>
         </select>
 
-        <!-- Main Focal Hero Action Zone: Big Round Sign-In Button -->
+        <!-- Main Focal Hero Action Zone: Single Dynamic Button -->
         <div class="attendance-hero-container" role="group" aria-label="Attendance actions">
-            <div class="primary-action-zone">
-                <button id="in-btn" class="btn-in-hero" disabled aria-label="Sign in">
-                    <div class="hero-btn-content">
-                        <i data-lucide="log-in" class="hero-btn-icon" size="36" aria-hidden="true"></i>
-                        <span class="hero-btn-text">SIGN IN</span>
-                    </div>
-                </button>
-            </div>
-            <div class="secondary-action-zone">
-                <button id="out-btn" class="btn-out-secondary" disabled aria-label="Sign out">
-                    <i data-lucide="log-out" size="16" aria-hidden="true"></i>
-                    <span>Sign Out</span>
-                </button>
-            </div>
+            <button id="in-btn" class="btn-in-hero state-in" disabled aria-label="Sign in">
+                <div class="hero-btn-content">
+                    <i id="in-btn-icon" data-lucide="log-in" class="hero-btn-icon" size="34" aria-hidden="true"></i>
+                    <span id="in-btn-text" class="hero-btn-text">SIGN IN</span>
+                    <span id="in-btn-sub" class="hero-btn-sub">Select name to start</span>
+                </div>
+            </button>
+            <button id="out-btn" class="sr-only" aria-hidden="true" tabindex="-1" style="display: none;">Sign Out</button>
         </div>
         <div id="msg" role="alert" aria-live="assertive"></div>
         <div id="last-action" class="last-action" aria-live="polite">Last action: none yet</div>
@@ -611,8 +612,8 @@
         </div>
     </div>
 
-    <script src="common.js"></script>
-    <script src="script.js"></script>
+    <script src="common.js?v=7.0"></script>
+    <script src="script.js?v=7.0"></script>
     <script>
         if ('serviceWorker' in navigator) {
             // Force browser to bypass HTTP cache when checking for Service Worker updates
