@@ -17,7 +17,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=7.0" />
+    <link rel="stylesheet" href="style.css?v=7.1" />
     <link rel="manifest" href="manifest.json" />
     <link rel="icon" type="image/png" sizes="192x192" href="image/png/icon-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="image/png/icon-512.png" />
@@ -87,9 +87,6 @@
             <ul id="staff-options-list" class="staff-options-list" role="listbox" style="display: none;"></ul>
         </div>
 
-        <!-- Dynamic Schedule Banner (e.g. 'Today: Office💼' or 'Today: Home🏠') -->
-        <div id="schedule-mode-banner" class="schedule-mode-banner" style="display: none;" aria-live="polite"></div>
-
         <label for="staff-name" class="sr-only">Select your staff name</label>
         <select id="staff-name" class="sr-only" aria-label="Select your staff name">
             <option value="">Select your name...</option>
@@ -99,13 +96,12 @@
             <option>Paschaline</option><option>Uche</option><option>Valentine</option>
         </select>
 
-        <!-- Main Focal Hero Action Zone: Single Dynamic Button -->
+        <!-- Main Focal Hero Action Zone: Single Dynamic Button Centered -->
         <div class="attendance-hero-container" role="group" aria-label="Attendance actions">
             <button id="in-btn" class="btn-in-hero state-in" disabled aria-label="Sign in">
                 <div class="hero-btn-content">
-                    <i id="in-btn-icon" data-lucide="log-in" class="hero-btn-icon" size="34" aria-hidden="true"></i>
+                    <i id="in-btn-icon" data-lucide="log-in" class="hero-btn-icon" size="36" aria-hidden="true"></i>
                     <span id="in-btn-text" class="hero-btn-text">SIGN IN</span>
-                    <span id="in-btn-sub" class="hero-btn-sub">Select name to start</span>
                 </div>
             </button>
             <button id="out-btn" class="sr-only" aria-hidden="true" tabindex="-1" style="display: none;">Sign Out</button>
@@ -612,8 +608,8 @@
         </div>
     </div>
 
-    <script src="common.js?v=7.0"></script>
-    <script src="script.js?v=7.0"></script>
+    <script src="common.js?v=7.1"></script>
+    <script src="script.js?v=7.1"></script>
     <script>
         if ('serviceWorker' in navigator) {
             // Force browser to bypass HTTP cache when checking for Service Worker updates

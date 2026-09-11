@@ -446,7 +446,6 @@ function updateActionHeroState() {
     const name = nameSelect ? nameSelect.value : '';
     const inBtn = document.getElementById('in-btn');
     const inBtnText = document.getElementById('in-btn-text');
-    const inBtnSub = document.getElementById('in-btn-sub');
     const outBtn = document.getElementById('out-btn');
 
     if (!inBtn) return;
@@ -458,7 +457,7 @@ function updateActionHeroState() {
     const setIcon = (iconName) => {
         const currentIcon = document.getElementById('in-btn-icon');
         if (currentIcon) {
-            currentIcon.outerHTML = `<i id="in-btn-icon" data-lucide="${iconName}" class="hero-btn-icon" size="34" aria-hidden="true"></i>`;
+            currentIcon.outerHTML = `<i id="in-btn-icon" data-lucide="${iconName}" class="hero-btn-icon" size="36" aria-hidden="true"></i>`;
         }
         if (window.lucide && typeof window.lucide.createIcons === 'function') {
             window.lucide.createIcons();
@@ -474,7 +473,6 @@ function updateActionHeroState() {
     if (!name) {
         setClasses('state-in');
         if (inBtnText) inBtnText.textContent = 'SIGN IN';
-        if (inBtnSub) inBtnSub.textContent = 'Select name to start';
         inBtn.disabled = true;
         inBtn.dataset.heroMode = 'IN';
         inBtn.setAttribute('aria-label', 'Sign in (select name to start)');
@@ -487,7 +485,6 @@ function updateActionHeroState() {
     if (isLeave) {
         setClasses('state-leave');
         if (inBtnText) inBtnText.textContent = 'ON LEAVE';
-        if (inBtnSub) inBtnSub.textContent = 'Attendance not required today';
         inBtn.disabled = true;
         inBtn.dataset.heroMode = 'LEAVE';
         inBtn.setAttribute('aria-label', 'On Leave today');
@@ -499,8 +496,8 @@ function updateActionHeroState() {
     // Determine today's logs for this specific staff member
     const todayKey = getTodayKey();
     const recentLogs = readStoredJson(STORAGE_KEYS.recentLog, []);
-    const lastAction = readStoredJson(STORAGE_KEYS.lastAction, null);
 
+    // Filter user's logs for today (including pending offline records)
     const userTodayLogs = recentLogs.filter((entry) => {
         if (!entry || entry.name !== name || entry.status === 'failed') return false;
         if (entry.timestamp && entry.timestamp.startsWith(todayKey)) return true;
@@ -509,22 +506,13 @@ function updateActionHeroState() {
     });
 
     let currentHeroAction = 'IN';
-    let lastInTimestamp = null;
 
     if (userTodayLogs.length > 0) {
         userTodayLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         const latest = userTodayLogs[0];
         if (latest.action === 'IN') {
             currentHeroAction = 'OUT';
-            lastInTimestamp = latest.timestamp;
         } else if (latest.action === 'OUT') {
-            currentHeroAction = 'DONE';
-        }
-    } else if (lastAction && lastAction.name === name && lastAction.date === todayKey) {
-        if (lastAction.action === 'IN') {
-            currentHeroAction = 'OUT';
-            lastInTimestamp = lastAction.timestamp;
-        } else if (lastAction.action === 'OUT') {
             currentHeroAction = 'DONE';
         }
     }
@@ -533,7 +521,6 @@ function updateActionHeroState() {
     if (currentHeroAction === 'DONE') {
         setClasses('state-done');
         if (inBtnText) inBtnText.textContent = 'COMPLETED';
-        if (inBtnSub) inBtnSub.textContent = 'Completed for today';
         inBtn.disabled = true;
         inBtn.dataset.heroMode = 'DONE';
         inBtn.setAttribute('aria-label', 'Attendance completed for today');
@@ -546,12 +533,6 @@ function updateActionHeroState() {
     if (currentHeroAction === 'OUT') {
         setClasses('state-out');
         if (inBtnText) inBtnText.textContent = 'SIGN OUT';
-        let subMsg = 'Tap to sign out';
-        if (lastInTimestamp) {
-            const timeOnly = new Date(lastInTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
-            subMsg = `In at ${timeOnly} • Tap to sign out`;
-        }
-        if (inBtnSub) inBtnSub.textContent = subMsg;
         inBtn.disabled = !canUse;
         inBtn.dataset.heroMode = 'OUT';
         inBtn.setAttribute('aria-label', 'Sign out');
@@ -563,7 +544,6 @@ function updateActionHeroState() {
     // Case 5: Not signed in yet today
     setClasses('state-in');
     if (inBtnText) inBtnText.textContent = 'SIGN IN';
-    if (inBtnSub) inBtnSub.textContent = 'Tap to check in';
     inBtn.disabled = !canUse;
     inBtn.dataset.heroMode = 'IN';
     inBtn.setAttribute('aria-label', 'Sign in');
@@ -1695,6 +1675,37 @@ async function refreshRecentLogsFromDb() {
                 status: 'synced'
             }));
             
+            // Reconcile today's DB logs with lastAction & local storage
+            const todayKey = getTodayKey();
+            const todayDbLogs = response.logs.filter(log => {
+                const logDate = log.date || (log.created_at ? log.created_at.split('T')[0] : '');
+                return logDate === todayKey;
+            });
+
+            if (todayDbLogs.length === 0) {
+                // If database has NO records for this user today, wipe any stale today's lastAction
+                const currentLastAction = readStoredJson(STORAGE_KEYS.lastAction, null);
+                if (currentLastAction && currentLastAction.name === nameToFetch && currentLastAction.date === todayKey) {
+                    safeStorage.removeItem(STORAGE_KEYS.lastAction);
+                    updateLastActionLabel();
+                }
+            } else {
+                // Synchronize lastAction with the latest record from DB today
+                todayDbLogs.sort((a, b) => {
+                    const timeA = new Date(a.created_at || `${a.date} ${a.time}`).getTime();
+                    const timeB = new Date(b.created_at || `${b.date} ${b.time}`).getTime();
+                    return timeB - timeA;
+                });
+                const latestToday = todayDbLogs[0];
+                writeStoredJson(STORAGE_KEYS.lastAction, {
+                    date: todayKey,
+                    action: latestToday.action,
+                    name: nameToFetch,
+                    timestamp: new Date(latestToday.created_at || `${latestToday.date} ${latestToday.time}`).toISOString()
+                });
+                updateLastActionLabel();
+            }
+
             // Merge & Deduplicate
             const merged = [...pendingLogs];
             
@@ -1785,15 +1796,12 @@ let currentScheduleWeekStart = '';
 
 async function updateScheduleBanner(name) {
     const banner = document.getElementById('schedule-mode-banner');
+    if (banner) banner.style.display = 'none'; // Sub-banner removed per user preference; topbar pill is primary
     const locStatus = document.getElementById('loc-status');
     const distLabel = document.getElementById('distance-label');
-    if (!banner) return;
 
     if (!name) {
         currentStaffTodayMode = 'office';
-        banner.style.display = 'none';
-        banner.className = 'schedule-mode-banner';
-        banner.textContent = '';
         if (locStatus) {
             locStatus.innerText = coords ? '📍 Office' : 'Verifying GPS...';
             locStatus.className = coords ? 'status ready' : 'status waiting';
@@ -1847,30 +1855,20 @@ async function updateScheduleBanner(name) {
 
         const normalizedLoc = String(locationVal || '').trim().toLowerCase();
         currentStaffTodayMode = normalizedLoc || 'office';
-        banner.className = 'schedule-mode-banner';
 
         if (normalizedLoc === 'home') {
-            banner.classList.add('mode-home');
-            banner.textContent = 'Today: Home🏠';
-            banner.style.display = 'inline-flex';
             if (locStatus) {
                 locStatus.innerText = '🏠 Virtual Mode';
                 locStatus.className = 'status ready';
             }
             if (distLabel) distLabel.textContent = '';
         } else if (normalizedLoc === 'leave') {
-            banner.classList.add('mode-leave');
-            banner.textContent = 'Today: Leave🌴';
-            banner.style.display = 'inline-flex';
             if (locStatus) {
                 locStatus.innerText = '🌴 On Leave';
                 locStatus.className = 'status synced';
             }
             if (distLabel) distLabel.textContent = '';
         } else {
-            banner.classList.add('mode-office');
-            banner.textContent = 'Today: Office💼';
-            banner.style.display = 'inline-flex';
             if (locStatus) {
                 locStatus.innerText = coords ? '📍 Office' : 'Verifying GPS...';
                 locStatus.className = coords ? 'status ready' : 'status waiting';
@@ -1880,9 +1878,6 @@ async function updateScheduleBanner(name) {
     } catch (e) {
         console.warn('updateScheduleBanner error:', e.message);
         currentStaffTodayMode = 'office';
-        banner.className = 'schedule-mode-banner mode-office';
-        banner.textContent = 'Today: Office💼';
-        banner.style.display = 'inline-flex';
         if (locStatus) {
             locStatus.innerText = coords ? '📍 Office' : 'Verifying GPS...';
             locStatus.className = coords ? 'status ready' : 'status waiting';

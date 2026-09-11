@@ -8,7 +8,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <link rel="stylesheet" href="../style.css" />
+    <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+    <link rel="stylesheet" href="../style.css?v=7.1" />
 </head>
 <body>
 <div class="card admin-card">
@@ -17,7 +18,9 @@
             Admin Console
             <div id="topbar-badge-container"></div>
         </div>
-        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch theme">Dark</button>
+        <button id="theme-toggle" class="topbar-icon-btn theme-toggle" type="button" aria-label="Switch theme" title="Toggle Theme">
+            <i data-lucide="moon" size="16"></i>
+        </button>
     </div>
     <div class="admin-hero">
         <div class="admin-badge">🔐</div>

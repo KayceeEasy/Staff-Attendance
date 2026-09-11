@@ -201,7 +201,8 @@ body::before {
     align-items: center;
 }
 
-.topbar-icon-btn {
+.topbar-icon-btn,
+.theme-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -217,23 +218,27 @@ body::before {
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.topbar-icon-btn:hover {
+.topbar-icon-btn:hover,
+.theme-toggle:hover {
     color: var(--primary);
     border-color: var(--border-strong);
     background: var(--surface);
     transform: translateY(-1px);
 }
 
-.topbar-icon-btn:active {
+.topbar-icon-btn:active,
+.theme-toggle:active {
     transform: translateY(0);
 }
 
-:root[data-theme="dark"] .topbar-icon-btn {
+:root[data-theme="dark"] .topbar-icon-btn,
+:root[data-theme="dark"] .theme-toggle {
     background: rgba(15, 26, 50, 0.8);
     border-color: var(--border);
     color: var(--muted);
 }
-:root[data-theme="dark"] .topbar-icon-btn:hover {
+:root[data-theme="dark"] .topbar-icon-btn:hover,
+:root[data-theme="dark"] .theme-toggle:hover {
     color: var(--primary);
     border-color: var(--border-strong);
     background: rgba(20, 35, 68, 0.9);
@@ -404,7 +409,7 @@ select { cursor: pointer; }
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    margin: 16px 0 12px;
+    margin: 22px 0 18px;
     width: 100%;
 }
 
@@ -428,36 +433,46 @@ select { cursor: pointer; }
     -webkit-tap-highlight-color: transparent;
     padding: 0 !important;
     margin: 0 auto;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* Default State IN (Sign In): Emerald Glow */
+/* State IN (Sign In): Royal Blue Glow */
 .btn-in-hero.state-in {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    box-shadow: 0 12px 32px rgba(16, 185, 129, 0.35), 0 4px 16px rgba(5, 150, 105, 0.3);
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    box-shadow: 0 12px 32px var(--primary-glow), 0 4px 16px rgba(37, 99, 235, 0.35);
 }
 .btn-in-hero.state-in::before {
     content: "";
     position: absolute;
     inset: -6px;
     border-radius: 50%;
-    border: 2px dashed rgba(16, 185, 129, 0.45);
+    border: 2px dashed var(--primary-glow);
     animation: rotateRing 20s linear infinite;
     pointer-events: none;
 }
+:root[data-theme="dark"] .btn-in-hero.state-in {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    box-shadow: 0 12px 32px rgba(59, 130, 246, 0.35), 0 0 20px rgba(59, 130, 246, 0.2);
+}
 
-/* State OUT (Sign Out): Rose / Crimson Glow */
+/* State OUT (Sign Out): Deep Slate / Navy Charcoal (Calm, non-alarming) */
 .btn-in-hero.state-out {
-    background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
-    box-shadow: 0 12px 32px rgba(244, 63, 94, 0.35), 0 4px 16px rgba(225, 29, 72, 0.3);
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.35), 0 4px 12px rgba(15, 23, 42, 0.25);
+    color: #f1f5f9 !important;
 }
 .btn-in-hero.state-out::before {
     content: "";
     position: absolute;
     inset: -6px;
     border-radius: 50%;
-    border: 2px dashed rgba(244, 63, 94, 0.45);
+    border: 2px dashed rgba(148, 163, 184, 0.35);
     animation: rotateRing 20s linear infinite;
     pointer-events: none;
+}
+:root[data-theme="dark"] .btn-in-hero.state-out {
+    background: linear-gradient(135deg, #1e293b 0%, #0b1329 100%);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
 }
 
 /* State DONE (Completed Today): Slate subtle */
@@ -500,32 +515,56 @@ select { cursor: pointer; }
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    padding: 8px;
+    gap: 6px;
 }
 .hero-btn-icon {
-    width: 34px;
-    height: 34px;
-    stroke-width: 2.4px;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+    width: 36px;
+    height: 36px;
+    stroke-width: 2.5px;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
 }
 .hero-btn-text {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-size: 1.05rem;
     font-weight: 800;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
-.hero-btn-sub {
-    font-size: 0.68rem;
-    font-weight: 600;
-    opacity: 0.9;
-    letter-spacing: 0.02em;
-    text-align: center;
-    max-width: 140px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+
+/* Base Button & Admin Button Restorations */
+button {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 13px 16px;
+    border-radius: var(--radius);
+    border: none;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 0.93rem;
+    letter-spacing: 0.01em;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease, background 0.2s ease;
+}
+button:hover:not(:disabled) { transform: translateY(-2px); }
+button:active:not(:disabled) { transform: translateY(0); }
+button:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; transform: none !important; }
+
+.btn-in {
+    width: 100%;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: #ffffff !important;
+    box-shadow: var(--shadow-btn);
+}
+.btn-in:hover:not(:disabled) { box-shadow: 0 8px 24px rgba(37, 99, 235, 0.4); }
+
+.btn-out {
+    width: 100%;
+    background: linear-gradient(135deg, #1e293b, #0f172a);
+    color: #e2e8f0 !important;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.3);
+}
+:root[data-theme="dark"] .btn-out {
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
 #msg { margin-top: 14px; padding: 12px 16px; border-radius: var(--radius); font-size: 0.92rem; font-weight: 700; display: none; line-height: 1.45; border: 1.5px solid transparent; letter-spacing: 0.01em; }

@@ -632,9 +632,11 @@ function applyTheme(theme, animate = false) {
     const updateDOM = () => {
         root.setAttribute('data-theme', isDark ? 'dark' : 'light');
         if (toggle) {
-            toggle.innerHTML = isDark ? '<i data-lucide="sun" size="16"></i>' : '<i data-lucide="moon" size="16"></i>';
             if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                toggle.innerHTML = isDark ? '<i data-lucide="sun" size="16"></i>' : '<i data-lucide="moon" size="16"></i>';
                 window.lucide.createIcons();
+            } else {
+                toggle.textContent = isDark ? '☀️ Light' : '🌙 Dark';
             }
             toggle.setAttribute('aria-pressed', String(isDark));
             toggle.setAttribute('title', isDark ? 'Switch to light mode' : 'Switch to dark mode');
