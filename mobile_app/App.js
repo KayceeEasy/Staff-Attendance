@@ -50,8 +50,39 @@ TaskManager.defineTask(BACKGROUND_GEOFENCE_TASK, async ({ data: { eventType, reg
   }
   if (eventType === Location.GeofencingEventType.Enter) {
     try {
+      const now = new Date();
+      const dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
+
+      // 1. Weekend Filter: Never alert on Saturday or Sunday
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        return;
+      }
+
+      // 2. Business Arrival Hours Filter: Only alert between 6:30 AM and 1:00 PM
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+      const timeInMinutes = currentHour * 60 + currentMinute;
+      if (timeInMinutes < 6 * 60 + 30 || timeInMinutes > 13 * 60) {
+        return;
+      }
+
+      // 3. Schedule Cross-Check: Only alert if today is scheduled as an 'Office' day
+      const savedScheduleStr = await SecureStore.getItemAsync('staff_schedule');
+      if (savedScheduleStr) {
+        const schedule = JSON.parse(savedScheduleStr);
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const todayName = dayNames[dayOfWeek];
+        const dayMode = String(schedule[todayName] || '').trim().toLowerCase();
+        
+        // If scheduled as 'Home', 'Virtual', 'Leave', or anything other than 'Office', skip
+        if (dayMode && dayMode !== 'office') {
+          return;
+        }
+      }
+
+      // 4. Ensure we haven't already signed in today
       const lastActionDate = await SecureStore.getItemAsync('last_action_date');
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = now.toISOString().split('T')[0];
       
       if (lastActionDate !== todayStr) {
         await Notifications.scheduleNotificationAsync({
@@ -122,18 +153,44 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  const startBackgroundGeofencing = async () => {
+  const startBackgroundGeofencing = async (customCoords = null) => {
     try {
-      const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_GEOFENCE_TASK);
-      if (!isRegistered) {
-        await Location.startGeofencingAsync(BACKGROUND_GEOFENCE_TASK, [{
-          latitude: OFFICE_LAT,
-          longitude: OFFICE_LON,
-          radius: GEOFENCE_RADIUS_METERS,
-          notifyOnEnter: true,
-          notifyOnExit: false,
-        }]);
+      let lat = OFFICE_LAT;
+      let lon = OFFICE_LON;
+      let radius = GEOFENCE_RADIUS_METERS;
+
+      if (customCoords && customCoords.latitude && customCoords.longitude) {
+        lat = Number(customCoords.latitude);
+        lon = Number(customCoords.longitude);
+        radius = Number(customCoords.radius) || GEOFENCE_RADIUS_METERS;
+      } else {
+        const savedCoordsStr = await SecureStore.getItemAsync('office_coordinates');
+        if (savedCoordsStr) {
+          try {
+            const parsed = JSON.parse(savedCoordsStr);
+            if (parsed && parsed.latitude && parsed.longitude) {
+              lat = Number(parsed.latitude);
+              lon = Number(parsed.longitude);
+              radius = Number(parsed.radius) || GEOFENCE_RADIUS_METERS;
+            }
+          } catch (e) {
+            console.warn('Could not parse stored office coordinates:', e);
+          }
+        }
       }
+
+      const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_GEOFENCE_TASK);
+      if (isRegistered) {
+        await Location.stopGeofencingAsync(BACKGROUND_GEOFENCE_TASK);
+      }
+      await Location.startGeofencingAsync(BACKGROUND_GEOFENCE_TASK, [{
+        latitude: lat,
+        longitude: lon,
+        radius: radius,
+        notifyOnEnter: true,
+        notifyOnExit: false,
+      }]);
+      console.log(`Background geofencing active at [${lat}, ${lon}] radius ${radius}m`);
     } catch (e) {
       console.warn('Could not start background geofencing:', e.message);
     }
@@ -225,6 +282,16 @@ export default function App() {
           await SecureStore.deleteItemAsync('staff_name');
           await SecureStore.deleteItemAsync('staff_schedule');
           await scheduleSignOutRemindersForWeek(null);
+        }
+      } else if (data.type === 'UPDATE_OFFICE_COORDINATES') {
+        if (data.latitude && data.longitude) {
+          const coords = {
+            latitude: Number(data.latitude),
+            longitude: Number(data.longitude),
+            radius: Number(data.radius) || GEOFENCE_RADIUS_METERS
+          };
+          await SecureStore.setItemAsync('office_coordinates', JSON.stringify(coords));
+          await startBackgroundGeofencing(coords);
         }
       }
     } catch (e) {
