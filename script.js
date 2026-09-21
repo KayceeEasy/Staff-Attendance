@@ -549,52 +549,109 @@ function updateActionHeroState() {
     inBtn.setAttribute('aria-label', 'Sign in');
     setIcon('log-in');
     if (outBtn) outBtn.disabled = !canUse;
+
+    // Biometric 1-tap quick trigger synchronization
+    const bioTriggerBtn = document.getElementById('biometric-auth-trigger');
+    if (bioTriggerBtn) {
+        const showBioTrigger = Boolean(name) && isBiometricsEnrolled(name) && (currentHeroAction === 'IN' || currentHeroAction === 'OUT');
+        bioTriggerBtn.style.display = showBioTrigger ? 'inline-flex' : 'none';
+        if (showBioTrigger) {
+            bioTriggerBtn.disabled = !canUse;
+            const bioSpan = bioTriggerBtn.querySelector('span');
+            if (bioSpan) {
+                bioSpan.textContent = currentHeroAction === 'OUT' ? 'Confirm Sign Out with Biometrics' : 'Confirm Sign In with Biometrics';
+            }
+        }
+    }
 }
 
 function updateSignInButtonsState() {
     updateActionHeroState();
 }
 
-/* ---------- Staff dropdown ---------- */
+/* ---------- Staff Identity & Device Linking ---------- */
 
 let currentStaffList = [];
+let staffDirectoryData = [];
 let highlightedOptionIndex = -1;
 
-function populateStaffDropdown(names, preserveSelection = true) {
-    const staffNameSelect = document.getElementById('staff-name');
-    if (!staffNameSelect || !names || !names.length) return;
-
-    const sortedNames = Array.from(names).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-    currentStaffList = sortedNames;
-
-    const currentValue = preserveSelection ? staffNameSelect.value : '';
-    staffNameSelect.innerHTML = '<option value="">Select your name...</option>' +
-        sortedNames.map((name) => `<option>${escapeHtml(name)}</option>`).join('');
-
-    let activeName = '';
-    if (currentValue && sortedNames.includes(currentValue)) {
-        staffNameSelect.value = currentValue;
-        activeName = currentValue;
-    } else {
-        const saved = safeStorage.getItem('saved_name');
-        if (saved && sortedNames.includes(saved)) {
-            staffNameSelect.value = saved;
-            activeName = saved;
-        }
-    }
-
+function initStaffIdentityView() {
+    const linkedCard = document.getElementById('linked-identity-card');
+    const unlinkedBox = document.getElementById('unlinked-entry-box');
+    const nameDisplay = document.getElementById('linked-name-display');
+    const deptDisplay = document.getElementById('linked-dept-display');
+    const staffSelect = document.getElementById('staff-name');
     const searchInput = document.getElementById('staff-search-input');
-    const clearBtn = document.getElementById('staff-search-clear');
-    if (searchInput) {
-        searchInput.value = activeName;
-    }
-    if (clearBtn) {
-        clearBtn.style.display = activeName ? 'block' : 'none';
+    const switchBtn = document.getElementById('switch-identity-btn');
+    const bioTriggerBtn = document.getElementById('biometric-auth-trigger');
+
+    if (!linkedCard || !unlinkedBox) return;
+
+    const savedName = safeStorage.getItem('saved_name') || getLocalDeviceLockHint() || '';
+    const savedDept = safeStorage.getItem('saved_dept') || 'Staff Member';
+
+    if (savedName) {
+        // Recognized device: Show personal linked card
+        linkedCard.style.display = 'flex';
+        unlinkedBox.style.display = 'none';
+        if (nameDisplay) nameDisplay.textContent = savedName;
+        if (deptDisplay) deptDisplay.textContent = savedDept;
+
+        const bioBadge = document.getElementById('linked-bio-badge');
+        if (bioBadge) {
+            bioBadge.style.display = isBiometricsEnrolled(savedName) ? 'inline-block' : 'none';
+        }
+
+        if (staffSelect) {
+            staffSelect.innerHTML = `<option value="${escapeHtml(savedName)}" selected>${escapeHtml(savedName)}</option>`;
+            staffSelect.value = savedName;
+        }
+
+        if (searchInput) searchInput.value = savedName;
+
+        updateSignInButtonsState();
+        updateScheduleBanner(savedName);
+    } else {
+        // Unlinked device: Show type-to-search dropdown box
+        linkedCard.style.display = 'none';
+        unlinkedBox.style.display = 'block';
+        const bioBadge = document.getElementById('linked-bio-badge');
+        if (bioBadge) bioBadge.style.display = 'none';
+        if (bioTriggerBtn) bioTriggerBtn.style.display = 'none';
+
+        if (staffSelect && !staffSelect.value) {
+            staffSelect.innerHTML = '<option value="">Select your name...</option>' + 
+                currentStaffList.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+            staffSelect.value = '';
+        }
+        if (searchInput) searchInput.value = '';
+
+        updateSignInButtonsState();
+        updateScheduleBanner(null);
+        initSearchableStaffDropdown();
     }
 
-    updateSignInButtonsState();
-    if (activeName) {
-        updateScheduleBanner(activeName);
+    // Attach Switch / Change button handler
+    if (switchBtn && !switchBtn.dataset.bound) {
+        switchBtn.dataset.bound = 'true';
+        switchBtn.addEventListener('click', () => handleUnlinkStaff());
+    }
+
+    // Attach Biometric Trigger button handler
+    if (bioTriggerBtn && !bioTriggerBtn.dataset.bound) {
+        bioTriggerBtn.dataset.bound = 'true';
+        bioTriggerBtn.addEventListener('click', () => {
+            const inBtn = document.getElementById('in-btn');
+            if (inBtn && !inBtn.disabled) {
+                inBtn.click();
+            } else {
+                showToast('Attendance button is not active yet. Please verify GPS location.', 'info');
+            }
+        });
+    }
+
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
     }
 }
 
@@ -607,15 +664,6 @@ function initSearchableStaffDropdown() {
     const select = document.getElementById('staff-name');
 
     if (!wrapper || !input || !optionsList || !select) return;
-
-    const initialOptions = Array.from(select.options)
-        .map(opt => opt.value)
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-
-    if (initialOptions.length) {
-        currentStaffList = initialOptions;
-    }
 
     function renderOptions(filterQuery = '') {
         const query = filterQuery.trim().toLowerCase();
@@ -637,18 +685,45 @@ function initSearchableStaffDropdown() {
             li.setAttribute('role', 'option');
             li.setAttribute('data-value', name);
 
+            const staffObj = staffDirectoryData.find(s => s.name && s.name.toLowerCase() === name.toLowerCase());
+            const deptText = staffObj?.dept || '';
+
+            const leftBox = document.createElement('div');
+            leftBox.style.display = 'flex';
+            leftBox.style.alignItems = 'center';
+            leftBox.style.gap = '8px';
+
             const nameSpan = document.createElement('span');
             nameSpan.textContent = name;
-            li.appendChild(nameSpan);
+            leftBox.appendChild(nameSpan);
+
+            li.appendChild(leftBox);
+
+            const rightBox = document.createElement('div');
+            rightBox.style.display = 'flex';
+            rightBox.style.alignItems = 'center';
+            rightBox.style.gap = '6px';
+
+            if (deptText && deptText !== 'General') {
+                const deptSpan = document.createElement('span');
+                deptSpan.textContent = deptText;
+                deptSpan.style.fontSize = '0.72rem';
+                deptSpan.style.opacity = '0.7';
+                deptSpan.style.fontWeight = 'normal';
+                rightBox.appendChild(deptSpan);
+            }
 
             if (select.value === name) {
                 const checkSpan = document.createElement('span');
                 checkSpan.textContent = '✓';
                 checkSpan.style.fontSize = '0.85rem';
-                li.appendChild(checkSpan);
+                rightBox.appendChild(checkSpan);
             }
 
-            li.addEventListener('click', () => {
+            li.appendChild(rightBox);
+
+            li.addEventListener('click', (e) => {
+                e.stopPropagation();
                 selectStaffMember(name);
             });
 
@@ -674,10 +749,29 @@ function initSearchableStaffDropdown() {
         select.value = name;
         input.value = name;
         if (clearBtn) clearBtn.style.display = name ? 'block' : 'none';
+
+        const staffObj = staffDirectoryData.find(s => s.name && s.name.toLowerCase() === name.toLowerCase());
+        const dept = staffObj?.dept || 'Staff Member';
+
         safeStorage.setItem('saved_name', name);
+        safeStorage.setItem('saved_dept', dept);
+        setLocalDeviceLockHint(name);
+
         closeDropdown();
-        select.dispatchEvent(new Event('change', { bubbles: true }));
+        initStaffIdentityView();
         updateSignInButtonsState();
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+
+        showToast(`Selected ${name} (${dept})`, 'success');
+
+        // Check if biometric authentication is available on device
+        try {
+            isBiometricsAvailable().then(bioAvail => {
+                if (bioAvail && !isBiometricsEnrolled(name)) {
+                    setTimeout(() => showBiometricEnrollModal(staffObj?.id || name, name), 350);
+                }
+            }).catch(e => {});
+        } catch (e) {}
     }
 
     function clearSelection() {
@@ -685,68 +779,78 @@ function initSearchableStaffDropdown() {
         input.value = '';
         if (clearBtn) clearBtn.style.display = 'none';
         safeStorage.removeItem('saved_name');
+        safeStorage.removeItem('saved_dept');
+        clearLocalDeviceLockHint();
         select.dispatchEvent(new Event('change', { bubbles: true }));
         updateSignInButtonsState();
         openDropdown();
         input.focus();
     }
 
-    input.addEventListener('focus', () => { openDropdown(); });
-    input.addEventListener('click', () => { openDropdown(); });
+    if (!input.dataset.bound) {
+        input.dataset.bound = 'true';
 
-    input.addEventListener('input', (e) => {
-        if (!wrapper.classList.contains('open')) openDropdown();
-        const query = e.target.value;
-        if (clearBtn) clearBtn.style.display = query ? 'block' : 'none';
+        input.addEventListener('focus', () => openDropdown());
+        input.addEventListener('click', () => openDropdown());
 
-        if (!query) {
-            select.value = '';
-            safeStorage.removeItem('saved_name');
-            select.dispatchEvent(new Event('change', { bubbles: true }));
-            updateSignInButtonsState();
-        }
+        input.addEventListener('input', (e) => {
+            if (!wrapper.classList.contains('open')) openDropdown();
+            const query = e.target.value;
+            if (clearBtn) clearBtn.style.display = query ? 'block' : 'none';
 
-        renderOptions(query);
-    });
-
-    input.addEventListener('keydown', (e) => {
-        const items = Array.from(optionsList.querySelectorAll('.staff-option-item'));
-        if (!items.length) return;
-
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            if (!wrapper.classList.contains('open')) { openDropdown(); return; }
-            highlightedOptionIndex = (highlightedOptionIndex + 1) % items.length;
-            items.forEach((item, i) => item.classList.toggle('highlighted', i === highlightedOptionIndex));
-            items[highlightedOptionIndex]?.scrollIntoView({ block: 'nearest' });
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            if (!wrapper.classList.contains('open')) return;
-            highlightedOptionIndex = (highlightedOptionIndex - 1 + items.length) % items.length;
-            items.forEach((item, i) => item.classList.toggle('highlighted', i === highlightedOptionIndex));
-            items[highlightedOptionIndex]?.scrollIntoView({ block: 'nearest' });
-        } else if (e.key === 'Enter') {
-            e.preventDefault();
-            if (highlightedOptionIndex >= 0 && items[highlightedOptionIndex]) {
-                const val = items[highlightedOptionIndex].getAttribute('data-value');
-                if (val) selectStaffMember(val);
-            } else if (items[0]) {
-                const val = items[0].getAttribute('data-value');
-                if (val) selectStaffMember(val);
+            if (!query) {
+                select.value = '';
+                safeStorage.removeItem('saved_name');
+                safeStorage.removeItem('saved_dept');
+                clearLocalDeviceLockHint();
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                updateSignInButtonsState();
             }
-        } else if (e.key === 'Escape') {
-            closeDropdown();
-        }
-    });
 
-    if (clearBtn) {
+            renderOptions(query);
+        });
+
+        input.addEventListener('keydown', (e) => {
+            const items = Array.from(optionsList.querySelectorAll('.staff-option-item'));
+            if (!items.length) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (!wrapper.classList.contains('open')) { openDropdown(); return; }
+                highlightedOptionIndex = (highlightedOptionIndex + 1) % items.length;
+                items.forEach((item, i) => item.classList.toggle('highlighted', i === highlightedOptionIndex));
+                items[highlightedOptionIndex]?.scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (!wrapper.classList.contains('open')) return;
+                highlightedOptionIndex = (highlightedOptionIndex - 1 + items.length) % items.length;
+                items.forEach((item, i) => item.classList.toggle('highlighted', i === highlightedOptionIndex));
+                items[highlightedOptionIndex]?.scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (highlightedOptionIndex >= 0 && items[highlightedOptionIndex]) {
+                    const val = items[highlightedOptionIndex].getAttribute('data-value');
+                    if (val) selectStaffMember(val);
+                } else if (items.length === 1) {
+                    const val = items[0].getAttribute('data-value');
+                    if (val) selectStaffMember(val);
+                }
+            } else if (e.key === 'Escape') {
+                closeDropdown();
+            }
+        });
+    }
+
+    if (clearBtn && !clearBtn.dataset.bound) {
+        clearBtn.dataset.bound = 'true';
         clearBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             clearSelection();
         });
     }
 
-    if (toggleBtn) {
+    if (toggleBtn && !toggleBtn.dataset.bound) {
+        toggleBtn.dataset.bound = 'true';
         toggleBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             if (wrapper.classList.contains('open')) {
@@ -758,42 +862,144 @@ function initSearchableStaffDropdown() {
         });
     }
 
-    document.addEventListener('click', (e) => {
-        if (!wrapper.contains(e.target)) {
-            closeDropdown();
-            if (select.value) {
-                input.value = select.value;
-                if (clearBtn) clearBtn.style.display = 'block';
-            } else if (!input.value) {
-                if (clearBtn) clearBtn.style.display = 'none';
-            }
-        }
-    });
+    if (!document.body.dataset.staffDropdownBound) {
+        document.body.dataset.staffDropdownBound = 'true';
+        document.addEventListener('click', (e) => {
+            const w = document.getElementById('staff-search-wrapper');
+            const inp = document.getElementById('staff-search-input');
+            const clr = document.getElementById('staff-search-clear');
+            const sel = document.getElementById('staff-name');
+            if (!w || !inp || !sel) return;
 
-    const savedName = select.value || safeStorage.getItem('saved_name') || '';
-    if (savedName) {
-        select.value = savedName;
-        input.value = savedName;
+            if (!w.contains(e.target)) {
+                w.classList.remove('open');
+                const optList = document.getElementById('staff-options-list');
+                if (optList) optList.style.display = 'none';
+                inp.setAttribute('aria-expanded', 'false');
+
+                if (sel.value) {
+                    inp.value = sel.value;
+                    if (clr) clr.style.display = 'block';
+                } else if (!inp.value) {
+                    if (clr) clr.style.display = 'none';
+                }
+            }
+        });
+    }
+
+    const currentSaved = select.value || safeStorage.getItem('saved_name') || '';
+    if (currentSaved) {
+        select.value = currentSaved;
+        input.value = currentSaved;
         if (clearBtn) clearBtn.style.display = 'block';
     }
 }
 
-async function loadStaffDropdown() {
-    const cachedNames = readStoredJson('attendance_staff_cache', []);
-    if (cachedNames.length) {
-        populateStaffDropdown(cachedNames);
+function populateStaffDropdown(names) {
+    const staffSelect = document.getElementById('staff-name');
+    if (!staffSelect || !Array.isArray(names)) return;
+
+    currentStaffList = names.slice().sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+    const savedName = safeStorage.getItem('saved_name') || getLocalDeviceLockHint() || '';
+    staffSelect.innerHTML = '<option value="">Select your name...</option>' +
+        currentStaffList.map(name => `<option value="${escapeHtml(name)}"${name === savedName ? ' selected' : ''}>${escapeHtml(name)}</option>`).join('');
+
+    initSearchableStaffDropdown();
+}
+
+function showBiometricEnrollModal(staffId, staffName) {
+    const modal = document.getElementById('biometric-enroll-modal');
+    const confirmBtn = document.getElementById('enable-bio-confirm-btn');
+    const skipBtn = document.getElementById('skip-bio-btn');
+    if (!modal) return;
+
+    modal.style.display = 'flex';
+
+    if (confirmBtn) {
+        confirmBtn.onclick = async () => {
+            confirmBtn.disabled = true;
+            confirmBtn.innerHTML = 'Scanning Fingerprint / Face ID...';
+            try {
+                const tenant = await getActiveTenant();
+                await enrollBiometrics(staffId, staffName, tenant ? tenant.name : 'Attendance Cloud');
+                modal.style.display = 'none';
+                const bioBadge = document.getElementById('linked-bio-badge');
+                if (bioBadge) bioBadge.style.display = 'inline-block';
+                updateSignInButtonsState();
+                showToast('Biometric verification enabled! Face ID / Fingerprint ready.', 'success');
+            } catch (err) {
+                console.warn('Biometric enrollment error:', err);
+                modal.style.display = 'none';
+                showToast(err.message || 'Biometric enrollment skipped.', 'info');
+            } finally {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = '<i data-lucide="fingerprint" size="18"></i> Enable Biometrics';
+                if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+            }
+        };
     }
-    try {
-        const response = await callBackend({ mode: 'list-staff' });
-        if (response.ok && Array.isArray(response.staff) && response.staff.length) {
-            const names = response.staff.map((entry) => entry.name).sort((a, b) => a.localeCompare(b));
-            writeStoredJson('attendance_staff_cache', names);
-            populateStaffDropdown(names);
-        }
-    } catch (error) {
-        console.warn('Could not refresh staff list from server, using cached/hardcoded list:', error.message);
+
+    if (skipBtn) {
+        skipBtn.onclick = () => {
+            modal.style.display = 'none';
+            showToast('Biometrics skipped. Phone is linked via device identity.', 'info');
+        };
     }
 }
+
+function handleUnlinkStaff() {
+    // Device unlinking is strictly restricted to Company Admins only to prevent unauthorized account switching
+    showToast('Device unlinking is restricted. Only your company administrator can reset or transfer your device binding.', 'error');
+}
+
+async function loadStaffDropdown() {
+    // 1. Check local cache first for instantaneous rendering
+    const cachedStaff = readStoredJson('attendance_staff_cache_v2', []);
+    if (Array.isArray(cachedStaff) && cachedStaff.length) {
+        staffDirectoryData = cachedStaff;
+        const names = cachedStaff.map(s => typeof s === 'string' ? s : s.name).filter(Boolean);
+        if (names.length) populateStaffDropdown(names);
+    }
+
+    try {
+        const res = await callBackend({ mode: 'list-staff' });
+        if (res && res.ok && Array.isArray(res.staff) && res.staff.length) {
+            staffDirectoryData = res.staff;
+            writeStoredJson('attendance_staff_cache_v2', staffDirectoryData);
+            const names = res.staff.map(s => s.name).filter(Boolean);
+            populateStaffDropdown(names);
+        }
+    } catch (err) {
+        console.warn('Could not refresh staff list from server:', err.message);
+    }
+
+    // If device is already linked, verify / refresh this member's metadata and check for remote admin resets
+    const savedName = safeStorage.getItem('saved_name') || getLocalDeviceLockHint();
+    if (savedName) {
+        try {
+            const res = await callBackend({ mode: 'verify-staff-member', name: savedName });
+            if (res && res.ok && res.name) {
+                // Check if administrator has remotely reset or unlinked this device
+                if (res.is_linked === false && getLocalDeviceLockHint()) {
+                    safeStorage.removeItem('saved_name');
+                    safeStorage.removeItem('saved_dept');
+                    clearLocalDeviceLockHint();
+                    clearBiometrics(savedName);
+                    initStaffIdentityView();
+                    showToast('Your device binding was reset by the administrator. Please select your name.', 'info');
+                    return;
+                }
+                safeStorage.setItem('saved_dept', res.dept || 'Staff Member');
+                const deptDisplay = document.getElementById('linked-dept-display');
+                if (deptDisplay) deptDisplay.textContent = res.dept || 'Staff Member';
+            }
+        } catch (e) {
+            console.warn('Could not refresh staff identity metadata:', e.message);
+        }
+    }
+}
+
 
 /* ---------- Submission flow ---------- */
 
@@ -863,6 +1069,19 @@ async function submit(action) {
         return;
     }
 
+    // WebAuthn Biometric Verification Gate
+    if (isBiometricsEnrolled(name)) {
+        setMessage('Waiting for Face ID / Fingerprint...', 'msg-welcome');
+        const bioResult = await verifyBiometrics(name);
+        if (!bioResult.success) {
+            setMessage('Biometric verification cancelled or failed.', 'msg-late');
+            showToast(bioResult.message || 'Biometric authentication cancelled.', 'error');
+            updateSignInButtonsState();
+            return;
+        }
+        setMessage('Biometrics verified! Syncing...', 'msg-welcome');
+    }
+
     document.getElementById('in-btn').disabled = true;
     document.getElementById('out-btn').disabled = true;
     setMessage('Syncing...', 'msg-welcome');
@@ -890,7 +1109,7 @@ async function submit(action) {
 
 function triggerOfflineSyncNotification(name, action) {
     const actionText = action === 'IN' ? 'Sign-In' : 'Sign-Out';
-    const title = '🟢 Offline Attendance Synced';
+    const title = 'Offline Attendance Synced';
     const body = `Your ${actionText} record for ${name} has been updated live!`;
 
     if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
@@ -913,7 +1132,7 @@ function triggerOfflineSyncNotification(name, action) {
         }
     }
 
-    showToast(`✅ Offline ${actionText} synced live for ${name}!`, 'success', 5000);
+    showToast(`Offline ${actionText} synced live for ${name}!`, 'success', 5000);
 }
 
 async function handleAttendanceResponse(data) {
@@ -1163,7 +1382,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initTheme();
     initRefreshButton();
     initLiveClock();
-    initSearchableStaffDropdown();
+    initStaffIdentityView();
     if (window.lucide && typeof window.lucide.createIcons === 'function') {
         window.lucide.createIcons();
     }
@@ -1274,8 +1493,8 @@ async function attemptAutoInstallPrompt(isFirstInteraction = false) {
             sessionStorage.setItem('ios_pwa_hint_shown', 'true');
             setTimeout(() => {
                 showInlineDialog({
-                    title: '📲 Install Lifecard App',
-                    message: 'Install Lifecard Attendance for quick 1-tap access and offline sign-in:\n\n1. Tap the Share button (⎋) at the bottom.\n2. Tap "Add to Home Screen" (➕).\n3. Tap "Add" in the top-right.',
+                    title: 'Install Attendance App',
+                    message: 'Install Attendance for quick 1-tap access and offline sign-in:\n\n1. Tap the Share button at the bottom.\n2. Tap "Add to Home Screen".\n3. Tap "Add" in the top-right.',
                     confirmLabel: 'Got it'
                 });
             }, 1200);
@@ -1308,12 +1527,12 @@ async function triggerInstall() {
     const isIos = /ipad|iphone|ipod/i.test(navigator.userAgent) && !window.MSStream;
     if (isIos) {
         showInlineDialog({
-            title: '📲 Install Web App',
-            message: 'To install on iPhone/iPad:\n\n1. Tap the Share button (⎋) at the bottom of your screen.\n2. Scroll and select "Add to Home Screen" (➕).\n3. Tap "Add" at the top-right.',
+            title: 'Install Web App',
+            message: 'To install on iPhone/iPad:\n\n1. Tap the Share button at the bottom of your screen.\n2. Scroll and select "Add to Home Screen".\n3. Tap "Add" at the top-right.',
             confirmLabel: 'Got it'
         });
     } else {
-        showToast('To install: open browser menu (⋮) and select "Install app" or "Add to Home screen".', 'default', 6000);
+        showToast('To install: open browser menu and select "Install app" or "Add to Home screen".', 'default', 6000);
     }
 }
 
@@ -1643,9 +1862,149 @@ function initPrivacyModal() {
     });
 }
 
+function openWorkspaceConnectModal() {
+    const overlay = document.getElementById('workspace-connect-overlay');
+    const input = document.getElementById('workspace-code-input');
+    const err = document.getElementById('workspace-connect-error');
+    if (overlay) {
+        overlay.style.display = 'flex';
+        if (err) err.style.display = 'none';
+        if (input) {
+            input.value = '';
+            setTimeout(() => input.focus(), 150);
+        }
+    }
+}
+
+function closeWorkspaceConnectModal() {
+    const overlay = document.getElementById('workspace-connect-overlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+function initWorkspaceConnect() {
+    const connectBtn = document.getElementById('connect-workspace-btn');
+    const input = document.getElementById('workspace-code-input');
+    const err = document.getElementById('workspace-connect-error');
+
+    async function handleConnect() {
+        const raw = input ? input.value.trim() : '';
+        if (!raw) {
+            if (err) {
+                err.textContent = 'Please enter your 6-character Workspace Code.';
+                err.style.display = 'block';
+            }
+            return;
+        }
+
+        if (connectBtn) {
+            connectBtn.disabled = true;
+            connectBtn.textContent = 'Connecting...';
+        }
+
+        try {
+            const code = raw.toUpperCase();
+            const registry = await getTenantRegistry();
+            const matched = registry.find(t => 
+                (t.workspace_code && t.workspace_code.toUpperCase() === code) ||
+                (t.slug && t.slug.toLowerCase() === raw.toLowerCase())
+            );
+
+            if (!matched) {
+                if (err) {
+                    err.textContent = 'Invalid Workspace Code. Please verify with your team administrator.';
+                    err.style.display = 'block';
+                }
+                return;
+            }
+
+            safeStorage.setItem('active_tenant_slug', matched.slug);
+            closeWorkspaceConnectModal();
+            showToast(`Connected to ${matched.name}!`, 'success');
+
+            // Apply branding and load identity view
+            await initTenantBranding();
+            initStaffIdentityView();
+            loadStaffDropdown();
+        } catch (e) {
+            if (err) {
+                err.textContent = 'Connection error. Please try again.';
+                err.style.display = 'block';
+            }
+        } finally {
+            if (connectBtn) {
+                connectBtn.disabled = false;
+                connectBtn.textContent = 'Connect Workspace';
+            }
+        }
+    }
+
+    if (connectBtn && !connectBtn.dataset.bound) {
+        connectBtn.dataset.bound = 'true';
+        connectBtn.addEventListener('click', handleConnect);
+    }
+
+    if (input && !input.dataset.bound) {
+        input.dataset.bound = 'true';
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleConnect();
+            }
+        });
+    }
+}
+
+async function initTenantBranding() {
+    try {
+        const tenant = await getActiveTenant();
+        if (!tenant) {
+            openWorkspaceConnectModal();
+            return;
+        }
+
+        closeWorkspaceConnectModal();
+
+        const brandNameEl = document.getElementById('tenant-brand-name');
+        const logoWrap = document.getElementById('tenant-logo-wrap');
+        const logoImg = document.getElementById('tenant-logo-img');
+        const adminBtn = document.getElementById('admin-access-btn');
+
+        if (brandNameEl && tenant.name) {
+            brandNameEl.textContent = tenant.name;
+            document.title = `${tenant.name} - Attendance`;
+        }
+
+        if (tenant.logo_url && logoWrap && logoImg) {
+            logoImg.src = tenant.logo_url;
+            logoWrap.style.display = 'flex';
+        }
+
+        if (tenant.brand_color) {
+            document.documentElement.style.setProperty('--primary', tenant.brand_color);
+        }
+
+        // Carry tenant slug to admin button
+        if (adminBtn && tenant.slug) {
+            adminBtn.href = `/tenant/${encodeURIComponent(tenant.slug)}/admin/`;
+        }
+
+        const switchBtn = document.getElementById('switch-workspace-btn');
+        if (switchBtn && !switchBtn.dataset.bound) {
+            switchBtn.dataset.bound = 'true';
+            switchBtn.addEventListener('click', () => {
+                openWorkspaceConnectModal();
+            });
+        }
+    } catch (e) {
+        console.warn('initTenantBranding error:', e);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     initFaqModal();
     initPrivacyModal();
+    initWorkspaceConnect();
+    initTenantBranding();
 });
 
 async function refreshRecentLogsFromDb() {
@@ -1811,6 +2170,43 @@ async function updateScheduleBanner(name) {
     }
 
     try {
+        // 1. Check Policy Profile
+        const staffObj = staffDirectoryData.find(s => String(s.name || '').trim().toLowerCase() === String(name || '').trim().toLowerCase());
+        const policy = staffObj ? String(staffObj.schedule_policy || '').toLowerCase() : '';
+
+        if (policy === 'field_flexible') {
+            currentStaffTodayMode = 'home';
+            if (locStatus) {
+                locStatus.innerText = '🏠 Flexible Mode';
+                locStatus.className = 'status ready';
+            }
+            if (distLabel) distLabel.textContent = '';
+            updateActionHeroState();
+            return;
+        }
+
+        if (policy === 'executive') {
+            currentStaffTodayMode = 'home';
+            if (locStatus) {
+                locStatus.innerText = '🏠 Executive Mode';
+                locStatus.className = 'status ready';
+            }
+            if (distLabel) distLabel.textContent = '';
+            updateActionHeroState();
+            return;
+        }
+
+        if (policy === 'office_only') {
+            currentStaffTodayMode = 'office';
+            if (locStatus) {
+                locStatus.innerText = coords ? '📍 Office (Required)' : 'Verifying GPS...';
+                locStatus.className = coords ? 'status ready' : 'status waiting';
+            }
+            updateActionHeroState();
+            return;
+        }
+
+        // 2. Otherwise: Standard Weekly Hybrid Schedule
         const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         const today = new Date();
         const dayName = days[today.getDay()];

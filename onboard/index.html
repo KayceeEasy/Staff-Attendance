@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Get Started — Create Your Company Workspace | Attendance Cloud</title>
+    <link rel="icon" type="image/x-icon" href="../favicon.ico">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+
+<div class="onboard-wrapper">
+    <header class="onboard-header">
+        <div class="brand-pill">
+            <span class="brand-badge"><i data-lucide="sparkles" size="14" style="vertical-align:middle;"></i></span>
+            <span class="brand-title">14-DAY FREE TRIAL • NO CREDIT CARD REQUIRED</span>
+        </div>
+        <h1>Create Your Company Workspace</h1>
+        <p class="subtitle">Set up a modern, GPS-verified employee attendance and hybrid work portal for your organization in under 2 minutes.</p>
+    </header>
+
+    <!-- Stepper Navigation -->
+    <div class="stepper-track">
+        <div class="step-item active" id="step-indicator-1">
+            <div class="step-number">1</div>
+            <div class="step-text">Company Profile</div>
+        </div>
+        <div class="step-line" id="line-1"></div>
+        <div class="step-item" id="step-indicator-2">
+            <div class="step-number">2</div>
+            <div class="step-text">Office Location</div>
+        </div>
+        <div class="step-line" id="line-2"></div>
+        <div class="step-item" id="step-indicator-3">
+            <div class="step-number">3</div>
+            <div class="step-text">Admin Account</div>
+        </div>
+        <div class="step-line" id="line-3"></div>
+        <div class="step-item" id="step-indicator-4">
+            <div class="step-number">4</div>
+            <div class="step-text">Get Started</div>
+        </div>
+    </div>
+
+    <!-- Main Card Form -->
+    <main class="onboard-card">
+        
+        <!-- STEP 1: Company Profile & Logo -->
+        <section id="step-1" class="step-section active">
+            <div class="section-title">
+                <h2>1. Tell us about your company</h2>
+                <p>Enter your organization's legal name, choose your custom web address, and add your brand logo.</p>
+            </div>
+
+            <div class="form-grid">
+                <div class="form-group full-width">
+                    <label for="company-name">Company Legal Name <span class="req">*</span></label>
+                    <input type="text" id="company-name" placeholder="e.g. Acme Technologies Ltd" required autofocus />
+                </div>
+
+                <div class="form-group">
+                    <label for="company-slug">Workspace Web Address / Custom Link <span class="req">*</span></label>
+                    <div class="input-with-prefix">
+                        <span class="prefix">/tenant/</span>
+                        <input type="text" id="company-slug" placeholder="acme" required />
+                    </div>
+                    <div id="slug-availability-msg" class="slug-status" style="margin-top:4px; font-size:0.78rem; font-weight:600; display:none;"></div>
+                    <small class="helper-text" id="slug-hint-text">Your team will sign in at: <code>/tenant/<span id="slug-preview">acme</span>/</code></small>
+                </div>
+
+                <div class="form-group">
+                    <label for="brand-color">Brand Accent Color</label>
+                    <div class="color-picker-row">
+                        <input type="color" id="brand-color" value="#1a56db" />
+                        <span class="color-code" id="color-code-display">#1a56db</span>
+                    </div>
+                </div>
+
+                <!-- Logo Upload Box -->
+                <div class="form-group full-width">
+                    <label>Company Logo</label>
+                    <div class="logo-dropzone" id="logo-dropzone">
+                        <input type="file" id="logo-file-input" accept="image/png, image/jpeg, image/svg+xml" style="display:none;" />
+                        <div class="dropzone-content" id="dropzone-empty">
+                            <i data-lucide="image-up" class="dropzone-icon"></i>
+                            <p><strong>Click to upload your logo</strong> or drag & drop</p>
+                            <span>PNG, JPG, or SVG (Max 2MB)</span>
+                        </div>
+                        <div class="dropzone-preview" id="dropzone-preview" style="display:none;">
+                            <img id="logo-preview-img" src="" alt="Logo Preview" />
+                            <div class="preview-actions">
+                                <span id="logo-filename" class="preview-name">logo.png</span>
+                                <button type="button" id="remove-logo-btn" class="btn-remove">Remove</button>
+                            </div>
+                        </div>
+                    </div>
+                    <small class="helper-text">Your logo will appear on the mobile check-in screen for your employees and on attendance reports.</small>
+                </div>
+            </div>
+
+            <div class="step-actions" style="justify-content: flex-end;">
+                <button type="button" class="btn-primary" onclick="goToStep(2)">Next: Office Location →</button>
+            </div>
+        </section>
+
+        <!-- STEP 2: Office Geofence Setup -->
+        <section id="step-2" class="step-section">
+            <div class="section-title">
+                <h2>2. Where does your team work?</h2>
+                <p>Set your primary office location so employees can verify attendance on in-office days.</p>
+            </div>
+
+            <div class="form-grid">
+                <div class="form-group full-width">
+                    <label for="office-name">Office / Branch Name <span class="req">*</span></label>
+                    <input type="text" id="office-name" placeholder="e.g. Headquarters (Lekki Phase 1)" required />
+                </div>
+
+                <div class="form-group">
+                    <label for="office-lat">Latitude <span class="req">*</span></label>
+                    <input type="number" step="any" id="office-lat" placeholder="6.435700" required />
+                </div>
+
+                <div class="form-group">
+                    <label for="office-lon">Longitude <span class="req">*</span></label>
+                    <input type="number" step="any" id="office-lon" placeholder="3.473800" required />
+                </div>
+
+                <div class="form-group full-width">
+                    <button type="button" id="detect-gps-btn" class="btn-gps" onclick="detectCurrentLocation()">
+                        <i data-lucide="crosshair" size="16"></i> Detect & Pin My Current Office GPS Location
+                    </button>
+                    <div id="gps-status" class="gps-status-msg"></div>
+                </div>
+
+                <div class="form-group full-width">
+                    <div class="slider-header">
+                        <label for="geofence-radius">Geofence Radius Perimeter</label>
+                        <span class="radius-value" id="radius-display">100 meters</span>
+                    </div>
+                    <input type="range" id="geofence-radius" min="25" max="500" step="25" value="100" />
+                    <div class="slider-ticks">
+                        <span>25m</span>
+                        <span>100m (Recommended)</span>
+                        <span>250m</span>
+                        <span>500m</span>
+                    </div>
+                    <small class="helper-text">Staff must be within this distance from your office to register an office check-in.</small>
+                </div>
+            </div>
+
+            <div class="step-actions">
+                <button type="button" class="btn-secondary" onclick="goToStep(1)">← Back</button>
+                <button type="button" class="btn-primary" onclick="goToStep(3)">Next: Admin Account →</button>
+            </div>
+        </section>
+
+        <!-- STEP 3: Initial Admin & Work Policy -->
+        <section id="step-3" class="step-section">
+            <div class="section-title">
+                <h2>3. Create your administrator account</h2>
+                <p>You will use this account to invite staff members, view daily sign-in reports, and configure hybrid work policies.</p>
+            </div>
+
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="admin-name">Your Full Name <span class="req">*</span></label>
+                    <input type="text" id="admin-name" placeholder="e.g. Adeola Johnson" required />
+                </div>
+
+                <div class="form-group">
+                    <label for="admin-email">Your Work Email <span class="req">*</span></label>
+                    <input type="email" id="admin-email" placeholder="admin@yourcompany.com" required />
+                    <div id="email-validation-msg" class="email-status" style="margin-top:4px; font-size:0.78rem; font-weight:600; display:none;"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="admin-pass">Create Password <span class="req">*</span></label>
+                    <div style="position:relative; display:flex; align-items:center;">
+                        <input type="password" id="admin-pass" placeholder="Create a secure password (min 6 characters)" required style="width:100%; padding-right:42px;" />
+                        <button type="button" id="toggle-pass-btn" onclick="togglePasswordVisibility()" style="position:absolute; right:10px; background:transparent; border:none; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; padding:4px;" title="Toggle password visibility">
+                            <i data-lucide="eye" size="16"></i>
+                        </button>
+                    </div>
+                    <div id="password-strength-wrap" style="margin-top:6px; display:none;">
+                        <div style="height:4px; background:var(--surface-3); border-radius:2px; overflow:hidden;">
+                            <div id="password-strength-bar" style="height:100%; width:0%; transition:all 0.2s ease;"></div>
+                        </div>
+                        <small id="password-strength-label" style="font-size:0.72rem; color:var(--text-muted); margin-top:3px; display:block;"></small>
+                    </div>
+                    <small class="helper-text">You will use this password to sign into your company admin console.</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="plan-tier">Select Your Plan</label>
+                    <select id="plan-tier">
+                        <option value="Pro Trial" selected>Pro Trial (14-Day Free Trial — All Features Included)</option>
+                        <option value="Starter">Starter Plan (For small teams up to 25 staff)</option>
+                        <option value="Pro">Pro Plan (For growing companies up to 100 staff)</option>
+                        <option value="Enterprise">Enterprise (Unlimited staff & dedicated support)</option>
+                    </select>
+                    <small class="helper-text">No payment required now. You can change or cancel anytime.</small>
+                </div>
+            </div>
+
+            <div class="step-actions">
+                <button type="button" class="btn-secondary" onclick="goToStep(2)">← Back</button>
+                <button type="button" id="submit-onboard-btn" class="btn-primary" onclick="submitTenantOnboarding()"><i data-lucide="rocket" size="16"></i> Complete Setup & Launch Workspace</button>
+            </div>
+        </section>
+
+        <!-- STEP 4: Success & Instant Links -->
+        <section id="step-4" class="step-section">
+            <div class="success-banner">
+                <div class="success-icon" style="color:var(--success); display:flex; justify-content:center; margin-bottom:12px;">
+                    <i data-lucide="party-popper" size="48"></i>
+                </div>
+                <h2>Your Company Workspace is Ready!</h2>
+                <p id="success-company-sub">Your attendance portal has been created and is ready for your team.</p>
+            </div>
+
+            <div class="links-container">
+                <div class="link-card workspace-code-card" style="border: 2px dashed #1a56db; background: rgba(26,86,219,0.05); padding:18px;">
+                    <div class="link-info" style="flex:1;">
+                        <span class="link-tag" style="color:#1a56db; font-weight:700; display:flex; align-items:center; gap:6px;">
+                            <i data-lucide="key" size="15"></i> Employee Workspace Pairing Code
+                        </span>
+                        <div class="link-url" id="display-workspace-code" style="font-size:1.6rem; font-weight:800; letter-spacing:3px; color:#1a56db; margin:5px 0; font-family:monospace;">--</div>
+                        <small style="color:var(--text-muted); font-size:0.82rem; line-height:1.4; display:block;">Share this 6-character code with your employees, or share the QR code.</small>
+                    </div>
+                    <div class="link-buttons">
+                        <button type="button" class="btn-copy" onclick="copyLink('display-workspace-code')"><i data-lucide="copy" size="13"></i> Copy Code</button>
+                        <button type="button" class="btn-open" onclick="openQrModal()"><i data-lucide="qr-code" size="13"></i> View QR</button>
+                    </div>
+                </div>
+
+                <div class="link-card">
+                    <div class="link-info" style="flex:1;">
+                        <span class="link-tag" style="display:flex; align-items:center; gap:6px;"><i data-lucide="smartphone" size="14"></i> 1-Tap Employee Setup Link (Clean URL)</span>
+                        <div class="link-url" id="link-staff-url">--</div>
+                    </div>
+                    <div class="link-buttons">
+                        <button type="button" class="btn-copy" onclick="copyLink('link-staff-url')"><i data-lucide="copy" size="13"></i> Copy Link</button>
+                        <a id="btn-open-staff" href="#" target="_blank" class="btn-open"><i data-lucide="external-link" size="13"></i> Open App</a>
+                    </div>
+                </div>
+
+                <div class="link-card">
+                    <div class="link-info" style="flex:1;">
+                        <span class="link-tag" style="display:flex; align-items:center; gap:6px;"><i data-lucide="shield-check" size="14"></i> Company Admin Dashboard</span>
+                        <div class="link-url" id="link-admin-url">--</div>
+                    </div>
+                    <div class="link-buttons">
+                        <button type="button" class="btn-copy" onclick="copyLink('link-admin-url')"><i data-lucide="copy" size="13"></i> Copy Link</button>
+                        <a id="btn-open-admin" href="#" target="_blank" class="btn-open"><i data-lucide="external-link" size="13"></i> Open Admin</a>
+                    </div>
+                </div>
+
+                <div class="link-card">
+                    <div class="link-info" style="flex:1;">
+                        <span class="link-tag" style="display:flex; align-items:center; gap:6px;"><i data-lucide="calendar" size="14"></i> Weekly Hybrid Work Scheduler</span>
+                        <div class="link-url" id="link-hybrid-url">--</div>
+                    </div>
+                    <div class="link-buttons">
+                        <button type="button" class="btn-copy" onclick="copyLink('link-hybrid-url')"><i data-lucide="copy" size="13"></i> Copy Link</button>
+                        <a id="btn-open-hybrid" href="#" target="_blank" class="btn-open"><i data-lucide="external-link" size="13"></i> Open Scheduler</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step-actions centered" style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:24px;">
+                <a id="btn-primary-launch-admin" href="#" class="btn-primary" style="text-decoration:none; padding:12px 24px; font-weight:700;"><i data-lucide="shield-check" size="16"></i> Go to My Admin Dashboard</a>
+                <a id="btn-secondary-launch-portal" href="#" class="btn-secondary" style="text-decoration:none; padding:12px 24px;"><i data-lucide="smartphone" size="16"></i> Open Employee Sign-In Portal</a>
+            </div>
+        </section>
+
+    </main>
+</div>
+
+<!-- QR Code Modal -->
+<div id="qr-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center; padding:20px;">
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 24px; max-width:380px; width:100%; text-align:center; box-shadow:0 25px 50px -12px rgba(0,0,0,0.4);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+            <h3 style="font-size:1.15rem; font-weight:700; margin:0; display:flex; align-items:center; gap:8px;">
+                <i data-lucide="qr-code" size="18"></i> Setup QR Code
+            </h3>
+            <button type="button" onclick="closeQrModal()" style="background:transparent; border:none; font-size:1.5rem; color:var(--text-muted); cursor:pointer; line-height:1;">&times;</button>
+        </div>
+        <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:18px;">
+            Have your employees scan this QR code with their phone camera to pair with your workspace.
+        </p>
+        <div style="display:inline-block; padding:12px; background:#ffffff; border-radius:12px; margin-bottom:16px; border:1px solid var(--border);">
+            <img id="qr-image" src="" alt="Setup QR Code" style="width:200px; height:200px; display:block;" />
+        </div>
+        <div style="font-size:1.3rem; font-weight:800; letter-spacing:3px; color:var(--primary); font-family:monospace; margin-bottom:18px;" id="qr-modal-code">
+            --
+        </div>
+        <button type="button" class="btn-secondary" onclick="closeQrModal()" style="width:100%; justify-content:center;">Close</button>
+    </div>
+</div>
+
+<!-- Email Verification Modal -->
+<div id="email-verify-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.8); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center; padding:20px;">
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 24px; max-width:400px; width:100%; text-align:center; box-shadow:0 25px 50px -12px rgba(0,0,0,0.5);">
+        <div style="width:48px; height:48px; border-radius:50%; background:rgba(37,99,235,0.12); color:var(--primary); display:flex; align-items:center; justify-content:center; margin:0 auto 14px auto;">
+            <i data-lucide="mail-check" size="24"></i>
+        </div>
+        <h3 style="font-size:1.2rem; font-weight:700; margin:0 0 6px 0;">Verify Your Work Email</h3>
+        <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:18px;">
+            We sent a 6-digit confirmation code to <strong id="verify-email-target" style="color:var(--text);">admin@company.com</strong>.
+        </p>
+        <div style="margin-bottom:16px;">
+            <input id="email-otp-input" type="text" maxlength="6" placeholder="123456" style="font-size:1.8rem; font-weight:800; letter-spacing:0.25em; text-align:center; font-family:monospace; width:100%; max-width:240px; padding:10px; border:2px solid var(--border); border-radius:10px; background:var(--surface-2); color:var(--text);" />
+            <div id="otp-error-msg" style="color:#ef4444; font-size:0.8rem; margin-top:6px; display:none;"></div>
+            <div id="otp-hint-msg" style="color:var(--text-muted); font-size:0.75rem; margin-top:6px;"></div>
+        </div>
+        <div style="display:grid; gap:8px;">
+            <button id="btn-confirm-otp" type="button" class="btn-primary" onclick="confirmEmailOtp()" style="width:100%; justify-content:center;">Verify &amp; Launch Workspace</button>
+            <button type="button" class="btn-secondary" onclick="closeEmailVerifyModal()" style="width:100%; justify-content:center;">Cancel</button>
+        </div>
+    </div>
+</div>
+
+    </main>
+</div>
+
+<script src="../config.js"></script>
+<script src="../common.js"></script>
+<script src="onboard.js"></script>
+</body>
+</html>

@@ -53,8 +53,9 @@ TaskManager.defineTask(BACKGROUND_GEOFENCE_TASK, async ({ data: { eventType, reg
       const now = new Date();
       const dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
 
-      // 1. Weekend Filter: Never alert on Saturday or Sunday
+      // 1. Weekend Filter: Strictly reject Saturday (6) and Sunday (0)
       if (dayOfWeek === 0 || dayOfWeek === 6) {
+        console.log('Geofence alert suppressed: Weekend (Saturday/Sunday)');
         return;
       }
 
@@ -63,21 +64,25 @@ TaskManager.defineTask(BACKGROUND_GEOFENCE_TASK, async ({ data: { eventType, reg
       const currentMinute = now.getMinutes();
       const timeInMinutes = currentHour * 60 + currentMinute;
       if (timeInMinutes < 6 * 60 + 30 || timeInMinutes > 13 * 60) {
+        console.log('Geofence alert suppressed: Outside standard arrival hours');
         return;
       }
 
       // 3. Schedule Cross-Check: Only alert if today is scheduled as an 'Office' day
       const savedScheduleStr = await SecureStore.getItemAsync('staff_schedule');
       if (savedScheduleStr) {
-        const schedule = JSON.parse(savedScheduleStr);
-        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-        const todayName = dayNames[dayOfWeek];
-        const dayMode = String(schedule[todayName] || '').trim().toLowerCase();
-        
-        // If scheduled as 'Home', 'Virtual', 'Leave', or anything other than 'Office', skip
-        if (dayMode && dayMode !== 'office') {
-          return;
-        }
+        try {
+          const schedule = JSON.parse(savedScheduleStr);
+          const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+          const todayName = dayNames[dayOfWeek];
+          const dayMode = String(schedule[todayName] || schedule[todayName.toLowerCase()] || '').trim().toLowerCase();
+          
+          // If scheduled as 'Home', 'Virtual', 'Leave', or anything other than 'Office', skip
+          if (dayMode && dayMode !== 'office') {
+            console.log(`Geofence alert suppressed: today (${todayName}) is ${dayMode}`);
+            return;
+          }
+        } catch(e) {}
       }
 
       // 4. Ensure we haven't already signed in today
@@ -87,7 +92,7 @@ TaskManager.defineTask(BACKGROUND_GEOFENCE_TASK, async ({ data: { eventType, reg
       if (lastActionDate !== todayStr) {
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: "📍 Arrived at Office!",
+            title: "Arrived at Office!",
             body: "You've entered the office area. Click to sign in now!",
             data: { action: 'SIGN_IN' },
             channelId: 'default',
@@ -228,7 +233,7 @@ export default function App() {
         if (isOffice && weekdayIndex) {
           await Notifications.scheduleNotificationAsync({
             content: {
-              title: "🔔 Sign-Out Reminder",
+              title: "Sign-Out Reminder",
               body: "Office hours are concluding. Don't forget to sign out before leaving!",
               data: { action: 'SIGN_OUT' },
               channelId: 'default',
@@ -266,7 +271,7 @@ export default function App() {
         const actionText = data.action === 'IN' ? 'Sign-In' : 'Sign-Out';
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: "🟢 Offline Attendance Synced",
+            title: "Offline Attendance Synced",
             body: `Your ${actionText} record for ${data.name || 'staff'} has been updated live!`,
             data: { action: data.action },
             channelId: 'default',
@@ -301,7 +306,6 @@ export default function App() {
 
   const renderOfflineFallback = () => (
     <View style={styles.offlineContainer}>
-      <Text style={styles.offlineEmoji}>📶</Text>
       <Text style={styles.offlineTitle}>Connection Disconnected</Text>
       <Text style={styles.offlineSub}>
         No active internet connection. The app will automatically refresh and reconnect as soon as your signal returns.
@@ -311,7 +315,7 @@ export default function App() {
         onPress={() => webViewRef.current?.reload()}
         activeOpacity={0.8}
       >
-        <Text style={styles.retryText}>🔄 Retry Connection</Text>
+        <Text style={styles.retryText}>Retry Connection</Text>
       </TouchableOpacity>
     </View>
   );

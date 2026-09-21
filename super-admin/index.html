@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Super Admin Fleet Monitoring | Attendance Cloud</title>
+    <!-- Strict Noindex & AI Crawler Blocking -->
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+    <meta name="googlebot" content="noindex, nofollow">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+
+<!-- Master Access Gate Modal (Shows if not authenticated) -->
+<div id="auth-gate-modal" class="auth-gate-overlay">
+    <div class="auth-gate-card">
+        <div class="auth-gate-icon"><i data-lucide="shield-alert" size="44"></i></div>
+        <h2>Super Admin Access</h2>
+        <p>Restricted to authorized platform operators and engineering administrators only. Enter your Master Platform Key to continue.</p>
+        <form id="master-auth-form" onsubmit="handleMasterLogin(event)">
+            <div class="form-group">
+                <input type="password" id="master-key-input" placeholder="Enter Master Platform Key" autocomplete="current-password" required autofocus />
+            </div>
+            <div id="auth-error-msg" class="auth-error" style="display:none;"></div>
+            <button type="submit" id="auth-submit-btn" class="btn-primary full-width">Unlock Command Console</button>
+            <small class="auth-hint">Sandbox Master Key: <code>LifecardMaster2026!</code></small>
+        </form>
+    </div>
+</div>
+
+<!-- Main Super Admin Shell -->
+<div id="super-admin-shell" class="super-admin-wrapper" style="display:none;">
+    
+    <!-- Top Bar -->
+    <header class="super-header">
+        <div class="brand-block">
+            <div class="brand-badge"><i data-lucide="shield-check" size="13"></i> PLATFORM OPERATOR</div>
+            <h1>Attendance Cloud <span>Fleet Control</span></h1>
+        </div>
+        <div class="header-actions">
+            <div class="sys-health-chip" id="health-chip">
+                <span class="health-dot live"></span>
+                <span id="health-text">Supabase DB: Connected</span>
+            </div>
+            <button class="btn-secondary small" onclick="openMasterKeyModal()" title="Change Master Platform Key">
+                <i data-lucide="key-round" size="14"></i> Master Key
+            </button>
+            <a href="../onboard/" class="btn-primary small">
+                <i data-lucide="plus" size="14"></i> Onboard Company
+            </a>
+            <button class="btn-secondary small" onclick="handleLockConsole()" title="Lock console">
+                <i data-lucide="lock" size="14"></i> Lock
+            </button>
+        </div>
+    </header>
+
+    <!-- Metrics Ribbon -->
+    <section class="metrics-grid">
+        <div class="metric-card">
+            <div class="metric-icon"><i data-lucide="building-2"></i></div>
+            <div class="metric-body">
+                <div class="metric-label">Active Tenants</div>
+                <div class="metric-val" id="metric-tenants-count">--</div>
+                <div class="metric-sub">Multi-company instances</div>
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-icon"><i data-lucide="users"></i></div>
+            <div class="metric-body">
+                <div class="metric-label">Total Headcount</div>
+                <div class="metric-val" id="metric-staff-count">--</div>
+                <div class="metric-sub">Across all client companies</div>
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-icon"><i data-lucide="check-circle-2"></i></div>
+            <div class="metric-body">
+                <div class="metric-label">Today's Check-Ins</div>
+                <div class="metric-val" id="metric-checkins-today">--</div>
+                <div class="metric-sub">Live verified attendances</div>
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-icon"><i data-lucide="activity"></i></div>
+            <div class="metric-body">
+                <div class="metric-label">System Latency</div>
+                <div class="metric-val" id="metric-latency">-- ms</div>
+                <div class="metric-sub">Supabase REST roundtrip</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Main Content Area: Tenant Fleet & Live Stream -->
+    <main class="dashboard-main">
+        
+        <!-- Left: Tenant Fleet Directory -->
+        <section class="tenant-fleet-panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Tenant Fleet Directory</h2>
+                    <p>Manage workspaces, view plan tiers, and jump into client admin consoles.</p>
+                </div>
+                <div class="panel-controls">
+                    <input type="text" id="tenant-search-input" placeholder="Filter companies by name or slug..." oninput="filterTenantTable()" />
+                    <button class="btn-icon" onclick="loadFleetData()" title="Refresh fleet">
+                        <i data-lucide="refresh-cw" size="15"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <table class="fleet-table">
+                    <thead>
+                        <tr>
+                            <th>Company & Workspace</th>
+                            <th>Plan Tier</th>
+                            <th>HQ Office & Geofence</th>
+                            <th>Status</th>
+                            <th style="min-width: 320px; text-align: right;">Quick Actions / Masquerade</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tenant-tbody">
+                        <tr>
+                            <td colspan="5" class="loading-td">Loading tenant fleet data...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Right: Cross-Tenant Real-Time Activity Feed -->
+        <aside class="activity-feed-panel">
+            <div class="panel-header">
+                <div>
+                    <h3>Live Global Activity</h3>
+                    <p>Real-time attendance stream across all companies</p>
+                </div>
+            </div>
+            <div class="activity-stream" id="activity-stream">
+                <div class="empty-feed">Listening for incoming check-in pings...</div>
+            </div>
+        </aside>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="super-footer">
+        <div>Attendance Cloud v3.0.0 (Enterprise Multi-Tenant) • Authorized Platform Operator Access Only</div>
+        <div class="footer-links">
+            <a href="../robots.txt" target="_blank">Robots Directive</a> •
+            <a href="../" target="_blank">Staff Portal</a> •
+            <a href="../admin/" target="_blank">Primary Admin</a>
+        </div>
+    </footer>
+
+    <!-- Tenant Master Command Modal -->
+    <div id="tenant-master-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-container">
+            <div class="modal-header">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <div id="modal-company-logo-wrap" class="modal-logo-wrap"></div>
+                    <div>
+                        <h2 id="modal-company-name">Company Master Control</h2>
+                        <span id="modal-company-slug-badge" class="badge-slug">slug</span>
+                    </div>
+                </div>
+                <button class="modal-close-btn" onclick="closeTenantMasterModal()" title="Close">&times;</button>
+            </div>
+            
+            <div class="modal-tabs-wrapper">
+                <button type="button" class="tab-scroll-btn left" onclick="scrollMasterTabs(-160)" title="Scroll tabs left" aria-label="Scroll tabs left">
+                    <i data-lucide="chevron-left" size="14"></i>
+                </button>
+                <div class="modal-tabs" id="modal-tabs-strip">
+                    <button class="modal-tab active" data-tab="tab-profile" onclick="switchMasterTab('tab-profile')"><i data-lucide="building-2" size="14"></i> Profile & Plan</button>
+                    <button class="modal-tab" data-tab="tab-geofence" onclick="switchMasterTab('tab-geofence')"><i data-lucide="map-pin" size="14"></i> GPS & Policies</button>
+                    <button class="modal-tab" data-tab="tab-staff" onclick="switchMasterTab('tab-staff')"><i data-lucide="users" size="14"></i> Staff & Device Links</button>
+                    <button class="modal-tab" data-tab="tab-security" onclick="switchMasterTab('tab-security')"><i data-lucide="shield" size="14"></i> Security & Masquerade</button>
+                    <button class="modal-tab" data-tab="tab-backup" onclick="switchMasterTab('tab-backup')"><i data-lucide="database" size="14"></i> Backup & Restore</button>
+                    <button class="modal-tab danger" data-tab="tab-danger" onclick="switchMasterTab('tab-danger')"><i data-lucide="alert-triangle" size="14"></i> Danger Zone</button>
+                </div>
+                <button type="button" class="tab-scroll-btn right" onclick="scrollMasterTabs(160)" title="Scroll tabs right" aria-label="Scroll tabs right">
+                    <i data-lucide="chevron-right" size="14"></i>
+                </button>
+            </div>
+
+            <div class="modal-content-scroll">
+                <!-- Tab 1: Profile & Plan -->
+                <div id="tab-profile" class="tab-pane active">
+                    <form id="master-profile-form" onsubmit="handleSaveMasterProfile(event)">
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label>Company Name</label>
+                                <input type="text" id="master-company-name" required />
+                            </div>
+                            <div class="form-group">
+                                <label>Workspace Slug (URL)</label>
+                                <input type="text" id="master-company-slug" required pattern="[a-z0-9-]+" />
+                            </div>
+                        </div>
+
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label>Plan Tier</label>
+                                <select id="master-plan-tier" class="form-select">
+                                    <option value="Starter">Starter (Free)</option>
+                                    <option value="Pro Trial">Pro Trial</option>
+                                    <option value="Pro">Pro ($49/mo)</option>
+                                    <option value="Enterprise">Enterprise ($199/mo)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Account Status</label>
+                                <select id="master-status" class="form-select">
+                                    <option value="active">Active (Full Access)</option>
+                                    <option value="suspended">Suspended (Locked Out)</option>
+                                    <option value="pending_review">Pending Review</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label>Primary Admin Contact Name</label>
+                                <input type="text" id="master-admin-name" />
+                            </div>
+                            <div class="form-group">
+                                <label>Primary Admin Email</label>
+                                <input type="email" id="master-admin-email" />
+                            </div>
+                        </div>
+
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label>Brand Primary Color</label>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <input type="color" id="master-brand-color" style="width:44px; height:38px; padding:2px; cursor:pointer;" />
+                                    <input type="text" id="master-brand-color-text" placeholder="#1a56db" />
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Company Logo (File Upload or URL)</label>
+                                <div style="display:flex; gap:8px; align-items:center;">
+                                    <input type="text" id="master-logo-url" placeholder="https://... or data:image/..." style="flex:1;" />
+                                    <label for="master-logo-file" class="action-btn" style="cursor:pointer; flex-shrink:0; display:inline-flex; align-items:center; gap:6px;">
+                                        <i data-lucide="upload" size="14"></i> Choose File
+                                    </label>
+                                    <input type="file" id="master-logo-file" accept="image/*" style="display:none;" />
+                                </div>
+                                <div id="master-logo-preview-wrap" style="display:none; margin-top:8px; align-items:center; gap:10px;">
+                                    <img id="master-logo-preview" src="" alt="Logo Preview" style="max-height:36px; max-width:120px; object-fit:contain; border:1px solid var(--border); border-radius:4px; padding:2px; background:var(--surface-3);" />
+                                    <button type="button" id="master-logo-remove-btn" style="background:transparent; border:none; color:var(--danger); font-size:0.75rem; cursor:pointer; text-decoration:underline;">Remove Logo</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="display:flex; justify-content:flex-end; margin-top:16px;">
+                            <button type="submit" class="btn-primary" id="btn-save-master-profile">
+                                <i data-lucide="save" size="14"></i> Save Profile Changes
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Tab 2: GPS & Policies -->
+                <div id="tab-geofence" class="tab-pane">
+                    <form id="master-geofence-form" onsubmit="handleSaveMasterPolicies(event)">
+                        <div class="form-group">
+                            <label>Branch / HQ Office Name</label>
+                            <input type="text" id="master-office-name" required />
+                        </div>
+
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label>Latitude Coordinate</label>
+                                <input type="number" step="any" id="master-latitude" required />
+                            </div>
+                            <div class="form-group">
+                                <label>Longitude Coordinate</label>
+                                <input type="number" step="any" id="master-longitude" required />
+                            </div>
+                        </div>
+
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label>Geofence Radius (meters)</label>
+                                <input type="number" id="master-radius" min="10" max="5000" required />
+                            </div>
+                            <div class="form-group">
+                                <label>Morning Late Grace Period (minutes)</label>
+                                <input type="number" id="master-grace-period" min="0" max="120" value="15" required />
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Default Staff Work Policy</label>
+                            <select id="master-default-policy" class="form-select">
+                                <option value="weekly_hybrid">Weekly Hybrid (2-Day Office, 3-Day Home)</option>
+                                <option value="field_flexible">Field / Flexible Mode (Media & Operations)</option>
+                                <option value="executive">Executive Mode (Self-Directed Attendance)</option>
+                                <option value="office_only">Office Only (GPS Required Every Day)</option>
+                            </select>
+                        </div>
+
+                        <div style="display:flex; justify-content:flex-end; margin-top:16px;">
+                            <button type="submit" class="btn-primary" id="btn-save-master-policies">
+                                <i data-lucide="save" size="14"></i> Save Policies & Geofence
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Tab 3: Staff & Device Links -->
+                <div id="tab-staff" class="tab-pane">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                        <div>
+                            <h3 style="font-size:1.05rem;">Tenant Staff Directory</h3>
+                            <p style="font-size:0.8rem; color:var(--text-muted);">Manage employee roster and reset device pairings remotely.</p>
+                        </div>
+                        <button type="button" class="btn-secondary small" onclick="toggleAddStaffForm()">
+                            <i data-lucide="user-plus" size="14"></i> Add Employee
+                        </button>
+                    </div>
+
+                    <!-- Inline Add Staff Box -->
+                    <div id="inline-add-staff-box" style="display:none; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px; margin-bottom:14px;">
+                        <h4 style="font-size:0.9rem; margin-bottom:8px;">Add New Employee to this Tenant</h4>
+                        <div class="form-row-2">
+                            <input type="text" id="new-staff-name" placeholder="Employee Full Name" />
+                            <input type="text" id="new-staff-dept" placeholder="Department (e.g. Sales, IT)" />
+                        </div>
+                        <div class="form-row-2" style="margin-top:8px;">
+                            <select id="new-staff-policy" class="form-select">
+                                <option value="weekly_hybrid">Weekly Hybrid</option>
+                                <option value="field_flexible">Field / Flexible</option>
+                                <option value="executive">Executive</option>
+                                <option value="office_only">Office Only</option>
+                            </select>
+                            <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; cursor:pointer;">
+                                <input type="checkbox" id="new-staff-is-lead" /> Team Lead (Manager)
+                            </label>
+                        </div>
+                        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:10px;">
+                            <button type="button" class="btn-secondary small" onclick="toggleAddStaffForm()">Cancel</button>
+                            <button type="button" class="btn-primary small" onclick="handleCreateTenantStaff()">Add Member</button>
+                        </div>
+                    </div>
+
+                    <!-- Staff Table -->
+                    <div style="max-height: 280px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm);">
+                        <table class="fleet-table" style="font-size:0.85rem;">
+                            <thead>
+                                <tr>
+                                    <th>Employee</th>
+                                    <th>Dept</th>
+                                    <th>Policy</th>
+                                    <th>Device Link</th>
+                                    <th style="text-align:right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="master-staff-tbody">
+                                <tr><td colspan="5" class="loading-td">Loading staff roster...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab 4: Security & Masquerade -->
+                <div id="tab-security" class="tab-pane">
+                    <div class="danger-box" style="border-color:var(--primary); background:rgba(26,86,219,0.06); margin-bottom:18px;">
+                        <h4 style="color:var(--primary); font-size:0.95rem; margin-bottom:4px; display:flex; align-items:center; gap:8px;">
+                            <i data-lucide="zap" size="16"></i> Masquerade / Impersonate Admin
+                        </h4>
+                        <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:12px;">
+                            Launch the client admin console directly with full operator authority without requiring the tenant's password. Use for customer support or system maintenance.
+                        </p>
+                        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                            <button type="button" class="btn-primary small" onclick="handleMasqueradeAdmin()">
+                                <i data-lucide="external-link" size="14"></i> Launch Admin Console
+                            </button>
+                            <button type="button" class="btn-secondary small" onclick="handleMasqueradePortal()">
+                                <i data-lucide="smartphone" size="14"></i> Open Staff Check-In
+                            </button>
+                            <button type="button" class="btn-secondary small" onclick="handleMasqueradeHybrid()">
+                                <i data-lucide="calendar" size="14"></i> Open Hybrid Scheduler
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px; margin-bottom:18px;">
+                        <h4 style="font-size:0.95rem; margin-bottom:6px; display:flex; align-items:center; gap:8px;">
+                            <i data-lucide="key" size="16"></i> Reset Tenant Admin Password
+                        </h4>
+                        <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:12px;">
+                            If the customer admin has forgotten their password or is locked out, set a new password for them here.
+                        </p>
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" id="master-new-admin-pass" placeholder="Enter new temporary password" style="max-width:320px;" />
+                            <button type="button" class="btn-secondary" onclick="handleResetAdminPassword()">Reset Password</button>
+                        </div>
+                    </div>
+
+                    <div style="background:var(--surface-2); border:1px solid rgba(16,185,129,0.3); border-radius:var(--radius-sm); padding:16px;">
+                        <h4 style="color:#10b981; font-size:0.95rem; margin-bottom:6px; display:flex; align-items:center; gap:8px;">
+                            <i data-lucide="calendar-plus" size="16"></i> Commercial Trial & Subscription Controls
+                        </h4>
+                        <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:12px;">
+                            Extend free trial access for sales prospecting, or grant a 50% retention save deal.
+                        </p>
+                        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                            <button type="button" class="btn-secondary small" onclick="handleSuperAdminExtendTrial(14)">
+                                <i data-lucide="plus-circle" size="14"></i> +14 Days Trial
+                            </button>
+                            <button type="button" class="btn-secondary small" onclick="handleSuperAdminExtendTrial(30)">
+                                <i data-lucide="plus-circle" size="14"></i> +30 Days Trial
+                            </button>
+                            <button type="button" class="btn-secondary small" onclick="handleSuperAdminToggleRetention()">
+                                <i data-lucide="percent" size="14"></i> Apply 50% Retention Deal
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 5: Backup & Restore -->
+                <div id="tab-backup" class="tab-pane">
+                    <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px; margin-bottom:16px;">
+                        <h4 style="font-size:0.95rem; margin-bottom:6px; display:flex; align-items:center; gap:8px;">
+                            <i data-lucide="download" size="16"></i> Export Full Workspace Archive
+                        </h4>
+                        <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:12px;">
+                            Download a comprehensive, portable JSON backup of this company's profile, GPS geofence rules, schedule policies, and full employee roster.
+                        </p>
+                        <button type="button" class="btn-primary small" onclick="handleExportTenantData()">
+                            <i data-lucide="download" size="14"></i> Download JSON Archive
+                        </button>
+                    </div>
+
+                    <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px;">
+                        <h4 style="font-size:0.95rem; margin-bottom:6px; display:flex; align-items:center; gap:8px;">
+                            <i data-lucide="upload" size="16"></i> Restore / Import Workspace Archive
+                        </h4>
+                        <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:12px;">
+                            Upload and restore a previous JSON backup for this workspace or import data migrated from another environment.
+                        </p>
+                        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                            <input type="file" id="master-import-file" accept=".json,application/json" style="font-size:0.84rem;" />
+                            <button type="button" class="btn-secondary small" onclick="handleImportTenantData(event)">
+                                <i data-lucide="upload" size="14"></i> Restore From File
+                            </button>
+                        </div>
+                        <div id="master-import-status" style="margin-top:8px; font-size:0.8rem; color:var(--text-muted);"></div>
+                    </div>
+                </div>
+
+                <!-- Tab 6: Danger Zone -->
+                <div id="tab-danger" class="tab-pane">
+                    <div class="danger-box" style="margin-bottom:16px;">
+                        <h4 style="color:var(--danger); font-size:0.95rem; margin-bottom:4px; display:flex; align-items:center; gap:8px;">
+                            <i data-lucide="trash-2" size="16"></i> Purge Attendance History
+                        </h4>
+                        <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:10px;">
+                            Delete all recorded attendance check-in logs for this workspace. This action is irreversible.
+                        </p>
+                        <button type="button" class="btn-secondary small danger" onclick="handlePurgeTenantLogs()">Purge Attendance Logs</button>
+                    </div>
+
+                    <div class="danger-box">
+                        <h4 style="color:var(--danger); font-size:0.95rem; margin-bottom:4px; display:flex; align-items:center; gap:8px;">
+                            <i data-lucide="alert-octagon" size="16"></i> Delete Workspace
+                        </h4>
+                        <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:10px;">
+                            Permanently removes this company workspace, all staff members, and settings.
+                        </p>
+                        <button type="button" class="btn-primary small danger" onclick="handleDeleteTenantWorkspace()">Delete Entire Workspace</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Master Key Reset Modal -->
+    <div id="master-key-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-container" style="max-width: 480px;">
+            <div class="modal-header">
+                <h2 style="font-size:1.1rem; display:flex; align-items:center; gap:8px;">
+                    <i data-lucide="key-round" size="18"></i> Change Platform Master Key
+                </h2>
+                <button class="modal-close-btn" onclick="closeMasterKeyModal()" title="Close">&times;</button>
+            </div>
+            <div style="padding: 20px 24px;">
+                <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:14px;">
+                    Update the cryptographic Master Platform Key used to unlock this Super Admin dashboard and sign elevated operator masquerade tokens.
+                </p>
+                <form id="master-key-change-form" onsubmit="handleSaveMasterKey(event)">
+                    <div class="form-group" style="margin-bottom:12px;">
+                        <label style="font-size:0.82rem; font-weight:600;">Current Master Key</label>
+                        <input type="password" id="current-master-key-input" required placeholder="Enter current master key" style="width:100%;" />
+                    </div>
+                    <div class="form-group" style="margin-bottom:12px;">
+                        <label style="font-size:0.82rem; font-weight:600;">New Master Key</label>
+                        <input type="password" id="new-master-key-input" required minlength="8" placeholder="At least 8 characters" style="width:100%;" />
+                    </div>
+                    <div class="form-group" style="margin-bottom:14px;">
+                        <label style="font-size:0.82rem; font-weight:600;">Confirm New Master Key</label>
+                        <input type="password" id="confirm-master-key-input" required minlength="8" placeholder="Re-enter new key" style="width:100%;" />
+                    </div>
+                    <div id="master-key-change-msg" style="display:none; font-size:0.82rem; margin-bottom:12px;"></div>
+                    <div style="display:flex; justify-content:flex-end; gap:8px;">
+                        <button type="button" class="btn-secondary small" onclick="closeMasterKeyModal()">Cancel</button>
+                        <button type="submit" class="btn-primary small" id="btn-save-master-key">Update Master Key</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script src="../config.js"></script>
+<script src="../common.js"></script>
+<script src="super_admin.js"></script>
+</body>
+</html>

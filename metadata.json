@@ -1,6 +1,7 @@
 {
   "name": "Lifecard Staff Attendance Portal",
-  "description": "Staff attendance tracking with GPS geofencing. Sign in and sign out at the office.",
+  "version": "3.0.0",
+  "description": "Commercial multi-tenant staff attendance tracking with GPS geofencing. Sign in and sign out at the office.",
   "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

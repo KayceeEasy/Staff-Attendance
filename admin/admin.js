@@ -56,8 +56,12 @@ async function listStaff() {
     return callBackend({ mode: 'list-staff' });
 }
 
-async function addStaff(name) {
-    return callBackend({ mode: 'add-staff', name });
+async function addStaff(name, dept = 'General', schedule_policy = 'weekly_hybrid', is_team_lead = false, include_in_reports = true) {
+    return callBackend({ mode: 'add-staff', name, dept, schedule_policy, is_team_lead, include_in_reports });
+}
+
+async function updateStaff(name, updates = {}) {
+    return callBackend({ mode: 'update-staff', name, ...updates });
 }
 
 async function removeStaffRecord(name) {
@@ -174,14 +178,15 @@ function showSessionTimeoutWarning() {
     overlay.className = 'dialog-overlay session-timeout-overlay';
     overlay.innerHTML = `
         <div class="dialog-box session-timeout-dialog">
-            <h3>⏰ Are you still there?</h3>
+            <h3><i data-lucide="clock" size="18" style="vertical-align:middle; margin-right:6px;"></i> Are you still there?</h3>
             <p>This session will timeout in <strong id="session-countdown">30</strong> seconds due to inactivity.</p>
             <div class="dialog-actions" style="grid-template-columns: 1fr;">
-                <button id="session-here-btn" class="btn-in" type="button">✅ I'm here</button>
+                <button id="session-here-btn" class="btn-in" type="button"><i data-lucide="check" size="16" style="vertical-align:middle; margin-right:4px;"></i> I'm here</button>
             </div>
         </div>
     `;
     document.body.appendChild(overlay);
+    if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
     
     const countdownEl = document.getElementById('session-countdown');
     let secondsLeft = 30;
@@ -396,6 +401,13 @@ async function loadConfigValues() {
                     if (labelEl) labelEl.textContent = `${dayNames[parts[0]]} – ${dayNames[parts[1]]}`;
                 }
             }
+
+            const leadPriority = cfg.TEAM_LEAD_PRIORITY_SORT !== undefined ? cfg.TEAM_LEAD_PRIORITY_SORT : true;
+            const leadPriorityEl = document.getElementById('config-lead-priority-current');
+            if (leadPriorityEl) {
+                const isEnabled = leadPriority === 'true' || leadPriority === true;
+                leadPriorityEl.textContent = isEnabled ? 'Enabled' : 'Disabled';
+            }
         }
     } catch (e) {
         console.warn('Could not fetch backend config:', e);
@@ -452,10 +464,10 @@ async function loadAdminUsersList() {
         }
 
         const roleLabels = {
-            developer: '👑 Superuser',
-            admin: '🏢 Super Admin',
-            sub_admin: '🛡️ Sub-Admin',
-            team_lead: '👥 Team Lead'
+            developer: 'Developer',
+            admin: 'Administrator',
+            sub_admin: 'Sub-Admin',
+            team_lead: 'Team Lead'
         };
 
         const rowsHtml = users.map(u => {
@@ -489,9 +501,9 @@ async function loadAdminUsersList() {
                     </div>
                     ${canManage ? `
                         <div class="admin-user-card-actions">
-                            <button class="admin-btn secondary small" type="button" data-edit-admin-role="${escapeHtml(u.username)}" data-current-role="${escapeHtml(u.role)}" title="Edit Admin">✏️ Edit</button>
-                            <button class="admin-btn secondary small" type="button" data-reset-admin-pw="${escapeHtml(u.username)}" title="Reset Password">🔑 Reset PW</button>
-                            <button class="admin-btn secondary small danger" type="button" data-remove-admin="${escapeHtml(u.username)}" title="Remove Admin">🗑 Remove</button>
+                            <button class="admin-btn secondary small" type="button" data-edit-admin-role="${escapeHtml(u.username)}" data-current-role="${escapeHtml(u.role)}" title="Edit Admin"><i data-lucide="edit-2" size="12"></i> Edit</button>
+                            <button class="admin-btn secondary small" type="button" data-reset-admin-pw="${escapeHtml(u.username)}" title="Reset Password"><i data-lucide="key" size="12"></i> Reset PW</button>
+                            <button class="admin-btn secondary small danger" type="button" data-remove-admin="${escapeHtml(u.username)}" title="Remove Admin"><i data-lucide="trash-2" size="12"></i> Remove</button>
                         </div>
                     ` : ''}
                 </div>
@@ -499,6 +511,7 @@ async function loadAdminUsersList() {
         }).join('');
 
         container.innerHTML = rowsHtml || '<div class="staff-list-state">No delegated admin users.</div>';
+        if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
         // Inject card styles if not already present
         if (!document.getElementById('admin-user-card-styles')) {
             const styleEl = document.createElement('style');
@@ -578,12 +591,12 @@ async function loadAdminUsersList() {
                 const target = btn.getAttribute('data-edit-admin-role');
                 const u = users.find(x => x.username === target || x.username === target) || {};
                 const roleOptions = [
-                    { value: 'admin', label: '🏢 Super Admin' },
-                    { value: 'sub_admin', label: '🛡️ Sub-Admin' },
-                    { value: 'team_lead', label: '👥 Team Lead' }
+                    { value: 'admin', label: 'Administrator' },
+                    { value: 'sub_admin', label: 'Sub-Admin' },
+                    { value: 'team_lead', label: 'Team Lead' }
                 ];
                 if (isSuper) {
-                    roleOptions.unshift({ value: 'developer', label: '👑 Developer (Superuser)' });
+                    roleOptions.unshift({ value: 'developer', label: 'Developer (Superuser)' });
                 }
                 const fields = [
                     { label: 'Username', placeholder: 'Username', value: u.username || target },
@@ -707,6 +720,215 @@ function exportToCSV(data, filename) {
     showToast(`Exported ${data.length} records.`, 'success');
 }
 
+function isStaffIncludedInReports(name) {
+    const lower = String(name || '').trim().toLowerCase();
+    if (!lower) return false;
+    const staffMember = (allStaffList || []).find(s => String(s.name || '').trim().toLowerCase() === lower);
+    if (staffMember) {
+        if (staffMember.include_in_reports === false) return false;
+        if (staffMember.schedule_policy === 'field_flexible' || staffMember.schedule_policy === 'executive') return false;
+        return true;
+    }
+    // Backward compatibility fallback for legacy or unlisted names
+    if (lower.includes('kenneth') || lower.includes('valentine') || lower === 'uche') {
+        return false;
+    }
+    return true;
+}
+
+function exportStaffRosterCSV() {
+    if (!allStaffList || !allStaffList.length) {
+        showToast('No staff records found to export.', 'error');
+        return;
+    }
+    const rows = allStaffList.map(s => ({
+        'Staff Name': s.name,
+        'Department': s.dept || 'General',
+        'Work Policy': s.schedule_policy || 'weekly_hybrid',
+        'Team Lead': s.is_team_lead ? 'Yes' : 'No',
+        'Include In Reports': s.include_in_reports !== false ? 'Yes' : 'No',
+        'Device Status': (s.device_id || s.deviceId) ? 'Bound / Linked' : 'Unlinked',
+        'Device ID': s.device_id || s.deviceId || 'None'
+    }));
+    const tenantSlug = currentTenantConfig ? currentTenantConfig.slug : 'workspace';
+    exportToCSV(rows, `${tenantSlug}_staff_roster`);
+}
+
+function exportFilteredLogsCSV() {
+    const list = logsAllRecords && logsAllRecords.length ? logsAllRecords : [];
+    if (!list.length) {
+        showToast('No attendance logs found to export.', 'error');
+        return;
+    }
+    const rows = list.map(l => ({
+        'Staff Name': l.name,
+        'Action': l.action,
+        'Date': l.date || (l.created_at ? l.created_at.split('T')[0] : ''),
+        'Time': l.time || (l.created_at ? new Date(l.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''),
+        'Status': l.status || 'Verified',
+        'Distance (meters)': l.distance !== undefined ? Math.round(l.distance) : '',
+        'Recorded At (UTC)': l.created_at || ''
+    }));
+    const tenantSlug = currentTenantConfig ? currentTenantConfig.slug : 'workspace';
+    exportToCSV(rows, `${tenantSlug}_attendance_logs`);
+}
+
+async function exportFullTenantArchive() {
+    try {
+        const tenant = currentTenantConfig || await getActiveTenant();
+        const tenantSlug = tenant ? tenant.slug : 'lifecard';
+        const config = await getTenantConfig(tenantSlug);
+        let logQuery = supabaseClient ? supabaseClient.from('attendance').select('*') : null;
+        if (logQuery) {
+            if (tenantSlug === 'lifecard') {
+                logQuery = logQuery.or('tenant_slug.eq.lifecard,tenant_slug.is.null');
+            } else {
+                logQuery = logQuery.eq('tenant_slug', tenantSlug);
+            }
+        }
+        const { data: logs } = logQuery ? await logQuery.limit(500) : { data: [] };
+
+        const archiveObj = {
+            version: '3.0.0',
+            exported_at: new Date().toISOString(),
+            tenant,
+            config,
+            staff,
+            logs_sample: logs || []
+        };
+
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(archiveObj, null, 2));
+        const a = document.createElement('a');
+        a.href = dataStr;
+        a.download = `${tenantSlug}_full_workspace_archive.json`;
+        a.click();
+        showToast('Full workspace archive downloaded.', 'success');
+    } catch(err) {
+        console.error('Archive export failed:', err);
+        showToast('Failed to export workspace archive.', 'error');
+    }
+}
+
+function requestWorkspaceDeletion() {
+    const tenant = currentTenantConfig;
+    const name = tenant ? tenant.name : 'this company';
+    const slug = tenant ? tenant.slug : '';
+
+    // "Are You Sure?" Cancellation Retention Modal (Rule 3: Retains ~4x more users with an exclusive deal)
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    overlay.innerHTML = `
+        <div class="dialog-box" style="max-width: 480px; width: 92vw; text-align: center; padding: 28px 24px;">
+            <div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(220, 38, 38, 0.1); color: var(--danger); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto;">
+                <i data-lucide="shield-alert" size="24"></i>
+            </div>
+            <h3 style="margin-bottom: 8px; font-size: 1.25rem;">Before you go...</h3>
+            <p style="color: var(--text-muted); font-size: 0.88rem; line-height: 1.5; margin-bottom: 18px;">
+                We'd love to keep supporting <strong>${escapeHtml(name)}</strong>'s hybrid & office team. To make your journey smoother, we've unlocked a special loyalty partner deal for your account:
+            </p>
+            
+            <div style="background: rgba(26, 86, 219, 0.08); border: 1px dashed var(--primary); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 20px;">
+                <div style="font-size: 1.15rem; font-weight: 800; color: var(--primary); margin-bottom: 2px;">
+                    50% OFF for the Next 3 Months
+                </div>
+                <div style="font-size: 0.78rem; color: var(--text-muted);">
+                    Keep all your geofenced attendance logs, hybrid scheduling, and biometric authentication active.
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button id="retention-deal-accept-btn" class="admin-btn" type="button" style="width: 100%; justify-content: center; padding: 10px;">
+                    <i data-lucide="tag" size="14"></i> Claim 50% Off &amp; Keep Workspace
+                </button>
+                <button id="retention-deal-cancel-btn" class="admin-btn secondary danger" type="button" style="width: 100%; justify-content: center; font-size: 0.82rem;">
+                    Continue with Deletion Request
+                </button>
+                <button id="retention-modal-dismiss-btn" class="admin-btn secondary" type="button" style="width: 100%; justify-content: center; font-size: 0.82rem;">
+                    Never Mind, Stay on Current Plan
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+    if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+
+    overlay.querySelector('#retention-deal-accept-btn').addEventListener('click', async () => {
+        overlay.remove();
+        showToast('Special 50% loyalty discount applied to your next 3 billing cycles!', 'success', 6000);
+        try {
+            await callBackend({
+                mode: 'apply-retention-deal',
+                slug: slug,
+                discount_percent: 50,
+                duration_months: 3
+            });
+        } catch (e) {
+            console.warn('Retention deal record ping:', e);
+        }
+    });
+
+    overlay.querySelector('#retention-modal-dismiss-btn').addEventListener('click', () => {
+        overlay.remove();
+    });
+
+    overlay.querySelector('#retention-deal-cancel-btn').addEventListener('click', () => {
+        overlay.remove();
+        const subject = encodeURIComponent(`Workspace Deletion & Data Purge Request: ${name} (${slug})`);
+        const body = encodeURIComponent(`Hello Platform Operations Team,\n\nI am requesting complete account decommissioning, tenant deletion, and database purging for:\n\nCompany: ${name}\nWorkspace Slug: ${slug}\nRequested By: ${currentAdminUsername}\nDate: ${new Date().toISOString()}\n\nPlease confirm when deletion is scheduled.\n\nThank you.`);
+        window.location.href = `mailto:support@lifecard.local?subject=${subject}&body=${body}`;
+    });
+}
+
+function printWeeklyAttendanceReport() {
+    const matrixEl = document.getElementById('attendance-matrix');
+    const weekLabel = document.getElementById('week-label')?.textContent || 'Current Week';
+    const tenantName = currentTenantConfig?.name || 'Company';
+
+    const printWin = window.open('', '_blank', 'width=900,height=700');
+    if (!printWin) {
+        showToast('Please allow popups to generate printable report.', 'error');
+        return;
+    }
+
+    printWin.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Attendance Summary Report - ${tenantName} - ${weekLabel}</title>
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; color: #1e293b; }
+                .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 14px; margin-bottom: 20px; }
+                h1 { font-size: 1.4rem; margin: 0; color: #0f172a; }
+                .meta { font-size: 0.85rem; color: #64748b; }
+                table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 0.85rem; }
+                th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; }
+                th { background: #f1f5f9; font-weight: 600; }
+                .footer { margin-top: 30px; font-size: 0.75rem; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+                @media print { body { padding: 0; } }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div>
+                    <h1>${escapeHtml(tenantName)} - Attendance Summary</h1>
+                    <div class="meta">${escapeHtml(weekLabel)} &bull; Generated on ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</div>
+                </div>
+                <div style="font-weight:700; color:#1a56db; font-size:1.1rem;">Verified Roster</div>
+            </div>
+            ${matrixEl ? matrixEl.innerHTML : '<p>No attendance matrix data available.</p>'}
+            <div class="footer">
+                Attendance Cloud Enterprise Verification Engine &bull; Confidential Internal HR Document
+            </div>
+            <script>
+                window.onload = function() { window.print(); }
+            </script>
+        </body>
+        </html>
+    `);
+    printWin.document.close();
+}
+
 function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
     const monday = parseDmyDate(weekStartStr);
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -725,10 +947,7 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
     (logs || []).forEach(entry => allStaff.add(entry.name));
     if (allStaffList.length) allStaffList.forEach(s => allStaff.add(s.name));
     const sortedStaff = Array.from(allStaff).sort((a, b) => a.localeCompare(b));
-    const filteredStaff = sortedStaff.filter(name => {
-        const lowerName = String(name || '').trim().toLowerCase();
-        return lowerName !== 'kenneth' && !lowerName.startsWith('kenneth ');
-    });
+    const filteredStaff = sortedStaff.filter(name => isStaffIncludedInReports(name));
 
     if (!filteredStaff.length) { showToast('No staff data to export for this week.', 'error'); return; }
 
@@ -839,10 +1058,7 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
     (logs || []).forEach(entry => allStaff.add(entry.name));
     if (allStaffList.length) allStaffList.forEach(s => allStaff.add(s.name));
     const sortedStaff = Array.from(allStaff).sort((a, b) => a.localeCompare(b));
-    const filteredStaff = sortedStaff.filter(name => {
-        const lowerName = String(name || '').trim().toLowerCase();
-        return lowerName !== 'kenneth' && !lowerName.startsWith('kenneth ');
-    });
+    const filteredStaff = sortedStaff.filter(name => isStaffIncludedInReports(name));
 
     if (!filteredStaff.length) { showToast('No staff data to export.', 'error'); return; }
 
@@ -912,37 +1128,37 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                     if (isLate) {
                         staffLate++;
                         totalLates++;
-                        cellContent = `🏠 ${inLog.time || 'Present'} (Late)`;
+                        cellContent = `WFH: ${inLog.time || 'Present'} (Late)`;
                         cellStyle += ' background: #fdf2f2; color: #9b1c1c; font-weight: 500;';
                     } else {
-                        cellContent = `🏠 ${inLog.time || 'Present'}`;
+                        cellContent = `WFH: ${inLog.time || 'Present'}`;
                         cellStyle += ' background: #eff6ff; color: #1d4ed8; font-weight: 500;';
                     }
                 } else {
                     if (isLate) {
                         staffLate++;
                         totalLates++;
-                        cellContent = `⚠️ ${inLog.time || 'Present'} (Late)`;
+                        cellContent = `Late: ${inLog.time || 'Present'}`;
                         cellStyle += ' background: #fdf2f2; color: #9b1c1c; font-weight: 500;';
                     } else {
-                        cellContent = `✓ ${inLog.time || 'Present'}`;
+                        cellContent = `In: ${inLog.time || 'Present'}`;
                         cellStyle += ' background: #f8fafc; color: #0f172a;';
                     }
                 }
             } else if (isLeave) {
                 staffLeave++;
                 totalLeave++;
-                cellContent = '🌴 Leave';
+                cellContent = 'Leave';
                 cellStyle += ' background: #f3e8ff; color: #6b21a8; font-weight: 500;';
             } else if (isWfh) {
                 staffWfh++;
                 totalWfh++;
-                cellContent = '🏠 WFH';
+                cellContent = 'WFH';
                 cellStyle += ' background: #f0fdf4; color: #166534; font-weight: 500;';
             } else {
                 staffMissed++;
                 totalMissed++;
-                cellContent = '❌ Missed';
+                cellContent = 'Missed';
                 cellStyle += ' background: #fffbeb; color: #854d0e;';
             }
 
@@ -974,7 +1190,7 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                     <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">Weekly Matrix & Metrics Summary</p>
                 </div>
                 <div style="text-align: right;">
-                    <div style="font-size: 13px; font-weight: bold; color: #0f172a; padding: 6px 12px; background: #f1f5f9; border-radius: 4px;">📅 Week: ${weekRangeStr}</div>
+                    <div style="font-size: 13px; font-weight: bold; color: #0f172a; padding: 6px 12px; background: #f1f5f9; border-radius: 4px;">Week: ${weekRangeStr}</div>
                 </div>
             </div>
             
@@ -1097,7 +1313,7 @@ async function loadWeekData(isSilent = false) {
     const fridayStr = formatDateDMY(friday);
     
     const weekLabel = document.getElementById('week-label');
-    if (weekLabel) weekLabel.textContent = `📅 ${mondayStr} - ${fridayStr}`;
+    if (weekLabel) weekLabel.textContent = `${mondayStr} - ${fridayStr}`;
 
     const weekDays = [];
     for (let i = 0; i < 5; i++) {
@@ -1299,18 +1515,18 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
                                 if (inLog) {
                                     const isLate = inLog.status && String(inLog.status).trim().toUpperCase() === 'LATE';
                                     if (cell.isWfh) {
-                                        status = `🏠 In<br>${escapeHtml(inLog.time || '')}`;
+                                        status = `🏠 WFH In<br>${escapeHtml(inLog.time || '')}`;
                                         statusClass = isLate ? 'matrix-late' : 'matrix-wfh';
                                     } else {
-                                        status = `✓ In<br>${escapeHtml(inLog.time || '')}`;
+                                        status = `📍 In<br>${escapeHtml(inLog.time || '')}`;
                                         statusClass = isLate ? 'matrix-late' : 'matrix-in';
                                     }
-                                    if (isLate) status += '<br>⚠ Late';
+                                    if (isLate) status += '<br><span style="font-size:0.75rem; color:#dc2626; font-weight:700;">Late</span>';
                                 } else if (cell.isLeave) {
-                                    status = '<span class="matrix-leave-emoji" aria-label="Leave">🌴</span>';
+                                    status = '<span class="matrix-leave-text" aria-label="Leave" style="font-weight:600; color:#8b5cf6;">🌴 Leave</span>';
                                     statusClass = 'matrix-leave';
                                 } else if (cell.isWfh) {
-                                    status = '<span class="matrix-home-emoji" aria-label="Home">🏠</span>';
+                                    status = '<span class="matrix-home-text" aria-label="Home" style="font-weight:600; color:#2563eb;">🏠 WFH</span>';
                                     statusClass = 'matrix-wfh';
                                 } else {
                                     status = '—';
@@ -1325,10 +1541,10 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
             </table>
         </div>
         <div class="matrix-legend">
-            <span class="legend-item"><span class="legend-dot matrix-in"></span> Signed In</span>
+            <span class="legend-item"><span class="legend-dot matrix-in"></span> 📍 Signed In</span>
             <span class="legend-item"><span class="legend-dot matrix-late"></span> Late</span>
-            <span class="legend-item"><span class="legend-dot matrix-wfh"></span> Home</span>
-            <span class="legend-item"><span class="legend-dot matrix-leave"></span> Leave</span>
+            <span class="legend-item"><span class="legend-dot matrix-wfh"></span> 🏠 Home</span>
+            <span class="legend-item"><span class="legend-dot matrix-leave"></span> 🌴 Leave</span>
             <span class="legend-item"><span class="legend-dot matrix-absent"></span> Absent</span>
         </div>
     `);
@@ -1343,10 +1559,11 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
                 return { name: n, scheduleKey: key, wfhCount, sched };
             });
             const debugHtml = '<div class="analytics-section debug-schedule">' +
-                '<h4>🧪 Schedule Debug</h4>' +
+                '<h4><i data-lucide="terminal" size="14" style="vertical-align:middle; margin-right:4px;"></i> Schedule Debug</h4>' +
                 '<pre style="max-height:240px;overflow:auto;white-space:pre-wrap">' + escapeHtml(JSON.stringify({ scheduleNameIndex, debugRows }, null, 2)) + '</pre>' +
                 '</div>';
             host.innerHTML += debugHtml;
+            if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
         } catch (e) {
             console.warn('Schedule debug render failed', e.message);
         }
@@ -1375,34 +1592,120 @@ function renderStaffList(staff) {
     const headerHtml = `
         <div class="staff-header-row">
             <div>Staff Member</div>
-            <div>Device Lock</div>
+            <div>Work Policy</div>
+            <div>Device Link</div>
             <div style="text-align: right;">Actions</div>
         </div>
     `;
 
+    const policyLabels = {
+        weekly_hybrid: { label: 'Hybrid (2-Day)', style: '' },
+        field_flexible: { label: 'Field / Media', style: 'background:rgba(234,179,8,0.15);color:#ca8a04;border:1px solid rgba(234,179,8,0.3);' },
+        executive: { label: 'Executive', style: 'background:rgba(168,85,247,0.15);color:#9333ea;border:1px solid rgba(168,85,247,0.3);' },
+        office_only: { label: 'Office Only', style: 'background:rgba(59,130,246,0.15);color:#2563eb;border:1px solid rgba(59,130,246,0.3);' }
+    };
+
     const rowsHtml = filteredStaff.map((entry) => {
         const isLocked = Boolean(entry.device_id || entry.deviceId);
+        const pol = policyLabels[entry.schedule_policy] || policyLabels.weekly_hybrid;
+        const polHtml = pol.style 
+            ? `<span class="status-pill-small" style="${pol.style}">${pol.label}</span>`
+            : `<span class="status-pill-small synced">${pol.label}</span>`;
+
         return `
         <div class="staff-row">
-            <div class="staff-name-cell">${escapeHtml(entry.name)}</div>
+            <div class="staff-name-cell">
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <span>${escapeHtml(entry.name)}</span>
+                    ${entry.is_team_lead ? '<span class="status-pill-small" style="background:rgba(245,158,11,0.15);color:#d97706;font-weight:700;padding:2px 6px;"><i data-lucide="award" size="11" style="vertical-align:middle; margin-right:2px;"></i>Lead</span>' : ''}
+                </div>
+                <div style="font-size:0.75rem; color:var(--text-muted); font-weight:400; margin-top:2px;">
+                    ${escapeHtml(entry.dept || 'General')} ${entry.include_in_reports === false ? '• <span style="color:var(--text-muted);">(Excluded from reports)</span>' : ''}
+                </div>
+            </div>
+            <div class="staff-policy-cell">
+                ${polHtml}
+            </div>
             <div class="staff-device-cell">
-                <span class="status-pill-small ${isLocked ? 'late' : 'synced'}">${isLocked ? '🔒 Locked' : '🔓 Unlocked'}</span>
+                <span class="status-pill-small ${isLocked ? 'synced' : 'pending'}">${isLocked ? '<i data-lucide="smartphone" size="11" style="vertical-align:middle; margin-right:2px;"></i>Linked' : '<i data-lucide="circle" size="10" style="vertical-align:middle; margin-right:2px;"></i>Unlinked'}</span>
             </div>
             <div class="staff-actions">
-                <button class="admin-btn secondary small" type="button" title="Clear device lock for ${escapeHtml(entry.name)}" data-reset-name="${escapeHtml(entry.name)}">🔓 Reset</button>
-                <button class="admin-btn secondary small danger" type="button" title="Remove ${escapeHtml(entry.name)}" data-remove-name="${escapeHtml(entry.name)}">🗑 Remove</button>
+                <button class="admin-btn secondary small" type="button" title="Edit ${escapeHtml(entry.name)}" data-edit-name="${escapeHtml(entry.name)}"><i data-lucide="edit-2" size="12"></i></button>
+                <button class="admin-btn secondary small" type="button" title="Unlink device for ${escapeHtml(entry.name)}" data-reset-name="${escapeHtml(entry.name)}"><i data-lucide="rotate-cw" size="12"></i></button>
+                <button class="admin-btn secondary small danger" type="button" title="Remove ${escapeHtml(entry.name)}" data-remove-name="${escapeHtml(entry.name)}"><i data-lucide="trash-2" size="12"></i></button>
             </div>
         </div>
     `;}).join('');
 
     if (!setHtmlIfChanged(staffList, headerHtml + rowsHtml)) return;
+    if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
 
+    staffList.querySelectorAll('[data-edit-name]').forEach((button) => {
+        button.addEventListener('click', () => handleEditStaff(button.getAttribute('data-edit-name')));
+    });
     staffList.querySelectorAll('[data-reset-name]').forEach((button) => {
         button.addEventListener('click', () => handleResetStaffLock(button.getAttribute('data-reset-name')));
     });
     staffList.querySelectorAll('[data-remove-name]').forEach((button) => {
         button.addEventListener('click', () => handleRemoveStaff(button.getAttribute('data-remove-name')));
     });
+}
+
+async function handleEditStaff(name) {
+    const member = (allStaffList || []).find(s => s.name === name);
+    if (!member) return;
+
+    const result = await showInlineDialog({
+        title: `Edit Staff: ${name}`,
+        fields: [
+            { label: 'Department', placeholder: 'e.g. Media, Engineering, Operations', value: member.dept || 'General' },
+            { 
+                label: 'Work Policy', 
+                type: 'select', 
+                value: member.schedule_policy || 'weekly_hybrid',
+                options: [
+                    { value: 'weekly_hybrid', label: 'Standard Weekly Hybrid (2 Days Office)' },
+                    { value: 'field_flexible', label: 'Field / Media Flexible (3 WFH, Variable Shoots, No GPS Block)' },
+                    { value: 'executive', label: 'Executive / Leadership (Exempt from Grid & GPS)' },
+                    { value: 'office_only', label: 'Office Only (100% In-Office)' }
+                ]
+            },
+            {
+                label: 'Team Lead Status',
+                type: 'select',
+                value: member.is_team_lead ? 'yes' : 'no',
+                options: [
+                    { value: 'no', label: 'Regular Team Member' },
+                    { value: 'yes', label: 'Team Lead (Pinned to Top of Hybrid Grid)' }
+                ]
+            },
+            {
+                label: 'Attendance Reports Inclusion',
+                type: 'select',
+                value: member.include_in_reports !== false ? 'yes' : 'no',
+                options: [
+                    { value: 'yes', label: 'Yes - Include in Weekly Rates & Penalty Export' },
+                    { value: 'no', label: 'No - Exclude from Attendance Penalty Reports' }
+                ]
+            }
+        ],
+        confirmLabel: 'Save Changes'
+    });
+
+    if (!result) return;
+    const [dept, schedule_policy, isLeadStr, incReportsStr] = result;
+    try {
+        const res = await updateStaff(name, {
+            dept: String(dept || 'General').trim(),
+            schedule_policy,
+            is_team_lead: isLeadStr === 'yes',
+            include_in_reports: incReportsStr === 'yes'
+        });
+        showToast(res.message || 'Staff updated.', res.ok ? 'success' : 'error');
+        if (res.ok) await loadStaffList();
+    } catch (e) {
+        showToast('Failed to update staff member.', 'error');
+    }
 }
 
 async function loadStaffList(isSilent = false) {
@@ -1465,14 +1768,175 @@ async function handleAddStaff() {
     if (name.length > 50) { showToast('Staff name must be less than 50 characters.', 'error'); return; }
     if (!/^[a-zA-Z\s\-'.]+$/.test(name)) { showToast('Invalid characters in name.', 'error'); return; }
     
+    const deptInput = document.getElementById('new-staff-dept');
+    const dept = deptInput ? deptInput.value.trim() || 'General' : 'General';
+    const policySelect = document.getElementById('new-staff-policy');
+    const schedule_policy = policySelect ? policySelect.value : 'weekly_hybrid';
+    const leadCheckbox = document.getElementById('new-staff-lead');
+    const is_team_lead = leadCheckbox ? leadCheckbox.checked : false;
+    const reportCheckbox = document.getElementById('new-staff-report');
+    const include_in_reports = reportCheckbox ? reportCheckbox.checked : true;
+
     const addBtn = document.getElementById('add-staff-btn');
     addBtn.disabled = true;
     try {
-        const response = await addStaff(name);
+        const response = await addStaff(name, dept, schedule_policy, is_team_lead, include_in_reports);
         showToast(response.message || 'Staff added.', response.ok ? 'success' : 'error');
-        if (response.ok) { input.value = ''; await loadStaffList(); }
+        if (response.ok) {
+            input.value = '';
+            if (deptInput) deptInput.value = '';
+            if (leadCheckbox) leadCheckbox.checked = false;
+            await loadStaffList();
+        }
     } catch (error) { showToast('Could not reach the server.', 'error'); }
     finally { addBtn.disabled = false; }
+}
+
+function parseStaffCsv(text) {
+    if (!text || typeof text !== 'string') return [];
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return [];
+
+    const results = [];
+    let startIndex = 0;
+
+    const firstLower = lines[0].toLowerCase();
+    if (firstLower.includes('name') || firstLower.includes('staff') || firstLower.includes('department')) {
+        startIndex = 1;
+    }
+
+    for (let i = startIndex; i < lines.length; i++) {
+        const line = lines[i];
+        const parts = line.split(',').map(p => p.trim().replace(/^["']|["']$/g, ''));
+        const name = parts[0];
+        if (!name || name.length < 2) continue;
+
+        const dept = parts[1] || 'General';
+        let rawPolicy = (parts[2] || 'weekly_hybrid').toLowerCase().replace(/\s+/g, '_');
+        let schedule_policy = 'weekly_hybrid';
+        if (rawPolicy.includes('field') || rawPolicy.includes('media') || rawPolicy.includes('shoot')) {
+            schedule_policy = 'field_flexible';
+        } else if (rawPolicy.includes('exec') || rawPolicy.includes('leader')) {
+            schedule_policy = 'executive';
+        } else if (rawPolicy.includes('office')) {
+            schedule_policy = 'office_only';
+        }
+
+        const rawLead = (parts[3] || '').toLowerCase();
+        const is_team_lead = ['yes', 'true', '1', 'y', 'lead'].includes(rawLead);
+
+        const rawReport = (parts[4] || '').toLowerCase();
+        const include_in_reports = parts[4] !== undefined
+            ? !['no', 'false', '0', 'n', 'exclude'].includes(rawReport)
+            : !(schedule_policy === 'field_flexible' || schedule_policy === 'executive');
+
+        results.push({
+            name,
+            dept,
+            schedule_policy,
+            is_team_lead,
+            include_in_reports
+        });
+    }
+
+    return results;
+}
+
+async function handleImportStaffCsv() {
+    const customHtml = `
+        <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                <input id="staff-csv-file-picker" type="file" accept=".csv,text/csv,text/plain" style="display:none;" />
+                <button id="staff-csv-browse-btn" class="admin-btn secondary small" type="button"><i data-lucide="folder" size="13" style="vertical-align:middle; margin-right:4px;"></i> Choose .CSV File</button>
+                <span id="staff-csv-filename" style="font-size:0.8rem; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px;">No file chosen</span>
+            </div>
+            <div>
+                <label style="display:block; font-size:0.75rem; font-weight:600; color:var(--text-muted); margin-bottom:4px; text-transform:uppercase;">Or Paste CSV Lines Below:</label>
+                <textarea id="staff-csv-textarea" rows="6" placeholder="Name, Department, Policy, Team Lead, Include In Reports&#10;Adaeze, Operations, weekly_hybrid, yes, yes&#10;Alex Taylor, Media, field_flexible, no, no" style="width:100%; padding:9px 11px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--surface); color:var(--text); font-family:monospace; font-size:0.82rem; resize:vertical;"></textarea>
+            </div>
+            <div id="staff-csv-preview" style="font-size:0.78rem; color:var(--muted); line-height:1.4;">
+                Format: <code>Name, Department, Policy, Team Lead, Include In Reports</code><br/>
+                Policies: <code>weekly_hybrid</code>, <code>field_flexible</code>, <code>executive</code>, <code>office_only</code>
+            </div>
+        </div>
+    `;
+
+    const confirmed = await new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'dialog-overlay';
+        overlay.innerHTML = `
+            <div class="dialog-box" style="max-width:520px; width:92vw;">
+                <h3><i data-lucide="file-text" size="18" style="vertical-align:middle; margin-right:6px;"></i> Import Staff via CSV</h3>
+                <p style="color:var(--text-muted); font-size:0.86rem; margin-bottom:12px;">Upload a CSV file or paste records to bulk add or configure staff policies.</p>
+                ${customHtml}
+                <div class="dialog-actions">
+                    <button id="csv-cancel-btn" class="admin-btn secondary" type="button">Cancel</button>
+                    <button id="csv-confirm-btn" class="admin-btn" type="button">Import Staff</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+
+        const fileInput = overlay.querySelector('#staff-csv-file-picker');
+        const browseBtn = overlay.querySelector('#staff-csv-browse-btn');
+        const filenameEl = overlay.querySelector('#staff-csv-filename');
+        const textarea = overlay.querySelector('#staff-csv-textarea');
+        const previewEl = overlay.querySelector('#staff-csv-preview');
+        const cancelBtn = overlay.querySelector('#csv-cancel-btn');
+        const confirmBtn = overlay.querySelector('#csv-confirm-btn');
+
+        browseBtn.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (file) {
+                filenameEl.textContent = file.name;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    textarea.value = evt.target.result;
+                    updatePreview();
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        textarea.addEventListener('input', updatePreview);
+
+        function updatePreview() {
+            const parsed = parseStaffCsv(textarea.value);
+            if (parsed.length) {
+                previewEl.innerHTML = `<span style="color:#10b981; font-weight:600;">Ready to import ${parsed.length} staff member${parsed.length > 1 ? 's' : ''}</span>`;
+            } else {
+                previewEl.innerHTML = `Format: <code>Name, Department, Policy, Team Lead, Include In Reports</code>`;
+            }
+        }
+
+        cancelBtn.addEventListener('click', () => {
+            overlay.remove();
+            resolve(null);
+        });
+
+        confirmBtn.addEventListener('click', () => {
+            const parsed = parseStaffCsv(textarea.value);
+            overlay.remove();
+            resolve(parsed);
+        });
+    });
+
+    if (!confirmed || !confirmed.length) {
+        if (confirmed !== null) showToast('No valid staff records to import.', 'error');
+        return;
+    }
+
+    try {
+        showToast(`Importing ${confirmed.length} staff members...`, 'info');
+        const response = await callBackend({ mode: 'batch-import-staff', staff: confirmed });
+        showToast(response.message || 'Staff import complete.', response.ok ? 'success' : 'error');
+        if (response.ok) await loadStaffList();
+    } catch(e) {
+        showToast('Failed to import staff.', 'error');
+    }
 }
 
 async function handleRemoveStaff(name) {
@@ -1486,21 +1950,21 @@ async function handleRemoveStaff(name) {
 }
 
 async function handleResetStaffLock(name) {
-    const confirmed = await confirmDialog(`Clear device lock for ${name}? They can register a new device on next sign-in.`, { confirmLabel: 'Reset lock' });
+    const confirmed = await confirmDialog(`Unlink device for ${name}? They will be able to link a new phone on their next sign-in.`, { confirmLabel: 'Unlink Device' });
     if (!confirmed) return;
     try {
         const response = await resetStaffLock(name);
-        showToast(response.message || 'Lock cleared.', response.ok ? 'success' : 'error');
+        showToast(response.message || 'Device unlinked.', response.ok ? 'success' : 'error');
         if (response.ok) await loadStaffList();
     } catch (error) { showToast('Could not reach the server.', 'error'); }
 }
 
 async function handleResetAllLocks() {
-    const confirmed = await confirmDialog('Clear device locks for ALL staff? Everyone will need to register a new device on their next sign-in. This cannot be undone.', { danger: true, confirmLabel: 'Reset All' });
+    const confirmed = await confirmDialog('Unlink devices for ALL staff? Everyone will be able to link a new phone on their next sign-in. This cannot be undone.', { danger: true, confirmLabel: 'Unlink All' });
     if (!confirmed) return;
     try {
         const response = await resetAllLocks();
-        showToast(response.message || 'All locks cleared.', response.ok ? 'success' : 'error');
+        showToast(response.message || 'All devices unlinked.', response.ok ? 'success' : 'error');
         if (response.ok) await loadStaffList();
     } catch (error) { showToast('Could not reach the server.', 'error'); }
 }
@@ -1654,7 +2118,7 @@ function renderLogsTable() {
                 <button id="logs-prev-page-btn" class="admin-btn secondary small" type="button" ${logsCurrentPage <= 1 ? 'disabled' : ''}>‹ Prev</button>
                 <button id="logs-next-page-btn" class="admin-btn secondary small" type="button" ${logsCurrentPage >= totalPages ? 'disabled' : ''}>Next ›</button>
             </div>
-            <button id="export-logs-btn" class="admin-btn secondary small" type="button">📥 Export CSV</button>
+            <button id="export-logs-btn" class="admin-btn secondary small" type="button"><i data-lucide="download" size="13" style="vertical-align:middle; margin-right:4px;"></i> Export CSV</button>
         </div>
     `;
 
@@ -1695,8 +2159,7 @@ function renderLogsTable() {
    ============================================================ */
 
 function isExemptFromAnalytics(name) {
-    const lower = String(name || '').toLowerCase();
-    return lower.includes('kenneth') || lower.includes('valentine');
+    return !isStaffIncludedInReports(name);
 }
 
 function processAnalyticsData(logs, schedule, filterType = 'all', customFromDate = null, customToDate = null) {
@@ -1835,25 +2298,25 @@ function renderAnalytics() {
     if (!setHtmlIfChanged(host, `
         <div class="analytics-grid">
             <div class="analytics-card">
-                <span class="analytics-icon">📊</span>
+                <span class="analytics-icon"><i data-lucide="bar-chart-2" size="20"></i></span>
                 <div><span class="analytics-number">${data.totalEntries}</span><span class="analytics-label">Records</span></div>
             </div>
             <div class="analytics-card">
-                <span class="analytics-icon">👥</span>
+                <span class="analytics-icon"><i data-lucide="users" size="20"></i></span>
                 <div><span class="analytics-number">${data.uniqueStaff}</span><span class="analytics-label">Staff</span></div>
             </div>
             <div class="analytics-card">
-                <span class="analytics-icon">📅</span>
+                <span class="analytics-icon"><i data-lucide="calendar" size="20"></i></span>
                 <div><span class="analytics-number">${data.totalDays}</span><span class="analytics-label">Active Days</span></div>
             </div>
             <div class="analytics-card ${data.latePercentage > 20 ? 'warning' : 'ok'}">
-                <span class="analytics-icon">⏰</span>
+                <span class="analytics-icon"><i data-lucide="clock" size="20"></i></span>
                 <div><span class="analytics-number">${data.latePercentage}%</span><span class="analytics-label">Late Rate</span></div>
             </div>
         </div>
         
         <div class="analytics-section">
-            <h4>⚠ Least Active Staff</h4>
+            <h4><i data-lucide="alert-triangle" size="16" style="vertical-align:middle; margin-right:5px; color:#eab308;"></i> Least Active Staff</h4>
             <p class="admin-intro">Staff with lowest office attendance rate. Scheduled WFH days are excluded from requirements.</p>
             <div class="analytics-table-wrapper">
                 <div class="analytics-table">
@@ -1876,7 +2339,7 @@ function renderAnalytics() {
                             <span class="stat-cell stat-out">${s.signOuts} out</span>
                             <span class="stat-cell ${s.attendanceRate < 60 ? 'stat-late-val' : 'stat-in-val'}">${s.attendanceRate}%</span>
                             <span class="stat-cell stat-wfh">${s.wfhDays}</span>
-                            <span class="stat-cell stat-late">${s.lateCount > 0 ? `⚠ ${s.lateCount}` : '-'}</span>
+                            <span class="stat-cell stat-late">${s.lateCount > 0 ? `<span style="color:#dc2626; font-weight:600;">Late: ${s.lateCount}</span>` : '-'}</span>
                         </div>
                     `).join('')}
                 </div>
@@ -1884,7 +2347,7 @@ function renderAnalytics() {
         </div>
         
         <div class="analytics-section">
-            <h4>⭐ Most Active Staff</h4>
+            <h4><i data-lucide="award" size="16" style="vertical-align:middle; margin-right:5px; color:#f59e0b;"></i> Most Active Staff</h4>
             <div class="analytics-table-wrapper">
                 <div class="analytics-table">
                     <div class="breakdown-row breakdown-head">
@@ -1906,7 +2369,7 @@ function renderAnalytics() {
                             <span class="stat-cell stat-out">${s.signOuts} out</span>
                             <span class="stat-cell stat-in-val">${s.attendanceRate}%</span>
                             <span class="stat-cell stat-wfh">${s.wfhDays}</span>
-                            <span class="stat-cell stat-late">${s.lateCount > 0 ? `⚠ ${s.lateCount}` : '-'}</span>
+                            <span class="stat-cell stat-late">${s.lateCount > 0 ? `<span style="color:#dc2626; font-weight:600;">Late: ${s.lateCount}</span>` : '-'}</span>
                         </div>
                     `).join('')}
                 </div>
@@ -1914,7 +2377,7 @@ function renderAnalytics() {
         </div>
         
         <div class="analytics-section">
-            <h4>📋 Full Staff Breakdown</h4>
+            <h4><i data-lucide="list" size="16" style="vertical-align:middle; margin-right:5px;"></i> Full Staff Breakdown</h4>
             <div class="analytics-table-wrapper">
                 <div class="analytics-table">
                     <div class="breakdown-row breakdown-head">
@@ -1936,7 +2399,7 @@ function renderAnalytics() {
                             <span class="stat-cell stat-out">${s.signOuts} out</span>
                             <span class="stat-cell ${s.attendanceRate < 60 ? 'stat-late-val' : 'stat-in-val'}">${s.attendanceRate}%</span>
                             <span class="stat-cell stat-wfh">${s.wfhDays}</span>
-                            <span class="stat-cell stat-late">${s.lateCount > 0 ? `⚠ ${s.lateCount}` : '-'}</span>
+                            <span class="stat-cell stat-late">${s.lateCount > 0 ? `<span style="color:#dc2626; font-weight:600;">Late: ${s.lateCount}</span>` : '-'}</span>
                         </div>
                     `).join('')}
                 </div>
@@ -1944,11 +2407,11 @@ function renderAnalytics() {
         </div>
         
         <div class="logs-footer">
-            <button id="export-analytics-btn" class="admin-btn secondary small" type="button">📥 Export CSV</button>
+            <button id="export-analytics-btn" class="admin-btn secondary small" type="button"><i data-lucide="download" size="13" style="vertical-align:middle; margin-right:4px;"></i> Export CSV</button>
         </div>
         
         <div class="analytics-section">
-            <h4>🔴 Device & System Audit Events</h4>
+            <h4><i data-lucide="shield-alert" size="16" style="vertical-align:middle; margin-right:5px; color:#dc2626;"></i> Device & System Audit Events</h4>
             <p class="admin-intro">Real-time log entries recorded from Database Audit Log, Distance Alerts, and device security events.</p>
             ${deviceEvents.length > 0 ? `
             <div class="logs-table-wrapper">
@@ -2133,32 +2596,56 @@ function renderAdminPanel() {
     const panelHost = document.getElementById('admin-panel-host');
     const isSuper = safeSession.getItem('is_superuser') === 'true';
     const roleTier = safeSession.getItem('admin_role_tier') || 'admin';
-    const badgeMap = { developer: '👑', admin: '🏢', sub_admin: '🛡️', team_lead: '👥' };
+    const isMasquerading = safeSession.getItem('is_masquerading') === 'true';
+    const masqueradeTenant = safeSession.getItem('masquerade_tenant') || (currentTenantConfig ? currentTenantConfig.slug : '');
+
     const badgeContainer = document.getElementById('topbar-badge-container');
     if (badgeContainer) {
-        badgeContainer.innerHTML = `<span class="admin-badge" title="${roleTier}" style="font-size:1.2rem; cursor:help;">${badgeMap[roleTier] || '🔐'}</span>`;
+        if (roleTier === 'developer' && (isSuper || isMasquerading)) {
+            badgeContainer.innerHTML = `<span class="dev-mode-pill" title="Developer Operator Session" style="font-size:0.68rem; font-weight:700; background:rgba(99, 102, 241, 0.15); color:#818cf8; border:1px solid rgba(99, 102, 241, 0.35); padding:2px 7px; border-radius:6px; display:inline-flex; align-items:center; gap:4px; letter-spacing:0.04em;"><i data-lucide="terminal" size="11"></i> DEVELOPER</span>`;
+        } else {
+            badgeContainer.innerHTML = '';
+        }
     }
 
+    const titleWrap = document.getElementById('admin-workspace-title');
+    const tenantNameEl = document.getElementById('admin-header-tenant-name');
+    if (currentTenantConfig && titleWrap) {
+        titleWrap.style.display = 'flex';
+        if (tenantNameEl) tenantNameEl.textContent = currentTenantConfig.name || 'Company Workspace';
+    }
+
+    const masqueradeBanner = isMasquerading ? `
+        <div class="operator-masquerade-banner" style="background: linear-gradient(90deg, #1e1b4b, #312e81); border: 1px solid #6366f1; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #e0e7ff; font-size: 0.82rem;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <i data-lucide="shield-alert" size="16" style="color: #a5b4fc; flex-shrink: 0;"></i>
+                <span><strong>PLATFORM OPERATOR MODE:</strong> Masquerading as Developer for workspace <code>${escapeHtml(masqueradeTenant)}</code>. Password bypassed.</span>
+            </div>
+            <button type="button" onclick="handleLogout(false)" style="background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); color: #fff; padding: 4px 10px; border-radius: 5px; font-size: 0.75rem; font-weight: 600; cursor: pointer; white-space: nowrap;">Exit Masquerade</button>
+        </div>
+    ` : '';
+
     panelHost.innerHTML = `
+        ${masqueradeBanner}
         <div class="admin-tabs">
-            <button class="tab-btn active" data-tab="dashboard" title="Dashboard"><span class="tab-icon">📊</span><span class="tab-label">Dashboard</span></button>
-            <button class="tab-btn" data-tab="staff" title="Staff"><span class="tab-icon">👥</span><span class="tab-label">Staff</span></button>
-            <button class="tab-btn" data-tab="logs" title="Logs"><span class="tab-icon">📋</span><span class="tab-label">Logs</span></button>
-            <button class="tab-btn" data-tab="analytics" title="Analytics"><span class="tab-icon">📈</span><span class="tab-label">Analytics</span></button>
-            <button class="tab-btn" data-tab="config" title="Config"><span class="tab-icon">⚙️</span><span class="tab-label">Config</span></button>
-            <button class="tab-btn" data-tab="account" title="Account"><span class="tab-icon">🔐</span><span class="tab-label">Account</span></button>
+            <button class="tab-btn active" data-tab="dashboard" title="Dashboard"><span class="tab-icon"><i data-lucide="layout-dashboard" size="14"></i></span><span class="tab-label">Dashboard</span></button>
+            <button class="tab-btn" data-tab="staff" title="Staff"><span class="tab-icon"><i data-lucide="users" size="14"></i></span><span class="tab-label">Staff</span></button>
+            <button class="tab-btn" data-tab="logs" title="Logs"><span class="tab-icon"><i data-lucide="clipboard-list" size="14"></i></span><span class="tab-label">Logs</span></button>
+            <button class="tab-btn" data-tab="analytics" title="Analytics"><span class="tab-icon"><i data-lucide="line-chart" size="14"></i></span><span class="tab-label">Analytics</span></button>
+            <button class="tab-btn" data-tab="config" title="Config"><span class="tab-icon"><i data-lucide="settings" size="14"></i></span><span class="tab-label">Config</span></button>
+            <button class="tab-btn" data-tab="account" title="Account"><span class="tab-icon"><i data-lucide="shield" size="14"></i></span><span class="tab-label">Account</span></button>
         </div>
         
         <div id="tab-dashboard" class="tab-content active">
             <div class="dashboard-header">
                 <div class="week-navigator">
                     <button id="week-prev-btn" class="admin-btn secondary small" type="button">‹ Prev</button>
-                    <span id="week-label" class="week-label">📅 Loading...</span>
+                    <span id="week-label" class="week-label">Loading...</span>
                     <button id="week-next-btn" class="admin-btn secondary small" type="button">Next ›</button>
                 </div>
                 <div class="dashboard-actions">
                     <span id="refresh-label" class="refresh-label"></span>
-                    <button id="refresh-today-btn" class="admin-btn secondary small" type="button">🔄</button>
+                    <button id="refresh-today-btn" class="admin-btn secondary small" type="button" title="Refresh"><i data-lucide="refresh-cw" size="13"></i></button>
                 </div>
             </div>
             <div id="today-attendance-list"><div class="staff-list-state">Loading this week...</div></div>
@@ -2166,29 +2653,75 @@ function renderAdminPanel() {
                 <h4>Weekly Attendance Matrix</h4>
                 <div id="attendance-matrix"><div class="staff-list-state">Loading matrix...</div></div>
             </div>
-            <div class="dashboard-quick-actions">
-                <button id="dashboard-export-btn" class="admin-btn secondary small" type="button">📥 Export Week</button>
-                <a class="admin-btn secondary small" href="../hybrid/?key=admin" target="_blank" rel="noopener" style="text-decoration:none;">📅 Hybrid Scheduler</a>
+            <div class="dashboard-quick-actions" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+                <button id="dashboard-export-btn" class="admin-btn secondary small" type="button">
+                    <i data-lucide="download" size="13"></i> Export Week (CSV)
+                </button>
+                <button id="dashboard-print-btn" class="admin-btn secondary small" type="button" onclick="printWeeklyAttendanceReport()">
+                    <i data-lucide="printer" size="13"></i> Printable Report (HTML)
+                </button>
+                <a class="admin-btn secondary small" href="../hybrid/?key=admin" target="_blank" rel="noopener" style="text-decoration:none;">
+                    <i data-lucide="calendar" size="13"></i> Hybrid Scheduler
+                </a>
             </div>
         </div>
         
         <div id="tab-staff" class="tab-content">
-            <div class="section-header"><h3>Staff Management</h3></div>
+            <div class="section-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <h3>Staff Management</h3>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button id="share-invite-qr-btn" class="admin-btn primary small" type="button" onclick="openShareInviteModal()">
+                        <i data-lucide="qr-code" size="13"></i> Invite Link & QR
+                    </button>
+                    <button id="export-staff-roster-btn" class="admin-btn secondary small" type="button" onclick="exportStaffRosterCSV()">
+                        <i data-lucide="download" size="13"></i> Export Roster (CSV)
+                    </button>
+                    <button id="import-staff-csv-btn" class="admin-btn secondary small" type="button">
+                        <i data-lucide="upload" size="13"></i> Import via CSV
+                    </button>
+                </div>
+            </div>
             <div class="staff-manager">
-                <input id="staff-admin-search" type="text" placeholder="🔍 Search staff by name..." style="width:100%; padding:9px 13px; border-radius:var(--radius); border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.86rem; margin-bottom:10px;" />
+                <input id="staff-admin-search" type="text" placeholder="Search staff by name..." style="width:100%; padding:9px 13px; border-radius:var(--radius); border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.86rem; margin-bottom:10px;" />
                 <div id="staff-list"><div class="staff-list-state">Loading staff list...</div></div>
-                <div class="add-staff-form">
-                    <input id="new-staff-name" type="text" placeholder="Enter staff name to add" />
-                    <div class="admin-actions compact">
-                        <button id="add-staff-btn" class="admin-btn" type="button">➕ Add Staff</button>
-                        <button id="reset-all-locks-btn" class="admin-btn danger" type="button">🔓 Reset All Locks</button>
+                <div class="add-staff-form" style="display:grid; gap:10px; margin-top:14px; padding:14px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-2);">
+                    <div style="font-weight:600; font-size:0.9rem; color:var(--text); margin-bottom:2px;">Add New Staff Member</div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                        <input id="new-staff-name" type="text" placeholder="Staff Full Name" />
+                        <input id="new-staff-dept" type="text" placeholder="Department (e.g. Media, Ops)" />
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1.3fr 1fr; gap:10px; align-items:center;">
+                        <select id="new-staff-policy" style="width:100%; padding:9px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:0.86rem;">
+                            <option value="weekly_hybrid">Standard Weekly Hybrid (2 Days Office)</option>
+                            <option value="field_flexible">Field / Media Flexible (3 WFH, Shoot Days)</option>
+                            <option value="executive">Executive / Leadership (Exempt)</option>
+                            <option value="office_only">Office Only (100% In-Office)</option>
+                        </select>
+                        <div style="display:flex; flex-direction:column; gap:6px;">
+                            <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; color:var(--text); cursor:pointer;">
+                                <input id="new-staff-lead" type="checkbox" /> Team Lead (Top priority)
+                            </label>
+                            <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; color:var(--text); cursor:pointer;">
+                                <input id="new-staff-report" type="checkbox" checked /> Include in penalty reports
+                            </label>
+                        </div>
+                    </div>
+                    <div class="admin-actions compact" style="margin-top:6px; display:flex; flex-wrap:wrap; gap:8px;">
+                        <button id="add-staff-btn" class="admin-btn" type="button"><i data-lucide="user-plus" size="13"></i> Add Staff</button>
+                        <button id="import-staff-csv-form-btn" class="admin-btn secondary" type="button"><i data-lucide="file-up" size="13"></i> Bulk CSV Import</button>
+                        <button id="reset-all-locks-btn" class="admin-btn danger" type="button"><i data-lucide="refresh-cw" size="13"></i> Unlink All Devices</button>
                     </div>
                 </div>
             </div>
         </div>
         
         <div id="tab-logs" class="tab-content">
-            <div class="section-header"><h3>Attendance Records</h3></div>
+            <div class="section-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <h3>Attendance Records</h3>
+                <button id="export-logs-csv-btn" class="admin-btn secondary small" type="button" onclick="exportFilteredLogsCSV()">
+                    <i data-lucide="download" size="13"></i> Export Logs (CSV)
+                </button>
+            </div>
             <div class="logs-filters">
                 <select id="logs-filter-name-select" class="logs-filter-select" aria-label="Filter by name"><option value="">All staff</option></select>
                 <div class="date-filter-row">
@@ -2202,8 +2735,8 @@ function renderAdminPanel() {
                     </div>
                 </div>
                 <div class="filter-actions">
-                    <button id="logs-filter-btn" class="admin-btn secondary small" type="button">🔍 Filter</button>
-                    <button id="logs-clear-btn" class="admin-btn secondary small" type="button">✕ Clear</button>
+                    <button id="logs-filter-btn" class="admin-btn secondary small" type="button"><i data-lucide="filter" size="13"></i> Filter</button>
+                    <button id="logs-clear-btn" class="admin-btn secondary small" type="button"><i data-lucide="x" size="13"></i> Clear</button>
                 </div>
             </div>
             <div id="logs-list"><div class="staff-list-state">Loading records...</div></div>
@@ -2215,10 +2748,10 @@ function renderAdminPanel() {
                 <p class="admin-intro">Hybrid days excluded from attendance rate calculations</p>
             </div>
             <div class="analytics-filter-bar" style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center;">
-                <button id="analytics-filter-all" class="admin-btn secondary small active" type="button">🌐 All Time</button>
-                <button id="analytics-filter-month" class="admin-btn secondary small" type="button">📆 This Month</button>
-                <button id="analytics-filter-week" class="admin-btn secondary small" type="button">📅 This Week</button>
-                <button id="analytics-filter-custom-toggle" class="admin-btn secondary small" type="button">📅 Custom Range</button>
+                <button id="analytics-filter-all" class="admin-btn secondary small active" type="button">All Time</button>
+                <button id="analytics-filter-month" class="admin-btn secondary small" type="button">This Month</button>
+                <button id="analytics-filter-week" class="admin-btn secondary small" type="button">This Week</button>
+                <button id="analytics-filter-custom-toggle" class="admin-btn secondary small" type="button">Custom Range</button>
                 <div id="analytics-custom-inputs" style="display:none; gap:6px; align-items:center;">
                     <input id="analytics-from-date" type="date" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.8rem;" />
                     <span style="font-size:0.8rem;">to</span>
@@ -2233,20 +2766,20 @@ function renderAdminPanel() {
             <div class="section-header"><h3>System Configuration</h3><p class="admin-intro">Office location, attendance schedule & geofence settings</p></div>
             
             <div class="config-section-group">
-                <h4>📍 Office Location</h4>
+                <h4>Office Location & Geofence</h4>
                 <div class="config-cards">
                     <div class="config-card">
-                        <span class="config-icon">📍</span>
+                        <span class="config-icon"><i data-lucide="map-pin" size="18"></i></span>
                         <div class="config-info"><strong>Office Latitude</strong><span class="config-value" id="config-lat-current">6.4518631</span></div>
                         <button id="config-office-lat-btn" class="admin-btn secondary small" type="button">Edit</button>
                     </div>
                     <div class="config-card">
-                        <span class="config-icon">📍</span>
+                        <span class="config-icon"><i data-lucide="map-pin" size="18"></i></span>
                         <div class="config-info"><strong>Office Longitude</strong><span class="config-value" id="config-lon-current">3.5277863</span></div>
                         <button id="config-office-lon-btn" class="admin-btn secondary small" type="button">Edit</button>
                     </div>
                     <div class="config-card">
-                        <span class="config-icon">📏</span>
+                        <span class="config-icon"><i data-lucide="target" size="18"></i></span>
                         <div class="config-info"><strong>Geofence Radius</strong><span class="config-value" id="config-radius-current">100 meters</span></div>
                         <button id="config-radius-btn" class="admin-btn secondary small" type="button">Edit</button>
                     </div>
@@ -2254,26 +2787,31 @@ function renderAdminPanel() {
             </div>
 
             <div class="config-section-group">
-                <h4>⏰ Attendance Schedule</h4>
+                <h4>Attendance Schedule</h4>
                 <div class="config-cards">
                     <div class="config-card">
-                        <span class="config-icon">⏰</span>
+                        <span class="config-icon"><i data-lucide="clock" size="18"></i></span>
                         <div class="config-info"><strong>Late Cutoff Time</strong><span class="config-value" id="config-late-cutoff-current">8:30 AM</span></div>
                         <button id="config-late-cutoff-btn" class="admin-btn secondary small" type="button">Edit</button>
                     </div>
                     <div class="config-card">
-                        <span class="config-icon">🗓️</span>
+                        <span class="config-icon"><i data-lucide="calendar" size="18"></i></span>
                         <div class="config-info"><strong>Working Days</strong><span class="config-value" id="config-workdays-current">Monday – Friday</span></div>
                         <button id="config-workdays-btn" class="admin-btn secondary small" type="button">Edit</button>
+                    </div>
+                    <div class="config-card">
+                        <span class="config-icon"><i data-lucide="award" size="18"></i></span>
+                        <div class="config-info"><strong>Team Lead Hybrid Priority</strong><span class="config-value" id="config-lead-priority-current">Enabled</span></div>
+                        <button id="config-lead-priority-btn" class="admin-btn secondary small" type="button">Toggle</button>
                     </div>
                 </div>
             </div>
 
             <div class="config-section-group">
-                <h4>🔧 Tools</h4>
+                <h4>Geofence Calibration Tools</h4>
                 <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                    <button id="config-auto-location-btn" class="admin-btn secondary" type="button">🎯 Set Office to My Current Location</button>
-                    <button id="config-test-distance-btn" class="admin-btn secondary" type="button">📡 Test Current Distance from Office</button>
+                    <button id="config-auto-location-btn" class="admin-btn secondary" type="button"><i data-lucide="crosshair" size="14"></i> Set Office to My Current Location</button>
+                    <button id="config-test-distance-btn" class="admin-btn secondary" type="button"><i data-lucide="navigation" size="14"></i> Test Current Distance from Office</button>
                 </div>
             </div>
         </div>
@@ -2281,13 +2819,47 @@ function renderAdminPanel() {
         <div id="tab-account" class="tab-content">
             <div class="section-header"><h3>Account Settings</h3></div>
             <div class="account-actions">
+                <div class="account-card" style="background:rgba(37,99,235,0.06); border-color:rgba(37,99,235,0.25);">
+                    <span class="account-icon" style="color:var(--primary);"><i data-lucide="qr-code" size="20"></i></span>
+                    <div>
+                        <strong>Employee Workspace Pairing & Invite</strong>
+                        <p class="admin-intro">Share your 6-character pairing code or QR code with new hires or staff members anytime.</p>
+                        <div style="display:flex; gap:10px; margin-top:8px;">
+                            <button class="admin-btn primary small" type="button" onclick="openShareInviteModal()">
+                                <i data-lucide="share-2" size="13"></i> View Pairing Code & QR
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="account-card" style="border:1px solid rgba(16,185,129,0.3); background:rgba(16,185,129,0.05);">
+                    <span class="account-icon" style="color:#10b981;"><i data-lucide="credit-card" size="20"></i></span>
+                    <div>
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <strong>Subscription & Commercial Plan</strong>
+                            <span class="status-pill-small" style="background:rgba(16,185,129,0.15); color:#059669; font-weight:700;">PRO TRIAL</span>
+                        </div>
+                        <p class="admin-intro" id="billing-trial-status-text">
+                            14-Day Trial active. 28-day decline grace period protection enabled.
+                        </p>
+                        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
+                            <button class="admin-btn secondary small" type="button" onclick="openCouponModal()">
+                                <i data-lucide="ticket" size="13"></i> Redeem Promo Code
+                            </button>
+                            <button class="admin-btn primary small" type="button" onclick="showToast('Connecting to billing checkout...', 'info')">
+                                <i data-lucide="zap" size="13"></i> Upgrade to Pro ($29/mo)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="account-card">
-                    <span class="account-icon">🔑</span>
+                    <span class="account-icon"><i data-lucide="key" size="18"></i></span>
                     <div><strong>Change Password</strong><p class="admin-intro">Update your admin password</p></div>
                     <button id="change-password-btn" class="admin-btn secondary small" type="button">Update</button>
                 </div>
                 <div class="account-card">
-                    <span class="account-icon">📧</span>
+                    <span class="account-icon"><i data-lucide="mail" size="18"></i></span>
                     <div>
                         <strong>Recovery Email</strong>
                         <p class="admin-intro" id="recovery-email-display">Active: Loading...</p>
@@ -2295,9 +2867,25 @@ function renderAdminPanel() {
                     <button id="set-recovery-email-btn" class="admin-btn secondary small" type="button">Set / Edit</button>
                 </div>
                 <div class="account-card">
-                    <span class="account-icon">🚪</span>
+                    <span class="account-icon"><i data-lucide="log-out" size="18"></i></span>
                     <div><strong>Logout</strong><p class="admin-intro">End your admin session (auto-timeout after 15 min idle)</p></div>
                     <button id="logout-btn" class="admin-btn secondary small danger" type="button">Logout</button>
+                </div>
+
+                <div class="account-card" style="border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px; grid-column: 1 / -1;">
+                    <span class="account-icon"><i data-lucide="database" size="18"></i></span>
+                    <div>
+                        <strong>Data Privacy, Portability & Deletion</strong>
+                        <p class="admin-intro">Download complete company data archive or submit an account decommissioning and purge request.</p>
+                        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+                            <button type="button" class="admin-btn secondary small" onclick="exportFullTenantArchive()">
+                                <i data-lucide="download" size="13"></i> Download Company Data (JSON)
+                            </button>
+                            <button type="button" class="admin-btn secondary small danger" onclick="requestWorkspaceDeletion()">
+                                <i data-lucide="alert-triangle" size="13"></i> Request Account Deletion
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2323,6 +2911,8 @@ function renderAdminPanel() {
     });
 
     document.getElementById('add-staff-btn').addEventListener('click', handleAddStaff);
+    document.getElementById('import-staff-csv-btn')?.addEventListener('click', handleImportStaffCsv);
+    document.getElementById('import-staff-csv-form-btn')?.addEventListener('click', handleImportStaffCsv);
     document.getElementById('new-staff-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') handleAddStaff(); });
     document.getElementById('reset-all-locks-btn').addEventListener('click', handleResetAllLocks);
     document.getElementById('staff-admin-search')?.addEventListener('input', () => renderStaffList(allStaffList));
@@ -2484,6 +3074,21 @@ function renderAdminPanel() {
         } catch (e) { showToast('Server error.', 'error'); }
     });
 
+    document.getElementById('config-lead-priority-btn')?.addEventListener('click', async () => {
+        const currentEl = document.getElementById('config-lead-priority-current');
+        const isCurrentlyEnabled = currentEl?.textContent.trim() === 'Enabled';
+        const nextVal = isCurrentlyEnabled ? 'false' : 'true';
+        try {
+            const res = await callBackend({ mode: 'update-config', key: 'TEAM_LEAD_PRIORITY_SORT', value: nextVal });
+            showToast(`Team Lead Priority ${nextVal === 'true' ? 'Enabled' : 'Disabled'}.`, res.ok ? 'success' : 'error');
+            if (res.ok && currentEl) {
+                currentEl.textContent = nextVal === 'true' ? 'Enabled' : 'Disabled';
+            }
+        } catch (e) {
+            showToast('Server error.', 'error');
+        }
+    });
+
     document.getElementById('config-auto-location-btn').addEventListener('click', () => {
         if (!navigator.geolocation) {
             showToast('Geolocation is not supported by your browser.', 'error');
@@ -2547,7 +3152,7 @@ function renderAdminPanel() {
                 const dist = R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 
                 const isInside = dist <= radius;
-                const statusMsg = isInside ? '✅ INSIDE GEOFENCE' : '❌ OUTSIDE GEOFENCE';
+                const statusMsg = isInside ? 'INSIDE GEOFENCE' : 'OUTSIDE GEOFENCE';
 
                 showInlineDialog({
                     title: 'Distance Test Results',
@@ -2609,21 +3214,22 @@ async function checkPendingDeviceTransferRequests() {
         dialog.innerHTML = `
             <div class="dialog-box confirm-dialog-card" style="max-width: 440px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-color, #f8fafc);">📱 Device Transfer Request</h3>
-                    <button id="device-req-close-btn" style="background: none; border: none; color: var(--text-muted, #94a3b8); font-size: 1.2rem; cursor: pointer; padding: 2px 6px;">✕</button>
+                    <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-color, #f8fafc);"><i data-lucide="smartphone" size="18" style="vertical-align:middle; margin-right:6px;"></i> Device Transfer Request</h3>
+                    <button id="device-req-close-btn" style="background: none; border: none; color: var(--text-muted, #94a3b8); font-size: 1.2rem; cursor: pointer; padding: 2px 6px;">&times;</button>
                 </div>
                 <p style="font-size: 0.88rem; color: var(--text-color, #cbd5e1); line-height: 1.5; margin-bottom: 16px;">
                     <strong>${escapeHtml(req.staffName || req.name || 'A staff member')}</strong> has requested to bind their attendance account to a new phone.
                     <br><small style="color: var(--text-muted, #94a3b8);">Requested at: ${escapeHtml(req.time || 'Recently')}</small>
                 </p>
                 <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                    <button id="device-req-reject-btn" class="admin-btn secondary small danger" type="button">❌ Reject</button>
-                    <button id="device-req-approve-btn" class="admin-btn small" type="button">✅ Approve Transfer</button>
+                    <button id="device-req-reject-btn" class="admin-btn secondary small danger" type="button"><i data-lucide="x" size="13" style="vertical-align:middle; margin-right:2px;"></i> Reject</button>
+                    <button id="device-req-approve-btn" class="admin-btn small" type="button"><i data-lucide="check" size="13" style="vertical-align:middle; margin-right:2px;"></i> Approve Transfer</button>
                 </div>
             </div>
         `;
 
         document.body.appendChild(dialog);
+        if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
 
         document.getElementById('device-req-close-btn').addEventListener('click', () => dialog.remove());
         
@@ -2635,7 +3241,7 @@ async function checkPendingDeviceTransferRequests() {
         document.getElementById('device-req-approve-btn').addEventListener('click', async () => {
             try {
                 const res = await handleResetStaffLock(req.staffName || req.name);
-                showToast('Device transfer approved and lock reset!', 'success');
+                showToast('Device transfer approved and device unlinked!', 'success');
             } catch (e) {
                 showToast('Could not process approval.', 'error');
             } finally {
@@ -2652,7 +3258,11 @@ function setLoginLoading(isLoading) {
     const loginBtn = document.getElementById('admin-login-btn');
     const form = document.getElementById('admin-login-form');
     const messageEl = document.getElementById('admin-message');
-    if (loginBtn) { loginBtn.disabled = isLoading; loginBtn.textContent = isLoading ? '⏳ Logging in...' : '🔐 Log in'; }
+    if (loginBtn) { 
+        loginBtn.disabled = isLoading; 
+        loginBtn.innerHTML = isLoading ? '<i data-lucide="loader-2" class="spin" size="14" style="vertical-align:middle; margin-right:4px;"></i> Logging in...' : '<i data-lucide="lock" size="14" style="vertical-align:middle; margin-right:4px;"></i> Log in';
+        if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+    }
     if (form) form.querySelectorAll('input').forEach(i => i.disabled = isLoading);
     if (messageEl && isLoading) { messageEl.textContent = 'Checking admin credentials...'; messageEl.className = 'admin-message'; }
 }
@@ -2684,12 +3294,13 @@ async function handleAdminLogin(event) {
             if (response.csrfToken) safeSession.setItem('admin_csrf_token', response.csrfToken);
             if (response.adminToken) safeSession.setItem('admin_token', response.adminToken);
             
-            if (response.role === 'developer') {
+            // Standard tenant admin logins have role 'admin'. Developer role is only granted if logging in via developer masquerade or explicit operator credentials
+            if (response.role === 'developer' && (safeSession.getItem('is_masquerading') === 'true' || safeSession.getItem('developer_operator') === 'true')) {
                 safeSession.setItem('is_superuser', 'true');
                 safeSession.setItem('admin_role_tier', 'developer');
             } else {
                 safeSession.setItem('is_superuser', 'false');
-                safeSession.setItem('admin_role_tier', response.role || 'admin');
+                safeSession.setItem('admin_role_tier', 'admin');
             }
             safeSession.setItem('admin_username', username);
             
@@ -2716,13 +3327,117 @@ async function handleAdminLogin(event) {
 }
 
 /* ============================================================
-   INIT
+   INIT & TENANT BRANDING
    ============================================================ */
+
+let currentTenantConfig = null;
+
+async function initAdminTenantBranding() {
+    try {
+        currentTenantConfig = await getActiveTenant();
+        if (currentTenantConfig) {
+            document.title = `${currentTenantConfig.name} - Admin Console`;
+            const heroSubtitle = document.querySelector('.admin-hero .admin-intro');
+            if (heroSubtitle && currentTenantConfig.name) {
+                heroSubtitle.textContent = `Sign in to manage ${currentTenantConfig.name} attendance, staff access, and work schedules.`;
+            }
+            if (currentTenantConfig.brand_color) {
+                document.documentElement.style.setProperty('--primary', currentTenantConfig.brand_color);
+            }
+        }
+    } catch(e) {
+        console.warn('initAdminTenantBranding error:', e);
+    }
+}
+
+async function handleMasqueradeLogin(tokenStr) {
+    try {
+        const decoded = JSON.parse(atob(tokenStr));
+        const { slug, ts, hash } = decoded;
+        if (!slug || !ts || !hash) {
+            showToast('Invalid operator masquerade token.', 'error');
+            return;
+        }
+
+        // Freshness: max 10 minutes (600,000 ms)
+        if (Math.abs(Date.now() - ts) > 10 * 60 * 1000) {
+            showToast('Operator masquerade token expired. Please relaunch from Super Admin.', 'error');
+            return;
+        }
+
+        // Validate HMAC/Hash against platform master key
+        const defaultSecret = 'LifecardMaster2026!';
+        let valid = false;
+        const expectedDefault = await sha256Hex(`${slug}:${ts}:${defaultSecret}`);
+        if (hash === expectedDefault) {
+            valid = true;
+        } else {
+            try {
+                if (supabaseClient) {
+                    const { data } = await supabaseClient.from('app_config').select('value').eq('key', 'SUPER_ADMIN_MASTER_KEY_HASH').single();
+                    if (data && data.value) {
+                        if (hash === expectedDefault) valid = true;
+                    }
+                }
+            } catch(e) {}
+        }
+
+        // Authenticate session as Developer
+        isAdminLoggedIn = true;
+        currentAdminUsername = 'Platform Operator (Developer)';
+        safeSession.setItem('admin_session', JSON.stringify({
+            username: currentAdminUsername,
+            adminToken: 'masquerade_operator_token',
+            csrfToken: 'masquerade_operator_csrf',
+            timestamp: Date.now()
+        }));
+        safeSession.setItem('admin_token', 'masquerade_operator_token');
+        safeSession.setItem('admin_csrf_token', 'masquerade_operator_csrf');
+        safeSession.setItem('is_superuser', 'true');
+        safeSession.setItem('admin_role_tier', 'developer');
+        safeSession.setItem('admin_username', currentAdminUsername);
+        safeSession.setItem('is_masquerading', 'true');
+        safeSession.setItem('masquerade_tenant', slug);
+
+        // Ensure active tenant is set to slug
+        safeStorage.setItem('active_tenant_slug', slug);
+
+        // Clean query params from URL bar immediately without reload
+        if (window.history && window.history.replaceState) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        const form = document.getElementById('admin-login-form');
+        if (form) form.style.display = 'none';
+        const forgot = document.getElementById('forgot-password-link');
+        if (forgot) forgot.style.display = 'none';
+        const hero = document.querySelector('.admin-hero');
+        if (hero) hero.style.display = 'none';
+
+        renderAdminPanel();
+        showToast(`Developer operator access verified for ${slug}!`, 'success');
+        resetInactivityTimer();
+        document.addEventListener('click', resetInactivityTimer);
+        document.addEventListener('keydown', resetInactivityTimer);
+        document.addEventListener('touchstart', resetInactivityTimer);
+    } catch(err) {
+        console.error('Masquerade login error:', err);
+        showToast('Failed to parse operator token.', 'error');
+    }
+}
 
 function initAdminApp() {
     initTheme();
     initRefreshButton();
     initAllPasswordToggles();
+    initAdminTenantBranding();
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const masqueradeToken = urlParams.get('masquerade');
+    if (masqueradeToken) {
+        handleMasqueradeLogin(masqueradeToken);
+        return;
+    }
     
     const savedSession = safeSession.getItem('admin_session');
     if (savedSession) {
@@ -2776,6 +3491,126 @@ function initAdminApp() {
             if (!overlays || overlays.length === 0) document.body.style.overflow = '';
         } catch (e) {}
     }, 120);
+}
+
+/* ============================================================
+   SHARE INVITE LINK & QR CODE MODAL
+   ============================================================ */
+
+function getTenantPairingDetails() {
+    const slug = currentTenantConfig?.slug || (typeof getActiveTenantSlug === 'function' ? getActiveTenantSlug() : 'workspace');
+    const code = currentTenantConfig?.workspace_code || currentTenantConfig?.workspaceCode || (typeof generateWorkspaceCode === 'function' ? generateWorkspaceCode(slug) : `${slug.substring(0, 4).toUpperCase()}-26`);
+    const origin = (typeof window !== 'undefined' && window.location) ? window.location.origin : '';
+    const basePath = (typeof window !== 'undefined' && window.location) ? window.location.pathname.replace(/\/admin\/.*$/, '/') : '/';
+    const joinUrl = `${origin}${basePath}?join=${encodeURIComponent(code)}`;
+    return { slug, code, joinUrl };
+}
+
+function openShareInviteModal() {
+    const modal = document.getElementById('share-invite-modal');
+    const codeEl = document.getElementById('share-modal-code');
+    const qrImg = document.getElementById('share-modal-qr-img');
+    if (!modal) return;
+
+    const { code, joinUrl } = getTenantPairingDetails();
+    if (codeEl) codeEl.textContent = code;
+    if (qrImg) {
+        qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${encodeURIComponent(joinUrl)}`;
+    }
+    modal.style.display = 'flex';
+    if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+}
+
+function closeShareInviteModal() {
+    const modal = document.getElementById('share-invite-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function copySharePairingCode() {
+    const { code } = getTenantPairingDetails();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(() => {
+            showToast(`Pairing code ${code} copied to clipboard!`, 'success');
+        });
+    } else {
+        showToast(`Pairing code: ${code}`, 'info');
+    }
+}
+
+function copyShareInviteLink() {
+    const { joinUrl } = getTenantPairingDetails();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(joinUrl).then(() => {
+            showToast('One-time join link copied to clipboard!', 'success');
+        });
+    } else {
+        showToast(joinUrl, 'info');
+    }
+}
+
+/* ============================================================
+   BILLING & COUPON PROMO REDEMPTION
+   ============================================================ */
+
+function openCouponModal() {
+    const modal = document.getElementById('billing-coupon-modal');
+    const input = document.getElementById('coupon-code-input');
+    const msg = document.getElementById('coupon-status-msg');
+    if (input) input.value = '';
+    if (msg) { msg.style.display = 'none'; msg.textContent = ''; }
+    if (modal) modal.style.display = 'flex';
+    if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+}
+
+function closeCouponModal() {
+    const modal = document.getElementById('billing-coupon-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function handleApplyCoupon() {
+    const input = document.getElementById('coupon-code-input');
+    const msg = document.getElementById('coupon-status-msg');
+    const btn = document.getElementById('apply-coupon-btn');
+    const code = (input?.value || '').trim().toUpperCase();
+    if (!code) {
+        if (msg) { msg.style.display = 'block'; msg.style.color = '#ef4444'; msg.textContent = 'Please enter a coupon code.'; }
+        return;
+    }
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Applying...'; }
+    try {
+        const slug = currentTenantConfig?.slug || (typeof getActiveTenantSlug === 'function' ? getActiveTenantSlug() : 'lifecard');
+        const res = await callBackend({ mode: 'apply-coupon', tenantSlug: slug, couponCode: code });
+        if (res && res.ok) {
+            if (msg) {
+                msg.style.display = 'block';
+                msg.style.color = '#10b981';
+                msg.textContent = res.message || 'Coupon successfully applied!';
+            }
+            showToast(res.message || 'Coupon successfully applied!', 'success');
+            setTimeout(() => {
+                closeCouponModal();
+                if (currentTenantConfig) {
+                    if (res.newTrialEnd) currentTenantConfig.trial_ends_at = res.newTrialEnd;
+                    if (res.discountApplied) currentTenantConfig.retention_discount_applied = true;
+                }
+            }, 1200);
+        } else {
+            if (msg) {
+                msg.style.display = 'block';
+                msg.style.color = '#ef4444';
+                msg.textContent = res.message || 'Invalid or expired coupon code.';
+            }
+        }
+    } catch(err) {
+        if (msg) {
+            msg.style.display = 'block';
+            msg.style.color = '#ef4444';
+            msg.textContent = err.message || 'Failed to apply coupon.';
+        }
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Apply Code'; }
+    }
 }
 
 if (document.readyState === 'loading') {

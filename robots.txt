@@ -1,0 +1,63 @@
+# ==============================================================================
+# Commercial Attendance & Workplace SaaS - Crawler Directives
+# Strictly Prohibits Indexing of Admin Consoles & Internal Management Portals
+# Prohibits All Autonomous AI Crawlers & Model Training Scrapers
+# ==============================================================================
+
+User-agent: *
+Disallow: /super-admin/
+Disallow: /admin/
+Disallow: /onboard/
+Disallow: /schema/
+Disallow: /GAS_scripts/
+Disallow: /*.sql$
+Disallow: /*.json$
+Disallow: /*.env*
+
+# ------------------------------------------------------------------------------
+# Autonomous AI Scrapers & LLM Training Crawlers (Explicit Full Disallow)
+# ------------------------------------------------------------------------------
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: Claude-Web
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: PerplexityBot
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: Applebot-Extended
+Disallow: /
+
+User-agent: cohere-ai
+Disallow: /
+
+User-agent: Diffbot
+Disallow: /
+
+User-agent: FacebookBot
+Disallow: /
+
+User-agent: ImagesiftBot
+Disallow: /
+
+User-agent: Omgilibot
+Disallow: /

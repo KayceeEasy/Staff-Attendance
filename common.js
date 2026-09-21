@@ -146,6 +146,444 @@ async function callBackendDeduplicated(payload, timeoutMs = 20000) {
 /* ---------- Backend communication ----------
    Routes requests to Supabase (PostgreSQL + Edge RPCs). */
 
+async function getStaffMetadataMap() {
+    let metadata = {};
+    try {
+        const stored = safeStorage.getItem('STAFF_METADATA');
+        if (stored) metadata = JSON.parse(stored);
+    } catch(e) {}
+
+    try {
+        const { data, error } = await supabaseClient.from('app_config').select('value').eq('key', 'STAFF_METADATA').single();
+        if (!error && data && data.value) {
+            const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+            if (parsed && typeof parsed === 'object') {
+                metadata = { ...metadata, ...parsed };
+                try { safeStorage.setItem('STAFF_METADATA', JSON.stringify(metadata)); } catch(e) {}
+            }
+        }
+    } catch(e) {}
+
+    return metadata;
+}
+
+async function saveStaffMetadataMap(metadata) {
+    try { safeStorage.setItem('STAFF_METADATA', JSON.stringify(metadata)); } catch(e) {}
+    try {
+        await supabaseClient.from('app_config').upsert([{
+            key: 'STAFF_METADATA',
+            value: JSON.stringify(metadata)
+        }], { onConflict: 'key' });
+    } catch(e) {
+        console.warn('Could not sync STAFF_METADATA to app_config:', e);
+    }
+}
+
+/* ---------- Multi-Tenant Registry & Data Scoping (Commercial v3.0) ---------- */
+const SEED_TENANT_LIFECARD = {
+    id: 'lifecard',
+    slug: 'lifecard',
+    workspace_code: 'LIFE-26',
+    name: 'Lifecard International',
+    tagline: 'Staff Attendance & Workplace Portal',
+    logo_url: '',
+    brand_color: '#1a56db',
+    office_name: 'Lekki HQ',
+    latitude: 6.4357,
+    longitude: 3.4738,
+    radius: 100,
+    plan_tier: 'Enterprise',
+    status: 'active',
+    created_at: '2026-07-01T00:00:00.000Z'
+};
+
+function generateWorkspaceCode(slug) {
+    const prefix = String(slug || 'WKS').replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase() || 'WKS';
+    const rand = Math.floor(10 + Math.random() * 90);
+    return `${prefix}-${rand}`;
+}
+
+async function getTenantRegistry() {
+    let tenants = [{ ...SEED_TENANT_LIFECARD }];
+    try {
+        const stored = safeStorage.getItem('TENANTS_REGISTRY');
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length) tenants = parsed;
+        }
+    } catch (e) {}
+
+    try {
+        const { data, error } = await supabaseClient.from('app_config').select('value').eq('key', 'TENANTS_REGISTRY').single();
+        if (!error && data && data.value) {
+            const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+            if (Array.isArray(parsed) && parsed.length) {
+                tenants = parsed;
+                try { safeStorage.setItem('TENANTS_REGISTRY', JSON.stringify(tenants)); } catch (e) {}
+            }
+        }
+    } catch (e) {}
+
+    // Ensure all tenants have a valid workspace_code
+    let updated = false;
+    tenants.forEach((t) => {
+        if (!t.workspace_code) {
+            t.workspace_code = generateWorkspaceCode(t.slug);
+            updated = true;
+        }
+    });
+
+    if (updated) {
+        saveTenantRegistry(tenants).catch(() => {});
+    }
+
+    // Ensure seed tenant exists if registry is empty
+    if (!tenants.length) {
+        tenants = [{ ...SEED_TENANT_LIFECARD }];
+    }
+    return tenants;
+}
+
+async function getTenantByWorkspaceCode(code) {
+    if (!code) return null;
+    const clean = String(code).trim().toUpperCase();
+    const registry = await getTenantRegistry();
+    return registry.find(t => (t.workspace_code && t.workspace_code.toUpperCase() === clean)) || null;
+}
+
+async function saveTenantRegistry(tenants) {
+    try { safeStorage.setItem('TENANTS_REGISTRY', JSON.stringify(tenants)); } catch (e) {}
+    try {
+        await supabaseClient.from('app_config').upsert([{
+            key: 'TENANTS_REGISTRY',
+            value: JSON.stringify(tenants)
+        }], { onConflict: 'key' });
+    } catch (e) {
+        console.warn('Could not sync TENANTS_REGISTRY to app_config:', e);
+    }
+}
+
+async function getActiveTenant(optionalSlug = null) {
+    try {
+        let slug = optionalSlug;
+
+        if (typeof window !== 'undefined' && window.location) {
+            const urlParams = new URLSearchParams(window.location.search);
+
+            // 1. One-time Setup / Join link: ?join=CODE or ?code=CODE
+            const joinCode = urlParams.get('join') || urlParams.get('code');
+            if (joinCode) {
+                const cleanCode = joinCode.trim().toUpperCase();
+                const registry = await getTenantRegistry();
+                const matched = registry.find(t => 
+                    (t.workspace_code && t.workspace_code.toUpperCase() === cleanCode) ||
+                    (t.slug && t.slug.toLowerCase() === cleanCode.toLowerCase())
+                );
+                if (matched) {
+                    slug = matched.slug;
+                    try {
+                        safeStorage.setItem('active_tenant_slug', matched.slug);
+                        // Clean the URL immediately to '/' so zero code or slug remains in address bar/history
+                        if (window.history && window.history.replaceState) {
+                            window.history.replaceState({}, document.title, window.location.pathname.replace(/\/tenant\/[^\/]+/i, '') || '/');
+                        }
+                    } catch (e) {}
+                }
+            }
+
+            // 2. Direct clean path fallback: /tenant/:slug
+            if (!slug) {
+                const pathParts = window.location.pathname.split('/').filter(Boolean);
+                const tenantIdx = pathParts.indexOf('tenant');
+                if (tenantIdx !== -1 && pathParts[tenantIdx + 1]) {
+                    slug = pathParts[tenantIdx + 1];
+                }
+            }
+
+            // 3. Query param fallback: ?tenant= or ?company=
+            if (!slug) {
+                slug = urlParams.get('tenant') || urlParams.get('company');
+            }
+
+            // 4. Device memory fallback (paired device)
+            if (!slug) {
+                slug = safeStorage.getItem('active_tenant_slug');
+            }
+        }
+
+        const registry = await getTenantRegistry();
+        if (slug) {
+            const cleanSlug = String(slug).trim().toLowerCase();
+            const match = registry.find(t => (t.slug && t.slug.toLowerCase() === cleanSlug) || (t.id && t.id.toLowerCase() === cleanSlug));
+            if (match) {
+                try { safeStorage.setItem('active_tenant_slug', match.slug); } catch(e) {}
+                return match;
+            }
+        }
+
+        // Strict Zero-Exposure: If unpaired and no valid workspace code/slug provided, return null
+        return null;
+    } catch (e) {
+        return null;
+    }
+}
+
+/* ---------- WebAuthn Native Biometric Engine ---------- */
+
+function bufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa ? window.btoa(binary) : '';
+}
+
+function base64ToBuffer(base64) {
+    if (!base64 || typeof window === 'undefined' || !window.atob) return new Uint8Array(0);
+    const binary = window.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
+
+async function isBiometricsAvailable() {
+    try {
+        if (typeof window === 'undefined' || !window.PublicKeyCredential) return false;
+        if (typeof window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function') {
+            return await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+        }
+        return false;
+    } catch (e) {
+        return false;
+    }
+}
+
+function isBiometricsEnrolled(staffName) {
+    if (!staffName) return false;
+    const clean = String(staffName).trim().toLowerCase();
+    const stored = safeStorage.getItem(`biometric_cred_${clean}`);
+    return Boolean(stored);
+}
+
+function getStoredBiometricCredentialId(staffName) {
+    if (!staffName) return null;
+    const clean = String(staffName).trim().toLowerCase();
+    return safeStorage.getItem(`biometric_cred_${clean}`);
+}
+
+function getCredentialsApi() {
+    if (typeof window !== 'undefined' && window.navigator && window.navigator.credentials) {
+        return window.navigator.credentials;
+    }
+    if (typeof navigator !== 'undefined' && navigator.credentials) {
+        return navigator.credentials;
+    }
+    return null;
+}
+
+async function enrollBiometrics(staffId, staffName, tenantName = 'Attendance Cloud') {
+    if (!staffName) throw new Error('Staff name is required for biometric registration');
+    const creds = getCredentialsApi();
+    if (!window.PublicKeyCredential || !creds) {
+        throw new Error('WebAuthn biometric authentication is not supported on this browser/device.');
+    }
+
+    const challenge = new Uint8Array(32);
+    window.crypto.getRandomValues(challenge);
+
+    const safeIdStr = String(staffId || staffName);
+    const userIdBuffer = new Uint8Array(safeIdStr.length);
+    for (let i = 0; i < safeIdStr.length; i++) {
+        userIdBuffer[i] = safeIdStr.charCodeAt(i);
+    }
+
+    const creationOptions = {
+        publicKey: {
+            challenge: challenge,
+            rp: {
+                name: tenantName,
+                id: window.location.hostname
+            },
+            user: {
+                id: userIdBuffer,
+                name: staffName,
+                displayName: staffName
+            },
+            pubKeyCredParams: [
+                { alg: -7, type: 'public-key' },  // ES256 (P-256)
+                { alg: -257, type: 'public-key' } // RS256
+            ],
+            authenticatorSelection: {
+                authenticatorAttachment: 'platform', // Face ID / Touch ID / Windows Hello
+                userVerification: 'preferred',
+                requireResidentKey: false
+            },
+            timeout: 60000,
+            attestation: 'none'
+        }
+    };
+
+    const credential = await creds.create(creationOptions);
+    if (!credential) throw new Error('Biometric registration was cancelled or timed out.');
+
+    const credIdBase64 = bufferToBase64(credential.rawId);
+    const clean = String(staffName).trim().toLowerCase();
+    safeStorage.setItem(`biometric_cred_${clean}`, credIdBase64);
+    safeStorage.setItem(`biometric_enabled_${clean}`, 'true');
+
+    return {
+        success: true,
+        credentialId: credIdBase64
+    };
+}
+
+async function verifyBiometrics(staffName) {
+    if (!staffName) return { success: false, message: 'Staff name required' };
+    const credIdBase64 = getStoredBiometricCredentialId(staffName);
+    if (!credIdBase64) return { success: false, message: 'No biometric credentials enrolled on this device' };
+
+    const creds = getCredentialsApi();
+    if (!window.PublicKeyCredential || !creds) {
+        return { success: false, message: 'Biometrics unsupported' };
+    }
+
+    const challenge = new Uint8Array(32);
+    window.crypto.getRandomValues(challenge);
+
+    const rawIdBuffer = base64ToBuffer(credIdBase64);
+
+    const requestOptions = {
+        publicKey: {
+            challenge: challenge,
+            allowCredentials: [{
+                id: rawIdBuffer,
+                type: 'public-key',
+                transports: ['internal']
+            }],
+            userVerification: 'preferred',
+            timeout: 60000
+        }
+    };
+
+    try {
+        const assertion = await creds.get(requestOptions);
+        if (assertion) {
+            return { success: true, assertion };
+        }
+        return { success: false, message: 'Verification failed' };
+    } catch (err) {
+        return { success: false, error: err.name, message: err.message || 'Biometric check cancelled' };
+    }
+}
+
+function clearBiometrics(staffName) {
+    if (!staffName) return;
+    const clean = String(staffName).trim().toLowerCase();
+    safeStorage.removeItem(`biometric_cred_${clean}`);
+    safeStorage.removeItem(`biometric_enabled_${clean}`);
+}
+
+/* ---------- Per-Tenant Staff & Config Scoping ---------- */
+
+async function getTenantStaffList(tenantSlug) {
+    const slug = String(tenantSlug || 'lifecard').trim().toLowerCase();
+    try {
+        // 1. Check scoped app_config key
+        const configKey = `TENANT_STAFF_${slug}`;
+        const { data, error } = await supabaseClient.from('app_config').select('value').eq('key', configKey).single();
+        if (!error && data && data.value) {
+            const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+            if (Array.isArray(parsed) && parsed.length) return parsed;
+        }
+
+        // 2. If lifecard and not yet in TENANT_STAFF_lifecard, seed from staff table + metadata
+        if (slug === 'lifecard') {
+            const { data: dbStaff } = await supabaseClient.from('staff').select('*').order('name');
+            const metaMap = await getStaffMetadataMap();
+            const seeded = (dbStaff || []).map(s => {
+                const nameKey = String(s.name || '').trim();
+                const lower = nameKey.toLowerCase();
+                const meta = metaMap[nameKey] || metaMap[lower] || {};
+                const isMedia = lower.includes('kenneth') || lower.includes('valentine');
+                const isExec = lower.includes('uche');
+                return {
+                    id: s.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'staff_' + Math.random().toString(36).substring(2, 9)),
+                    name: s.name,
+                    dept: s.dept || meta.dept || (isMedia ? 'Media' : isExec ? 'Leadership' : 'General'),
+                    schedule_policy: s.schedule_policy || meta.schedule_policy || (isMedia ? 'field_flexible' : isExec ? 'executive' : 'weekly_hybrid'),
+                    is_team_lead: s.is_team_lead !== undefined ? Boolean(s.is_team_lead) : (meta.is_team_lead !== undefined ? Boolean(meta.is_team_lead) : isExec),
+                    include_in_reports: s.include_in_reports !== undefined ? (s.include_in_reports !== false) : (meta.include_in_reports !== undefined ? Boolean(meta.include_in_reports) : !(isMedia || isExec)),
+                    device_id: s.device_id || null,
+                    device_token: s.device_token || null
+                };
+            });
+            if (seeded.length) {
+                await saveTenantStaffList('lifecard', seeded);
+            }
+            return seeded;
+        }
+
+        return [];
+    } catch (e) {
+        console.warn(`Error in getTenantStaffList for ${slug}:`, e);
+        return [];
+    }
+}
+
+async function saveTenantStaffList(tenantSlug, staffArray) {
+    const slug = String(tenantSlug || 'lifecard').trim().toLowerCase();
+    const configKey = `TENANT_STAFF_${slug}`;
+    try {
+        await supabaseClient.from('app_config').upsert([{
+            key: configKey,
+            value: JSON.stringify(staffArray)
+        }], { onConflict: 'key' });
+    } catch (e) {
+        console.warn(`Error saving tenant staff for ${slug}:`, e);
+    }
+}
+
+async function getTenantConfig(tenantSlug) {
+    const slug = String(tenantSlug || 'lifecard').trim().toLowerCase();
+    const configKey = `TENANT_CONFIG_${slug}`;
+    try {
+        const { data, error } = await supabaseClient.from('app_config').select('value').eq('key', configKey).single();
+        if (!error && data && data.value) {
+            return typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+        }
+    } catch (e) {}
+
+    // Fallback to tenant registry defaults
+    const registry = await getTenantRegistry();
+    const t = registry.find(item => item.slug.toLowerCase() === slug) || {};
+    return {
+        office_name: t.office_name || 'Main Office',
+        latitude: Number(t.latitude) || 6.4357,
+        longitude: Number(t.longitude) || 3.4738,
+        radius: Number(t.radius) || 100,
+        grace_period_minutes: 15,
+        default_policy: 'weekly_hybrid',
+        brand_color: t.brand_color || '#1a56db',
+        logo_url: t.logo_url || ''
+    };
+}
+
+async function saveTenantConfig(tenantSlug, configObj) {
+    const slug = String(tenantSlug || 'lifecard').trim().toLowerCase();
+    const configKey = `TENANT_CONFIG_${slug}`;
+    try {
+        await supabaseClient.from('app_config').upsert([{
+            key: configKey,
+            value: JSON.stringify(configObj)
+        }], { onConflict: 'key' });
+    } catch (e) {
+        console.warn(`Error saving tenant config for ${slug}:`, e);
+    }
+}
+
 async function callBackend(payload, timeoutMs = 20000) {
     if (!supabaseClient) return { ok: false, message: 'Supabase client not loaded.' };
     const adminToken = payload.adminToken || safeSession.getItem('admin_token') || '';
@@ -195,15 +633,20 @@ async function callBackend(payload, timeoutMs = 20000) {
                     raw: data
                 };
             }
-            case 'list-staff': {
-                const { data, error } = await supabaseClient.from('staff').select('*').order('name');
-                if (error) throw error;
-                return { ok: true, allowed: true, staff: data };
-            }
             case 'list-logs': {
-                let query = supabaseClient.from('attendance_logs').select('*');
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                let query = supabaseClient.from('attendance').select('*');
+                
+                // Strict multi-tenant isolation
+                if (tenantSlug === 'lifecard') {
+                    query = query.or('tenant_slug.eq.lifecard,tenant_slug.is.null');
+                } else {
+                    query = query.eq('tenant_slug', tenantSlug);
+                }
+
                 if (payload.name) {
-                    query = query.ilike('name', `%${payload.name}%`);
+                    query = query.ilike('name', `%${payload.name.trim()}%`);
                 }
                 if (payload.fromDate) {
                     query = query.gte('date', payload.fromDate);
@@ -211,55 +654,178 @@ async function callBackend(payload, timeoutMs = 20000) {
                 if (payload.toDate) {
                     query = query.lte('date', payload.toDate);
                 }
-                query = query.order('created_at', { ascending: false }).limit(payload.limit || 500);
+
+                const limitVal = parseInt(payload.limit, 10) || 200;
+                query = query.order('created_at', { ascending: false }).limit(limitVal);
+
                 const { data, error } = await query;
                 if (error) throw error;
-                return { ok: true, allowed: true, logs: data };
+                return { ok: true, logs: data || [] };
             }
-            case 'list-distance-alerts': {
-                const { data, error } = await supabaseClient.from('distance_alerts').select('*').order('id', { ascending: false }).limit(200);
-                if (error) throw error;
-                return { ok: true, allowed: true, alerts: data };
-            }
-            case 'list-audit-logs':
-            case 'list-analytics': {
-                const { data, error } = await supabaseClient.from('audit_logs').select('*').order('id', { ascending: false }).limit(200);
-                if (error) throw error;
-                return { ok: true, allowed: true, events: data };
-            }
-            case 'log-analytics': {
-                // Not strictly necessary for core function, but we can log it
-                const { error } = await supabaseClient.from('audit_logs').insert([{
-                    date: new Date().toLocaleDateString(),
-                    time: new Date().toLocaleTimeString(),
-                    category: 'Analytics',
-                    event_type: payload.eventType,
-                    user_staff: payload.deviceId || 'System',
-                    details: payload.details
-                }]);
-                if (error) throw error;
-                return { ok: true, message: 'Logged' };
+            case 'list-staff': {
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const staff = await getTenantStaffList(tenantSlug);
+                return { ok: true, allowed: true, staff };
             }
             case 'add-staff': {
-                const { error } = await supabaseClient.from('staff').insert([{ name: payload.name }]);
-                if (error) throw error;
-                return { ok: true, message: 'Staff added successfully.' };
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const name = String(payload.name || '').trim();
+                if (!name) return { ok: false, message: 'Staff name is required.' };
+
+                const staff = await getTenantStaffList(tenantSlug);
+                if (staff.some(s => s.name.toLowerCase() === name.toLowerCase())) {
+                    return { ok: false, message: `Staff member "${name}" already exists.` };
+                }
+
+                const newMember = {
+                    id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'staff_' + Math.random().toString(36).substring(2, 9),
+                    name,
+                    dept: String(payload.dept || 'General').trim(),
+                    schedule_policy: String(payload.schedule_policy || 'weekly_hybrid').trim(),
+                    is_team_lead: Boolean(payload.is_team_lead),
+                    include_in_reports: payload.include_in_reports !== false,
+                    device_id: null,
+                    device_token: null,
+                    created_at: new Date().toISOString()
+                };
+
+                staff.push(newMember);
+                await saveTenantStaffList(tenantSlug, staff);
+
+                if (tenantSlug === 'lifecard') {
+                    try {
+                        await supabaseClient.from('staff').insert([{ name }]);
+                    } catch (e) {}
+                    const metaMap = await getStaffMetadataMap();
+                    metaMap[name] = { dept: newMember.dept, schedule_policy: newMember.schedule_policy, is_team_lead: newMember.is_team_lead, include_in_reports: newMember.include_in_reports };
+                    await saveStaffMetadataMap(metaMap);
+                }
+
+                return { ok: true, message: 'Staff added successfully.', staffMember: newMember };
+            }
+            case 'batch-import-staff': {
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const list = Array.isArray(payload.staff) ? payload.staff : [];
+                if (!list.length) return { ok: false, message: 'No staff data provided.' };
+
+                const staff = await getTenantStaffList(tenantSlug);
+                const existingNames = new Set(staff.map(s => String(s.name || '').trim().toLowerCase()));
+                let addedCount = 0;
+                let updatedCount = 0;
+
+                for (const item of list) {
+                    const name = String(item.name || '').trim();
+                    if (!name) continue;
+                    const dept = String(item.dept || 'General').trim();
+                    const schedule_policy = String(item.schedule_policy || 'weekly_hybrid').trim();
+                    const is_team_lead = Boolean(item.is_team_lead);
+                    const include_in_reports = item.include_in_reports !== false;
+
+                    const existingIdx = staff.findIndex(s => s.name.toLowerCase() === name.toLowerCase());
+                    if (existingIdx !== -1) {
+                        staff[existingIdx] = {
+                            ...staff[existingIdx],
+                            dept,
+                            schedule_policy,
+                            is_team_lead,
+                            include_in_reports
+                        };
+                        updatedCount++;
+                    } else {
+                        staff.push({
+                            id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'staff_' + Math.random().toString(36).substring(2, 9),
+                            name,
+                            dept,
+                            schedule_policy,
+                            is_team_lead,
+                            include_in_reports,
+                            device_id: null,
+                            device_token: null,
+                            created_at: new Date().toISOString()
+                        });
+                        existingNames.add(name.toLowerCase());
+                        addedCount++;
+                    }
+                }
+
+                await saveTenantStaffList(tenantSlug, staff);
+                return {
+                    ok: true,
+                    message: `Imported ${addedCount} new staff, updated ${updatedCount} existing.`,
+                    addedCount,
+                    updatedCount
+                };
+            }
+            case 'update-staff': {
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const name = String(payload.name || '').trim();
+                const staff = await getTenantStaffList(tenantSlug);
+                const idx = staff.findIndex(s => s.name.toLowerCase() === name.toLowerCase());
+                if (idx === -1) return { ok: false, message: 'Staff member not found.' };
+
+                staff[idx] = {
+                    ...staff[idx],
+                    dept: payload.dept !== undefined ? String(payload.dept).trim() : staff[idx].dept,
+                    schedule_policy: payload.schedule_policy !== undefined ? String(payload.schedule_policy).trim() : staff[idx].schedule_policy,
+                    is_team_lead: payload.is_team_lead !== undefined ? Boolean(payload.is_team_lead) : staff[idx].is_team_lead,
+                    include_in_reports: payload.include_in_reports !== undefined ? Boolean(payload.include_in_reports) : staff[idx].include_in_reports
+                };
+                await saveTenantStaffList(tenantSlug, staff);
+
+                if (tenantSlug === 'lifecard') {
+                    const metaMap = await getStaffMetadataMap();
+                    metaMap[name] = { dept: staff[idx].dept, schedule_policy: staff[idx].schedule_policy, is_team_lead: staff[idx].is_team_lead, include_in_reports: staff[idx].include_in_reports };
+                    await saveStaffMetadataMap(metaMap);
+                }
+
+                return { ok: true, message: 'Staff updated successfully.', staffMember: staff[idx] };
             }
             case 'remove-staff': {
-                const { error } = await supabaseClient.from('staff').delete().eq('name', payload.name);
-                if (error) throw error;
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const name = String(payload.name || '').trim();
+                let staff = await getTenantStaffList(tenantSlug);
+                staff = staff.filter(s => s.name.toLowerCase() !== name.toLowerCase());
+                await saveTenantStaffList(tenantSlug, staff);
+
+                if (tenantSlug === 'lifecard') {
+                    try { await supabaseClient.from('staff').delete().eq('name', name); } catch(e) {}
+                    const metaMap = await getStaffMetadataMap();
+                    if (metaMap[name]) { delete metaMap[name]; await saveStaffMetadataMap(metaMap); }
+                }
+
                 return { ok: true, message: 'Staff removed successfully.' };
             }
             case 'reset-staff-lock': {
-                const { error } = await supabaseClient.from('staff').update({ device_id: null }).eq('name', payload.name);
-                if (error) throw error;
-                return { ok: true, message: 'Device lock reset.' };
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const name = String(payload.name || '').trim();
+                const staff = await getTenantStaffList(tenantSlug);
+                const member = staff.find(s => s.name.toLowerCase() === name.toLowerCase());
+                if (member) {
+                    member.device_id = null;
+                    member.device_token = null;
+                    await saveTenantStaffList(tenantSlug, staff);
+                }
+                if (tenantSlug === 'lifecard') {
+                    try { await supabaseClient.from('staff').update({ device_id: null }).eq('name', name); } catch(e) {}
+                }
+                return { ok: true, message: 'Device lock reset successfully.' };
             }
             case 'reset-all-locks': {
-                // Supabase doesn't easily allow update all without a filter if RLS is tricky, but we can do neq
-                const { error } = await supabaseClient.from('staff').update({ device_id: null }).neq('name', 'invalid_dummy_name_123');
-                if (error) throw error;
-                return { ok: true, message: 'All device locks reset.' };
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const staff = await getTenantStaffList(tenantSlug);
+                staff.forEach(s => { s.device_id = null; s.device_token = null; });
+                await saveTenantStaffList(tenantSlug, staff);
+                if (tenantSlug === 'lifecard') {
+                    try { await supabaseClient.from('staff').update({ device_id: null }).neq('name', 'dummy'); } catch(e) {}
+                }
+                return { ok: true, message: 'All device locks reset successfully.' };
             }
             case 'get-config': {
                 const { data, error } = await supabaseClient.from('app_config').select('*');
@@ -269,7 +835,7 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, config: configObj };
             }
             case 'update-config': {
-                const { error } = await supabaseClient.from('app_config').update({ value: payload.value }).eq('key', payload.key);
+                const { error } = await supabaseClient.from('app_config').upsert([{ key: payload.key, value: payload.value }], { onConflict: 'key' });
                 if (error) throw error;
                 return { ok: true, message: 'Configuration updated.' };
             }
@@ -463,17 +1029,25 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, message: 'Password reset successful.' };
             }
             case 'get-hybrid-schedule': {
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
                 const rawKey = payload.weekStart;
                 const formattedKey = formatWeekKeyFromDmy(rawKey);
-                // Build all candidate formats to try
-                const candidates = [formattedKey, rawKey];
-                // Also try the short-form (no second month name) for legacy data
+                // Build candidate formats
+                const rawCandidates = [formattedKey, rawKey];
                 if (formattedKey !== rawKey) {
                     const parts2 = formattedKey.split(' - ');
                     if (parts2.length === 2) {
                         const shortEnd = parts2[1].replace(/^\w+ /, '');
-                        candidates.push(`${parts2[0]} - ${shortEnd}`);
+                        rawCandidates.push(`${parts2[0]} - ${shortEnd}`);
                     }
+                }
+
+                // Check tenant-scoped keys first: `${tenantSlug}::${k}`
+                const candidates = rawCandidates.map(k => `${tenantSlug}::${k}`);
+                // If lifecard, also allow fallback to unscoped legacy keys
+                if (tenantSlug === 'lifecard') {
+                    candidates.push(...rawCandidates);
                 }
 
                 let scheduleData = null;
@@ -499,10 +1073,12 @@ async function callBackend(payload, timeoutMs = 20000) {
                             .from('hybrid_schedules')
                             .select('schedule_data, week_key')
                             .order('week_key', { ascending: false })
-                            .limit(20);
-                        const match = (allRows || []).find(r =>
-                            r.week_key && r.week_key.includes(year) && r.week_key.includes(monName)
-                        );
+                            .limit(50);
+                        const match = (allRows || []).find(r => {
+                            if (!r.week_key) return false;
+                            const isMatchTenant = r.week_key.startsWith(`${tenantSlug}::`) || (tenantSlug === 'lifecard' && !r.week_key.includes('::'));
+                            return isMatchTenant && r.week_key.includes(year) && r.week_key.includes(monName);
+                        });
                         if (match) scheduleData = match.schedule_data;
                     }
                 }
@@ -519,14 +1095,27 @@ async function callBackend(payload, timeoutMs = 20000) {
             }
             case 'save-hybrid-schedule':
             case 'update-hybrid-schedule': {
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const scopedKey = `${tenantSlug}::${payload.weekStart}`;
                 const { error } = await supabaseClient
                     .from('hybrid_schedules')
                     .upsert({
-                        week_key: payload.weekStart,
+                        week_key: scopedKey,
                         schedule_data: payload.scheduleData || payload.schedule,
                         timestamp: new Date().toISOString()
                     }, { onConflict: 'week_key' });
                 if (error) throw error;
+                // If lifecard, also keep legacy unscoped key synced for backwards compatibility
+                if (tenantSlug === 'lifecard') {
+                    try {
+                        await supabaseClient.from('hybrid_schedules').upsert({
+                            week_key: payload.weekStart,
+                            schedule_data: payload.scheduleData || payload.schedule,
+                            timestamp: new Date().toISOString()
+                        }, { onConflict: 'week_key' });
+                    } catch(e) {}
+                }
                 return { ok: true, message: 'Hybrid schedule saved.' };
             }
             case 'claim-account': {
@@ -574,14 +1163,285 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, allowed: true, message: 'Device registered successfully.' };
             }
             case 'reassign-owner': {
-                // Check if the resetCodeHash matches the dev or admin password
-                // This is a bit tricky without a backend, but we'll try to validate it
-                // Actually, the original GAS implementation checked if `payload.resetCodeHash` matched `accounts[..].passwordHash`
-                // For Supabase, the admin would normally use the admin dashboard to reset locks.
-                // If the user tries to do it from the frontend via reassign-owner, let's just let the admin dashboard handle it via `reset-staff-lock`.
-                // The frontend `reassignDeviceOwnership` is a fallback that might not be fully needed since admin panel works.
-                // Let's implement it by checking if the resetCode matches a config value or just reject it and tell them to see admin.
                 return { ok: false, allowed: false, message: 'Please see the administrator to reset your device lock.' };
+            }
+            case 'list-tenants': {
+                const tenants = await getTenantRegistry();
+                return { ok: true, tenants };
+            }
+            case 'check-tenant-slug': {
+                const slug = String(payload.slug || '').trim().toLowerCase();
+                if (!slug) return { ok: false, available: false, message: 'Slug is empty.' };
+                const registry = await getTenantRegistry();
+                const exists = registry.some(t => t.slug && t.slug.toLowerCase() === slug);
+                return { ok: true, available: !exists, slug };
+            }
+            case 'onboard-tenant': {
+                const tenantData = payload.tenant;
+                if (!tenantData || !tenantData.name) {
+                    return { ok: false, message: 'Company name is required.' };
+                }
+                const slug = String(tenantData.slug || tenantData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')).replace(/^-|-$/g, '');
+                const registry = await getTenantRegistry();
+                if (registry.find(t => t.slug.toLowerCase() === slug)) {
+                    return { ok: false, message: `Workspace slug '${slug}' is already registered. Please choose another one.` };
+                }
+                const newTenant = {
+                    id: slug,
+                    slug: slug,
+                    name: String(tenantData.name).trim(),
+                    tagline: String(tenantData.tagline || 'Staff Attendance & Workplace Portal').trim(),
+                    logo_url: String(tenantData.logo_url || '').trim(),
+                    brand_color: String(tenantData.brand_color || '#1a56db').trim(),
+                    office_name: String(tenantData.office_name || 'Main Office').trim(),
+                    latitude: Number(tenantData.latitude) || 6.4357,
+                    longitude: Number(tenantData.longitude) || 3.4738,
+                    radius: Number(tenantData.radius) || 100,
+                    admin_name: String(tenantData.admin_name || '').trim(),
+                    admin_email: String(tenantData.admin_email || '').trim(),
+                    plan_tier: tenantData.plan_tier || 'Pro',
+                    subscription_status: 'trialing',
+                    trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+                    grace_period_ends_at: null,
+                    retention_discount_applied: false,
+                    status: 'active',
+                    created_at: new Date().toISOString()
+                };
+                registry.push(newTenant);
+                await saveTenantRegistry(registry);
+                return { ok: true, message: 'Tenant onboarded successfully!', tenant: newTenant };
+            }
+            case 'apply-retention-deal': {
+                const slug = String(payload.slug || '').trim().toLowerCase();
+                const discount = Number(payload.discount_percent) || 50;
+                const months = Number(payload.duration_months) || 3;
+                if (!slug) return { ok: false, message: 'Tenant slug required.' };
+                const registry = await getTenantRegistry();
+                const idx = registry.findIndex(t => t.slug && t.slug.toLowerCase() === slug);
+                if (idx >= 0) {
+                    registry[idx].retention_discount_applied = true;
+                    registry[idx].retention_discount_percent = discount;
+                    registry[idx].retention_deal_months = months;
+                    registry[idx].retention_applied_at = new Date().toISOString();
+                    await saveTenantRegistry(registry);
+                }
+                await logAuditEvent({
+                    type: 'BILLING_RETENTION_DEAL_ACCEPTED',
+                    details: `Retention discount applied (${discount}% off for ${months} months) for tenant: ${slug}`
+                });
+                return { ok: true, message: 'Retention deal applied successfully.' };
+            }
+            case 'apply-coupon': {
+                const slug = String(payload.tenantSlug || payload.slug || '').trim().toLowerCase();
+                const code = String(payload.couponCode || '').trim().toUpperCase();
+                if (!slug) return { ok: false, message: 'Tenant slug required.' };
+                if (!code) return { ok: false, message: 'Coupon code required.' };
+
+                let daysToAdd = 0;
+                let discountPercent = 0;
+                let message = '';
+
+                if (code === 'EXTEND14') {
+                    daysToAdd = 14;
+                    message = 'Promo code applied! 14 days added to your free trial.';
+                } else if (code === 'VIP30') {
+                    daysToAdd = 30;
+                    message = 'VIP coupon applied! 30 days added to your free trial.';
+                } else if (code === 'WELCOME50') {
+                    discountPercent = 50;
+                    message = 'Welcome coupon applied! 50% discount activated for 3 months.';
+                } else {
+                    return { ok: false, message: 'Invalid or unrecognized coupon code.' };
+                }
+
+                const registry = await getTenantRegistry();
+                const idx = registry.findIndex(t => t.slug && t.slug.toLowerCase() === slug);
+                let newTrialEnd = null;
+
+                if (idx >= 0) {
+                    if (daysToAdd > 0) {
+                        const curEnd = registry[idx].trial_ends_at ? new Date(registry[idx].trial_ends_at) : new Date();
+                        const baseDate = curEnd.getTime() > Date.now() ? curEnd : new Date();
+                        baseDate.setDate(baseDate.getDate() + daysToAdd);
+                        newTrialEnd = baseDate.toISOString();
+                        registry[idx].trial_ends_at = newTrialEnd;
+                    }
+                    if (discountPercent > 0) {
+                        registry[idx].retention_discount_applied = true;
+                        registry[idx].retention_discount_percent = discountPercent;
+                    }
+                    await saveTenantRegistry(registry);
+                }
+
+                try {
+                    const dbUpdates = {};
+                    if (newTrialEnd) dbUpdates.trial_ends_at = newTrialEnd;
+                    if (discountPercent > 0) {
+                        dbUpdates.retention_discount_applied = true;
+                        dbUpdates.retention_discount_percent = discountPercent;
+                    }
+                    if (Object.keys(dbUpdates).length > 0) {
+                        await supabaseClient.from('tenants').update(dbUpdates).eq('slug', slug);
+                    }
+                } catch(e) {}
+
+                await logAuditEvent({
+                    type: 'BILLING_COUPON_REDEEMED',
+                    details: `Coupon ${code} redeemed by tenant ${slug}: ${message}`
+                });
+
+                return { 
+                    ok: true, 
+                    message, 
+                    newTrialEnd, 
+                    discountApplied: discountPercent > 0 
+                };
+            }
+            case 'extend-tenant-trial': {
+                const slug = String(payload.tenantSlug || payload.slug || '').trim().toLowerCase();
+                const days = parseInt(payload.days, 10) || 14;
+                if (!slug) return { ok: false, message: 'Tenant slug required.' };
+
+                const registry = await getTenantRegistry();
+                const idx = registry.findIndex(t => t.slug && t.slug.toLowerCase() === slug);
+                let newTrialEnd = null;
+
+                if (idx >= 0) {
+                    const curEnd = registry[idx].trial_ends_at ? new Date(registry[idx].trial_ends_at) : new Date();
+                    const baseDate = curEnd.getTime() > Date.now() ? curEnd : new Date();
+                    baseDate.setDate(baseDate.getDate() + days);
+                    newTrialEnd = baseDate.toISOString();
+                    registry[idx].trial_ends_at = newTrialEnd;
+                    await saveTenantRegistry(registry);
+                }
+
+                try {
+                    if (newTrialEnd) {
+                        await supabaseClient.from('tenants').update({ trial_ends_at: newTrialEnd }).eq('slug', slug);
+                    }
+                } catch(e) {}
+
+                await logAuditEvent({
+                    type: 'SUPER_ADMIN_TRIAL_EXTENDED',
+                    details: `Trial extended by ${days} days for tenant ${slug}. New end: ${newTrialEnd}`
+                });
+
+                return { ok: true, message: `Trial successfully extended by ${days} days.`, newTrialEnd };
+            }
+            case 'update-tenant': {
+                const { slug, updates } = payload;
+                if (!slug) return { ok: false, message: 'Tenant slug is required.' };
+                const registry = await getTenantRegistry();
+                const idx = registry.findIndex(t => (t.slug && t.slug.toLowerCase() === slug.toLowerCase()) || (t.id && t.id.toLowerCase() === slug.toLowerCase()));
+                if (idx === -1) return { ok: false, message: 'Tenant not found.' };
+                registry[idx] = { ...registry[idx], ...updates };
+                await saveTenantRegistry(registry);
+                return { ok: true, message: 'Tenant updated successfully.', tenant: registry[idx] };
+            }
+            case 'verify-staff-member': {
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const queryName = String(payload.name || '').trim().toLowerCase();
+                if (!queryName) return { ok: false, message: 'Please enter your registered staff name.' };
+
+                const staff = await getTenantStaffList(tenantSlug);
+                const member = staff.find(s => String(s.name || '').trim().toLowerCase() === queryName);
+
+                if (!member) {
+                    return { ok: false, message: `No registered staff found matching "${payload.name}" for ${activeTenant ? activeTenant.name : 'this company'}. Please verify your spelling or contact HR.` };
+                }
+
+                return {
+                    ok: true,
+                    name: member.name,
+                    dept: member.dept || 'General',
+                    schedule_policy: member.schedule_policy || 'weekly_hybrid',
+                    is_team_lead: Boolean(member.is_team_lead),
+                    is_linked: Boolean(member.device_id)
+                };
+            }
+            case 'unlink-staff-device': {
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const staff = await getTenantStaffList(tenantSlug);
+                const targetName = String(payload.name || '').trim().toLowerCase();
+                const member = staff.find(s => String(s.name || '').trim().toLowerCase() === targetName);
+                if (member) {
+                    member.device_id = null;
+                    member.device_token = null;
+                    await saveTenantStaffList(tenantSlug, staff);
+                }
+                if (tenantSlug === 'lifecard') {
+                    try { await supabaseClient.from('staff').update({ device_id: null }).eq('name', payload.name); } catch(e) {}
+                }
+                return { ok: true, message: `Device unlinked for ${payload.name}.` };
+            }
+            case 'super-admin-update-tenant-full': {
+                const { slug, updates, config } = payload;
+                if (!slug) return { ok: false, message: 'Tenant slug is required.' };
+                const registry = await getTenantRegistry();
+                const idx = registry.findIndex(t => (t.slug && t.slug.toLowerCase() === slug.toLowerCase()) || (t.id && t.id.toLowerCase() === slug.toLowerCase()));
+                if (idx === -1) return { ok: false, message: 'Tenant not found in registry.' };
+
+                // Handle slug rename if requested
+                const newSlug = updates && updates.slug ? String(updates.slug).trim().toLowerCase().replace(/[^a-z0-9-]+/g, '') : slug;
+                if (newSlug !== slug.toLowerCase() && registry.some(t => t.slug.toLowerCase() === newSlug)) {
+                    return { ok: false, message: `Workspace slug '${newSlug}' is already registered.` };
+                }
+
+                // If slug changed, migrate staff and config keys
+                if (newSlug !== slug.toLowerCase()) {
+                    const existingStaff = await getTenantStaffList(slug);
+                    const existingConfig = await getTenantConfig(slug);
+                    await saveTenantStaffList(newSlug, existingStaff);
+                    await saveTenantConfig(newSlug, existingConfig);
+                    try {
+                        await supabaseClient.from('app_config').delete().in('key', [`TENANT_STAFF_${slug}`, `TENANT_CONFIG_${slug}`]);
+                    } catch(e) {}
+                }
+
+                registry[idx] = { ...registry[idx], ...updates, slug: newSlug, id: newSlug };
+                await saveTenantRegistry(registry);
+
+                if (config) {
+                    await saveTenantConfig(newSlug, config);
+                }
+
+                return { ok: true, message: 'Tenant master profile updated successfully.', tenant: registry[idx] };
+            }
+            case 'super-admin-delete-tenant': {
+                const { slug } = payload;
+                if (!slug) return { ok: false, message: 'Tenant slug is required.' };
+                const cleanSlug = slug.trim().toLowerCase();
+                let registry = await getTenantRegistry();
+                registry = registry.filter(t => t.slug.toLowerCase() !== cleanSlug && t.id.toLowerCase() !== cleanSlug);
+                await saveTenantRegistry(registry);
+
+                // Clean up app_config keys
+                try {
+                    await supabaseClient.from('app_config').delete().in('key', [`TENANT_STAFF_${cleanSlug}`, `TENANT_CONFIG_${cleanSlug}`]);
+                } catch(e) {}
+
+                return { ok: true, message: `Tenant '${slug}' was successfully deleted.` };
+            }
+            case 'super-admin-reset-tenant-password': {
+                const { slug, newPassword } = payload;
+                if (!slug || !newPassword) return { ok: false, message: 'Tenant slug and new password are required.' };
+                const registry = await getTenantRegistry();
+                const tenant = registry.find(t => t.slug.toLowerCase() === slug.toLowerCase() || t.id.toLowerCase() === slug.toLowerCase());
+                if (!tenant) return { ok: false, message: 'Tenant not found.' };
+
+                tenant.admin_password = newPassword;
+                await saveTenantRegistry(registry);
+                return { ok: true, message: `Admin password for ${tenant.name} was successfully reset.` };
+            }
+            case 'super-admin-purge-tenant-logs': {
+                const { slug } = payload;
+                if (!slug) return { ok: false, message: 'Tenant slug is required.' };
+                try {
+                    await supabaseClient.from('attendance').delete().eq('tenant_slug', slug.toLowerCase());
+                } catch(e) {}
+                return { ok: true, message: `Attendance history purged for ${slug}.` };
             }
             default:
                 // For unmapped endpoints, return false so the UI knows it's not implemented yet
@@ -636,7 +1496,7 @@ function applyTheme(theme, animate = false) {
                 toggle.innerHTML = isDark ? '<i data-lucide="sun" size="16"></i>' : '<i data-lucide="moon" size="16"></i>';
                 window.lucide.createIcons();
             } else {
-                toggle.textContent = isDark ? '☀️ Light' : '🌙 Dark';
+                toggle.textContent = isDark ? 'Light' : 'Dark';
             }
             toggle.setAttribute('aria-pressed', String(isDark));
             toggle.setAttribute('title', isDark ? 'Switch to light mode' : 'Switch to dark mode');
@@ -718,7 +1578,12 @@ function initPasswordToggle(toggleEl) {
 
     const syncToggleState = () => {
         const isHidden = input.type === 'password';
-        toggleEl.textContent = isHidden ? '👁' : '🙈';
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            toggleEl.innerHTML = isHidden ? '<i data-lucide="eye" size="14"></i>' : '<i data-lucide="eye-off" size="14"></i>';
+            window.lucide.createIcons();
+        } else {
+            toggleEl.textContent = isHidden ? 'Show' : 'Hide';
+        }
         toggleEl.setAttribute('aria-label', isHidden ? 'Show password' : 'Hide password');
         toggleEl.classList.toggle('visible', !isHidden);
     };
@@ -848,7 +1713,7 @@ function showInlineDialog({ title, message, fields = [], confirmLabel = 'Confirm
                         ${labelHtml}
                         <div class="password-field-wrap" style="margin-bottom:0;">
                             ${input}
-                            <button type="button" class="password-toggle" data-toggle-target="${inputId}" aria-label="Show password">👁</button>
+                            <button type="button" class="password-toggle" data-toggle-target="${inputId}" aria-label="Show password"><i data-lucide="eye" size="14"></i></button>
                         </div>
                     </div>
                 `;

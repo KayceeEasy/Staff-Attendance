@@ -9,21 +9,28 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
-    <link rel="stylesheet" href="../style.css?v=7.1" />
+    <link rel="stylesheet" href="../style.css?v=3.0.0" />
 </head>
 <body>
 <div class="card admin-card">
     <div class="topbar">
-        <div class="eyebrow" style="display:flex; align-items:center; gap:8px;">
-            Admin Console
-            <div id="topbar-badge-container"></div>
+        <div class="topbar-brand">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span class="eyebrow">Admin Console</span>
+                <span id="topbar-badge-container"></span>
+            </div>
+            <div id="admin-workspace-title" style="font-size:0.88rem; font-weight:700; color:var(--text); display:none; align-items:center; gap:6px; margin-top:2px;">
+                <span id="admin-header-tenant-name">Company Workspace</span>
+            </div>
         </div>
-        <button id="theme-toggle" class="topbar-icon-btn theme-toggle" type="button" aria-label="Switch theme" title="Toggle Theme">
-            <i data-lucide="moon" size="16"></i>
-        </button>
+        <div class="topbar-actions" style="display:flex; align-items:center; gap:8px;">
+            <button id="theme-toggle" class="topbar-icon-btn theme-toggle" type="button" aria-label="Switch theme" title="Toggle Theme">
+                <i data-lucide="moon" size="16"></i>
+            </button>
+        </div>
     </div>
     <div class="admin-hero">
-        <div class="admin-badge">🔐</div>
+        <div class="admin-badge"><i data-lucide="shield-check" size="32"></i></div>
         <div>
             <h1>Admin Access</h1>
             <p class="admin-intro">Use admin credentials to manage device ownership, staff access, and local sync state.</p>
@@ -33,7 +40,7 @@
         <input id="admin-email" type="email" placeholder="Admin Email" autocomplete="username" required />
         <div class="password-field-wrap">
             <input id="admin-password" type="password" placeholder="Password" autocomplete="current-password" required />
-            <button type="button" class="password-toggle" data-toggle-target="admin-password" aria-label="Show password">👁</button>
+            <button type="button" class="password-toggle" data-toggle-target="admin-password" aria-label="Show password"><i data-lucide="eye" size="16"></i></button>
         </div>
         <div class="admin-actions">
             <button id="admin-login-btn" class="btn-in" type="submit">Log in</button>
@@ -43,6 +50,64 @@
     <div id="admin-message" class="admin-message" role="status" aria-live="polite"></div>
     <div id="admin-panel-host"></div>
     <a class="admin-btn secondary" href="../" target="_self">← Back to attendance</a>
+</div>
+
+<!-- Modal: Share Invite Link & QR Code -->
+<div id="share-invite-modal" class="modal-backdrop" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(4px); z-index:9999; align-items:center; justify-content:center; padding:16px;">
+    <div class="modal-card" style="background:var(--surface); border:1px solid var(--border); border-radius:16px; width:100%; max-width:440px; padding:24px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.5); text-align:center;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <div style="font-weight:700; font-size:1.05rem; color:var(--text); display:flex; align-items:center; gap:8px;">
+                <i data-lucide="qr-code" size="18" style="color:var(--primary);"></i>
+                <span>Invite Employees</span>
+            </div>
+            <button type="button" onclick="closeShareInviteModal()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:4px;"><i data-lucide="x" size="18"></i></button>
+        </div>
+        
+        <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px; line-height:1.4;">
+            Share this 6-character code or QR code with your employees. Opening the link pairs their device automatically.
+        </p>
+
+        <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:16px;">
+            <div style="font-size:0.72rem; text-transform:uppercase; font-weight:700; color:var(--text-muted); letter-spacing:0.06em; margin-bottom:4px;">Workspace Pairing Code</div>
+            <div id="share-modal-code" style="font-size:1.6rem; font-weight:800; letter-spacing:0.18em; font-family:monospace; color:var(--primary); margin-bottom:8px;">------</div>
+            <button type="button" class="admin-btn secondary small" onclick="copySharePairingCode()" style="margin:0 auto; display:inline-flex; align-items:center; gap:6px;">
+                <i data-lucide="copy" size="12"></i> Copy Code
+            </button>
+        </div>
+
+        <div style="background:#ffffff; border-radius:12px; padding:14px; display:inline-block; margin-bottom:16px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
+            <img id="share-modal-qr-img" src="" alt="Pairing QR Code" style="width:190px; height:190px; display:block;" />
+        </div>
+
+        <div style="display:grid; gap:8px;">
+            <button type="button" class="admin-btn primary" onclick="copyShareInviteLink()" style="width:100%; display:inline-flex; align-items:center; justify-content:center; gap:8px; font-weight:600;">
+                <i data-lucide="link" size="14"></i> Copy One-Time Join Link
+            </button>
+            <button type="button" class="admin-btn secondary" onclick="closeShareInviteModal()" style="width:100%;">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Billing & Coupon Redemption -->
+<div id="billing-coupon-modal" class="modal-backdrop" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(4px); z-index:9999; align-items:center; justify-content:center; padding:16px;">
+    <div class="modal-card" style="background:var(--surface); border:1px solid var(--border); border-radius:16px; width:100%; max-width:420px; padding:24px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.5);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+            <div style="font-weight:700; font-size:1.05rem; color:var(--text); display:flex; align-items:center; gap:8px;">
+                <i data-lucide="ticket" size="18" style="color:var(--primary);"></i>
+                <span>Redeem Coupon or Extension</span>
+            </div>
+            <button type="button" onclick="closeCouponModal()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:4px;"><i data-lucide="x" size="18"></i></button>
+        </div>
+        <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">Enter your promotional coupon or trial extension code below.</p>
+        <div style="display:grid; gap:12px;">
+            <input id="coupon-code-input" type="text" placeholder="e.g. EXTEND14 or WELCOME50" style="text-transform:uppercase; font-weight:700; letter-spacing:0.08em; padding:11px 14px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text);" />
+            <div id="coupon-status-msg" style="font-size:0.8rem; display:none;"></div>
+            <div style="display:flex; gap:8px; margin-top:4px;">
+                <button id="apply-coupon-btn" class="admin-btn primary" type="button" onclick="handleApplyCoupon()" style="flex:1;">Apply Code</button>
+                <button class="admin-btn secondary" type="button" onclick="closeCouponModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
 </div>
 <script src="../common.js"></script>
 <script src="admin.js"></script>

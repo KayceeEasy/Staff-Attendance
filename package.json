@@ -1,4 +1,8 @@
 {
+  "name": "staff-attendance",
+  "version": "3.0.0",
+  "description": "Commercial Multi-Tenant Staff Attendance Platform",
+  "private": true,
   "dependencies": {
     "jsdom": "^30.0.0"
   }

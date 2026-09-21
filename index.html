@@ -17,7 +17,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=7.1" />
+    <link rel="stylesheet" href="style.css?v=3.0.0" />
     <link rel="manifest" href="manifest.json" />
     <link rel="icon" type="image/png" sizes="192x192" href="image/png/icon-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="image/png/icon-512.png" />
@@ -47,9 +47,17 @@
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <div id="main-content" class="card" role="main" aria-label="Staff Attendance App">
         <div class="topbar">
-            <div class="topbar-brand">
-                <div class="eyebrow">Staff Attendance</div>
-                <div id="live-clock" class="live-clock" aria-live="polite">--:-- --</div>
+            <div class="topbar-brand" id="topbar-brand" style="display:flex; align-items:center; gap:10px;">
+                <div id="tenant-logo-wrap" style="display:none; align-items:center;">
+                    <img id="tenant-logo-img" src="" alt="Company Logo" style="max-height:30px; max-width:95px; object-fit:contain; border-radius:4px;" />
+                </div>
+                <div>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span class="eyebrow" id="tenant-brand-name">Staff Attendance</span>
+                        <button id="switch-workspace-btn" type="button" title="Switch Company Workspace" style="background:transparent; border:none; color:var(--text-muted); font-size:0.72rem; cursor:pointer; text-decoration:underline;">Switch</button>
+                    </div>
+                    <div id="live-clock" class="live-clock" aria-live="polite">--:-- --</div>
+                </div>
             </div>
             <div class="topbar-actions">
                 <button id="refresh-btn" class="topbar-icon-btn" type="button" aria-label="Refresh app" title="Refresh">
@@ -65,35 +73,54 @@
             <div id="distance-label" class="distance-label" aria-live="polite"></div>
         </div>
 
-        <!-- Searchable Staff Dropdown Container -->
-        <div class="staff-search-wrapper" id="staff-search-wrapper">
-            <div class="staff-search-input-box">
-                <i data-lucide="search" size="18" class="staff-search-icon" aria-hidden="true"></i>
-                <input 
-                    type="text" 
-                    id="staff-search-input" 
-                    class="staff-search-input" 
-                    placeholder="Search or select staff name..." 
-                    autocomplete="off" 
-                    aria-expanded="false" 
-                    aria-autocomplete="list" 
-                    aria-controls="staff-options-list" 
-                    role="combobox"
-                    aria-label="Search or select staff name"
-                />
-                <button type="button" id="staff-search-clear" class="staff-search-clear" aria-label="Clear selection" style="display: none;">✕</button>
-                <button type="button" id="staff-search-toggle" class="staff-search-toggle" aria-label="Toggle staff list">▾</button>
+        <!-- Zero-Exposure Staff Identity Section -->
+        <div class="staff-identity-container" style="margin-bottom: 14px;">
+            <!-- Linked Recognized Device Card (Only shows for recognized phone) -->
+            <div id="linked-identity-card" class="linked-identity-card" style="display:none;">
+                <div class="linked-avatar"><i data-lucide="user-check" size="20"></i></div>
+                <div class="linked-text">
+                    <strong id="linked-name-display">--</strong>
+                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                        <span id="linked-dept-display" class="linked-sub">Staff Member</span>
+                        <span id="linked-bio-badge" class="badge-bio" style="display:none; font-size:0.68rem; background:rgba(16,185,129,0.12); color:#10b981; border:1px solid rgba(16,185,129,0.3); padding:1px 6px; border-radius:4px; font-weight:600;"><i data-lucide="shield-check" size="11" style="vertical-align:middle; margin-right:2px;"></i> Biometrics</span>
+                    </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <span class="device-locked-pill" title="Device linked to this employee."><i data-lucide="lock" size="12"></i> Bound</span>
+                    <button type="button" id="switch-identity-btn" class="btn-switch-identity" style="display:inline-flex; align-items:center; gap:4px; font-size:0.72rem; padding:3px 8px; border-radius:4px; border:1px solid var(--border); background:var(--surface); color:var(--text-muted); cursor:pointer;" title="Switch Staff Account">Change</button>
+                </div>
             </div>
-            <ul id="staff-options-list" class="staff-options-list" role="listbox" style="display: none;"></ul>
+
+            <!-- Searchable Type-to-Search Dropdown Box -->
+            <div id="unlinked-entry-box" class="unlinked-entry-box">
+                <div class="staff-search-wrapper" id="staff-search-wrapper">
+                    <div class="staff-search-input-box">
+                        <i data-lucide="user" size="18" class="staff-search-icon" aria-hidden="true"></i>
+                        <input 
+                            type="text" 
+                            id="staff-search-input" 
+                            class="staff-search-input" 
+                            placeholder="Type to search your name..." 
+                            autocomplete="off" 
+                            aria-label="Search or select your name"
+                            aria-autocomplete="list"
+                            aria-expanded="false"
+                            role="combobox"
+                        />
+                        <button type="button" id="staff-search-clear" class="staff-search-clear" style="display: none;" aria-label="Clear selection" title="Clear selection">✕</button>
+                        <button type="button" id="staff-search-toggle" class="staff-search-toggle" aria-label="Toggle staff list" title="Toggle staff list" tabindex="-1">
+                            <i data-lucide="chevron-down" size="16"></i>
+                        </button>
+                    </div>
+                    <ul id="staff-options-list" class="staff-options-list" role="listbox" aria-label="Staff names"></ul>
+                </div>
+                <small class="entry-hint" style="display:block; margin-top:-8px; margin-bottom:8px; font-size:0.75rem; color:var(--text-muted); text-align:center;">Select or type your name to link this phone for daily 1-tap sign-ins.</small>
+            </div>
         </div>
 
-        <label for="staff-name" class="sr-only">Select your staff name</label>
-        <select id="staff-name" class="sr-only" aria-label="Select your staff name">
-            <option value="">Select your name...</option>
-            <option>Ayomide</option><option>Blessingjoy</option><option>Deborah</option>
-            <option>Elizabeth</option><option>Esther</option><option>Ikechukwu</option>
-            <option>Julianah</option><option>Kenneth</option><option>Martha</option>
-            <option>Paschaline</option><option>Uche</option><option>Valentine</option>
+        <label for="staff-name" class="sr-only">Selected staff name</label>
+        <select id="staff-name" class="sr-only" aria-label="Selected staff name">
+            <option value="">No staff selected</option>
         </select>
 
         <!-- Main Focal Hero Action Zone: Single Dynamic Button Centered -->
@@ -105,6 +132,11 @@
                 </div>
             </button>
             <button id="out-btn" class="sr-only" aria-hidden="true" tabindex="-1" style="display: none;">Sign Out</button>
+            <!-- Biometric 1-Tap Confirmation Trigger -->
+            <button id="biometric-auth-trigger" type="button" class="btn-bio-trigger" style="display:none; margin:12px auto 0 auto; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.3); color:#10b981; border-radius:8px; padding:7px 16px; font-size:0.82rem; font-weight:600; cursor:pointer; align-items:center; gap:6px;">
+                <i data-lucide="fingerprint" size="15"></i>
+                <span>Confirm with Face ID / Touch ID</span>
+            </button>
         </div>
         <div id="msg" role="alert" aria-live="assertive"></div>
         <div id="last-action" class="last-action" aria-live="polite">Last action: none yet</div>
@@ -589,16 +621,16 @@
             <div style="overflow-y: auto; flex: 1; padding-right: 4px; font-size: 0.88rem; line-height: 1.6; color: var(--text);">
                 <p style="margin-bottom: 12px;">The <strong>Kaycee Tech Staff Attendance System</strong> is built with strict privacy standards to protect company data.</p>
 
-                <h4 style="color: var(--primary); margin: 14px 0 4px 0;">📍 Geolocation Data Usage</h4>
+                <h4 style="color: var(--primary); margin: 14px 0 4px 0;"><i data-lucide="map-pin" size="16" style="vertical-align:middle; margin-right:4px;"></i> Geolocation Data Usage</h4>
                 <p style="margin-bottom: 10px;">Location data is accessed <strong>strictly at the exact moment of attendance submission</strong> (signing in or signing out) to verify physical office presence. Your real-time movements and location history are <strong>never continuously tracked or recorded</strong>.</p>
 
-                <h4 style="color: var(--primary); margin: 14px 0 4px 0;">📱 Passive Arrival Alerts (Mobile App)</h4>
+                <h4 style="color: var(--primary); margin: 14px 0 4px 0;"><i data-lucide="bell" size="16" style="vertical-align:middle; margin-right:4px;"></i> Passive Arrival Alerts (Mobile App)</h4>
                 <p style="margin-bottom: 10px;">On mobile devices, arrival alerts are handled passively by your phone's operating system (Android/iOS) using circular geofences. The app remains dormant until your phone enters the set office area boundary to deliver a single sign-in prompt notification.</p>
 
-                <h4 style="color: var(--primary); margin: 14px 0 4px 0;">🔒 Device Identification</h4>
+                <h4 style="color: var(--primary); margin: 14px 0 4px 0;"><i data-lucide="lock" size="16" style="vertical-align:middle; margin-right:4px;"></i> Device Identification</h4>
                 <p style="margin-bottom: 10px;">A unique cryptographic device identifier (UUID) is stored securely on your browser/device solely to bind your attendance account to your authorized phone and prevent multi-device account misuse.</p>
 
-                <h4 style="color: var(--primary); margin: 14px 0 4px 0;">⚖️ Data Ownership &amp; Rights</h4>
+                <h4 style="color: var(--primary); margin: 14px 0 4px 0;"><i data-lucide="shield" size="16" style="vertical-align:middle; margin-right:4px;"></i> Data Ownership &amp; Rights</h4>
                 <p style="margin-bottom: 10px;">Attendance records (name, timestamp, sign-in status, distance from office) are stored in secure company backend database logs for administrative reporting. You may request history verification via your HR administrator.</p>
 
                 <div style="margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 0.8rem; text-align: center; color: var(--muted);">
@@ -606,10 +638,67 @@
                 </div>
             </div>
         </div>
+    <!-- Workspace Connect Modal (Shown on clean '/' if device is unlinked from any workspace) -->
+    <div id="workspace-connect-overlay" class="faq-overlay" role="dialog" aria-modal="true" style="display:none; z-index: 9999; backdrop-filter: blur(8px); background: rgba(0,0,0,0.75);">
+        <div class="faq-modal-content" style="max-width: 440px; text-align: center; padding: 28px 24px;">
+            <div style="margin-bottom: 12px; color: var(--primary); display: flex; justify-content: center;"><i data-lucide="building" size="42"></i></div>
+            <h2 style="font-size: 1.3rem; font-weight: 700; margin-bottom: 6px; color: var(--text);">Connect to Your Workspace</h2>
+            <p style="font-size: 0.86rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">
+                Enter your organization's 6-character Workspace Code or open your company's setup link to pair this phone.
+            </p>
+            <div style="margin-bottom: 14px;">
+                <input 
+                    type="text" 
+                    id="workspace-code-input" 
+                    placeholder="e.g. LIFE-26 or ACME-89" 
+                    maxlength="12"
+                    autocomplete="off"
+                    style="width: 100%; text-align: center; text-transform: uppercase; font-weight: 700; font-size: 1.25rem; letter-spacing: 2px; padding: 12px 14px; border: 2px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); outline: none; box-sizing: border-box;"
+                />
+            </div>
+            <div id="workspace-connect-error" style="display:none; color: #ef4444; font-size: 0.82rem; margin-bottom: 12px; font-weight: 500;"></div>
+            <button 
+                type="button" 
+                id="connect-workspace-btn" 
+                style="width: 100%; padding: 12px; background: var(--primary); color: #ffffff; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;"
+            >
+                <i data-lucide="arrow-right" size="16"></i> Connect Workspace
+            </button>
+            <p style="font-size: 0.76rem; color: var(--text-muted); margin-top: 14px;">
+                Ask your HR or team administrator for your company's Workspace Code.
+            </p>
+        </div>
     </div>
 
-    <script src="common.js?v=7.1"></script>
-    <script src="script.js?v=7.1"></script>
+    <!-- Biometric Enrollment Modal -->
+    <div id="biometric-enroll-modal" class="faq-overlay" role="dialog" aria-modal="true" style="display:none; z-index: 9999; backdrop-filter: blur(8px); background: rgba(0,0,0,0.7);">
+        <div class="faq-modal-content" style="max-width: 420px; text-align: center; padding: 26px 20px;">
+            <div style="margin-bottom: 12px; color: #10b981; display: flex; justify-content: center;"><i data-lucide="fingerprint" size="48"></i></div>
+            <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 6px; color: var(--text);">Enable Biometric Check-In?</h2>
+            <p style="font-size: 0.86rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">
+                Use your phone's native <strong>Face ID, Fingerprint, or Windows Hello</strong> for instant, seamless 1-tap daily sign-ins.
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button 
+                    type="button" 
+                    id="enable-bio-confirm-btn" 
+                    style="width: 100%; padding: 12px; background: #10b981; color: #ffffff; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;"
+                >
+                    <i data-lucide="fingerprint" size="18"></i> Enable Biometrics
+                </button>
+                <button 
+                    type="button" 
+                    id="skip-bio-btn" 
+                    style="width: 100%; padding: 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem; cursor: pointer;"
+                >
+                    Skip for Now (Device Only)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="common.js?v=3.0.0"></script>
+    <script src="script.js?v=3.0.0"></script>
     <script>
         if ('serviceWorker' in navigator) {
             // Force browser to bypass HTTP cache when checking for Service Worker updates

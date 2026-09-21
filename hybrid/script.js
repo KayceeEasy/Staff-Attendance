@@ -9,21 +9,124 @@ const urlParams = new URLSearchParams(window.location.search);
 // Default to read-only viewer mode. Enable admin mode only with the secret key parameter.
 const IS_ADMIN = urlParams.get('key') === 'admin';
 
-const STAFF = [
-    { name: "Julianah", dept: "Investment" },
-    { name: "Blessingjoy", dept: "University" },
-    { name: "Ikechukwu", dept: "Investment" },
+let STAFF = [
+    { name: "Blessingjoy", dept: "University", is_team_lead: true },
+    { name: "Julianah", dept: "Investment", is_team_lead: true },
     { name: "Ayomide", dept: "Investment" },
-    { name: "Esther", dept: "University" },
-    { name: "Paschaline", dept: "University" },
     { name: "Deborah", dept: "Investment" },
-    { name: "Elizabeth", dept: "Investment" }
+    { name: "Elizabeth", dept: "Investment" },
+    { name: "Esther", dept: "University" },
+    { name: "Ikechukwu", dept: "Investment" },
+    { name: "Paschaline", dept: "University" }
 ];
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
 let currentWeekKey = "";
 let currentData = {};
 let draggedItem = null;
+
+async function loadDynamicStaff() {
+    try {
+        if (!supabaseClient) return;
+
+        // 1. Safely query all staff rows (compatible with both basic & additive schema)
+        let dbStaff = [];
+        try {
+            const { data, error } = await supabaseClient
+                .from('staff')
+                .select('*')
+                .order('name');
+            if (!error && Array.isArray(data) && data.length) {
+                dbStaff = data;
+            }
+        } catch (e) {
+            console.warn('Direct staff query error:', e);
+        }
+
+        if (!dbStaff.length) return;
+
+        // 2. Fetch app_config metadata (for custom policies & team lead flags)
+        let metaMap = {};
+        try {
+            const stored = localStorage.getItem('STAFF_METADATA');
+            if (stored) metaMap = JSON.parse(stored);
+        } catch(e) {}
+
+        try {
+            const { data: metaData } = await supabaseClient
+                .from('app_config')
+                .select('value')
+                .eq('key', 'STAFF_METADATA')
+                .single();
+            if (metaData && metaData.value) {
+                const parsed = typeof metaData.value === 'string' ? JSON.parse(metaData.value) : metaData.value;
+                if (parsed && typeof parsed === 'object') {
+                    metaMap = { ...metaMap, ...parsed };
+                    try { localStorage.setItem('STAFF_METADATA', JSON.stringify(metaMap)); } catch(e) {}
+                }
+            }
+        } catch(e) {}
+
+        // 3. Normalize staff with intelligent policy & lead fallbacks
+        const normalized = dbStaff.map(s => {
+            const nameKey = String(s.name || '').trim();
+            const lower = nameKey.toLowerCase();
+            const meta = metaMap[nameKey] || metaMap[lower] || {};
+
+            const isMedia = lower.includes('kenneth') || lower.includes('valentine');
+            const isExec = lower.includes('uche');
+
+            const dept = s.dept || meta.dept || (isMedia ? 'Media' : isExec ? 'Leadership' : 'General');
+            const policy = String(s.schedule_policy || meta.schedule_policy || (isMedia ? 'field_flexible' : isExec ? 'executive' : 'weekly_hybrid')).toLowerCase();
+            const isTeamLead = s.is_team_lead !== undefined && s.is_team_lead !== null
+                ? Boolean(s.is_team_lead)
+                : (meta.is_team_lead !== undefined ? Boolean(meta.is_team_lead) : isExec);
+
+            return {
+                name: nameKey,
+                dept: dept,
+                schedule_policy: policy,
+                is_team_lead: isTeamLead
+            };
+        });
+
+        // 4. Filter to only staff who participate in weekly hybrid scheduling
+        const hybridStaff = normalized.filter(s => s.schedule_policy === 'weekly_hybrid');
+
+        // 5. Check if tenant has team_lead_priority enabled in app_config (default true)
+        let prioritizeLeads = true;
+        try {
+            const { data: cfg } = await supabaseClient
+                .from('app_config')
+                .select('value')
+                .eq('key', 'TEAM_LEAD_PRIORITY_SORT')
+                .single();
+            if (cfg && cfg.value !== undefined) {
+                prioritizeLeads = cfg.value === 'true' || cfg.value === true;
+            }
+        } catch(e) {}
+
+        if (prioritizeLeads) {
+            hybridStaff.sort((a, b) => {
+                if (a.is_team_lead && !b.is_team_lead) return -1;
+                if (!a.is_team_lead && b.is_team_lead) return 1;
+                return a.name.localeCompare(b.name);
+            });
+        } else {
+            hybridStaff.sort((a, b) => a.name.localeCompare(b.name));
+        }
+
+        if (hybridStaff.length) {
+            STAFF = hybridStaff.map(s => ({
+                name: s.name,
+                dept: s.dept || 'General',
+                is_team_lead: Boolean(s.is_team_lead)
+            }));
+        }
+    } catch (e) {
+        console.warn('Could not load dynamic staff for hybrid schedule, using fallback:', e);
+    }
+}
 
 function createDefaultScheduleData() {
     const data = {};
@@ -204,7 +307,8 @@ function renderTable() {
 
     STAFF.forEach(person => {
         const row = document.createElement('tr');
-        row.innerHTML = `<td class="name-cell">${person.name}<span class="dept-label">${person.dept}</span></td>`;
+        const leadBadge = person.is_team_lead ? `<span class="team-lead-pill" title="Team Lead" style="margin-left:6px; font-size:0.68rem; background:rgba(37,99,235,0.12); color:var(--primary); padding:2px 6px; border-radius:10px; font-weight:700;">Lead</span>` : '';
+        row.innerHTML = `<td class="name-cell">${person.name}${leadBadge}<span class="dept-label">${person.dept}</span></td>`;
 
         let homeCount = 0;
         DAYS.forEach(day => {
@@ -218,7 +322,7 @@ function renderTable() {
             const displayStatus = status || 'Office';
             const badge = document.createElement('div');
             badge.className = `badge status-${displayStatus.toLowerCase()}`;
-            badge.innerText = (displayStatus === 'Office' ? '✓ Office' : (displayStatus === 'Home' ? '🏠 Home' : '🌴 Leave'));
+            badge.innerText = (displayStatus === 'Office' ? '📍 Office' : (displayStatus === 'Home' ? '🏠 Home' : '🌴 Leave'));
 
             if (IS_ADMIN) {
                 badge.draggable = true;
@@ -501,7 +605,8 @@ function shareGmail() {
     window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(urlParams.get('to') || '')}&su=${subject}&body=${encodeURIComponent(body)}`, '_blank');
 }
 
-window.onload = () => {
+window.onload = async () => {
+    await loadDynamicStaff();
     loadHistory(true);
     lucide.createIcons();
 };
