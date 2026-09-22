@@ -90,10 +90,10 @@ assert(scriptJs.includes("'🌴 On Leave'"), "script.js missing '🌴 On Leave'"
 assert(hybridJs.includes("'📍 Office'"), "hybrid/script.js missing '📍 Office'");
 assert(hybridJs.includes("'🏠 Home'"), "hybrid/script.js missing '🏠 Home'");
 assert(hybridJs.includes("'🌴 Leave'"), "hybrid/script.js missing '🌴 Leave'");
-assert(adminJs.includes('🏠 WFH In'), 'admin.js matrix missing 🏠 WFH In');
+assert(adminJs.includes('🏠 Home In'), 'admin.js matrix missing 🏠 Home In');
 assert(adminJs.includes('📍 In'), 'admin.js matrix missing 📍 In');
 assert(adminJs.includes('🌴 Leave'), 'admin.js matrix missing 🌴 Leave');
-assert(adminJs.includes('🏠 WFH'), 'admin.js matrix missing 🏠 WFH');
+assert(adminJs.includes('🏠 Home'), 'admin.js matrix missing 🏠 Home');
 
 console.log('PASS: Restored Home (🏠), Office (📍), and Leave (🌴) emojis verified in matrix, schedule grid, and topbar.');
 

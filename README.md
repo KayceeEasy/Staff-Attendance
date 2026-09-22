@@ -31,7 +31,7 @@ Whether your team is fully on-site or works a modern hybrid schedule, Staff Atte
 - Seamlessly coordinate in-office and remote days across your company.
 - Real-time contextual statuses:
   - 📍 **Office**: Scheduled and verified in-person work day.
-  - 🏠 **Home / WFH**: Scheduled remote or virtual work day.
+  - 🏠 **Home**: Scheduled remote or virtual work day.
   - 🌴 **Leave**: Approved vacation, sick leave, or holiday.
 - Team leads and HR managers can review and set weekly schedules in seconds.
 

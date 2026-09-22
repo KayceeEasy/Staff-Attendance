@@ -140,6 +140,65 @@ html, body, .card, .admin-card, .topbar, .eyebrow, input, select, button,
     animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* ─── LUCIDE ICONS: CLEAN SIZING & BREATHING ROOM ─── */
+.lucide,
+svg.lucide {
+    width: 14px;
+    height: 14px;
+    stroke-width: 1.75px;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+
+.admin-badge .lucide,
+.admin-badge svg.lucide {
+    width: 32px;
+    height: 32px;
+}
+
+.hero-btn-icon.lucide,
+.hero-btn-icon svg.lucide,
+svg.hero-btn-icon {
+    width: 34px;
+    height: 34px;
+}
+
+.config-icon .lucide,
+.config-icon svg.lucide,
+.account-icon .lucide,
+.account-icon svg.lucide {
+    width: 16px;
+    height: 16px;
+}
+
+.topbar-icon-btn .lucide,
+.topbar-icon-btn svg.lucide {
+    width: 14px;
+    height: 14px;
+}
+
+.tab-icon .lucide,
+.tab-icon svg.lucide {
+    width: 14px;
+    height: 14px;
+}
+
+.status-pill-small .lucide,
+.status-pill-small svg.lucide,
+.staff-lead-badge .lucide,
+.staff-lead-badge svg.lucide {
+    width: 11px;
+    height: 11px;
+    stroke-width: 1.75px;
+}
+
+.staff-action-btn .lucide,
+.staff-action-btn svg.lucide {
+    width: 13px;
+    height: 13px;
+    stroke-width: 1.75px;
+}
+
 body {
     position: relative;
     min-height: 100dvh;
@@ -1495,14 +1554,31 @@ button:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; transfor
 .stat-late { color: var(--error); }
 
 .status-pill-small {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     padding: 2px 7px;
-    border-radius: var(--radius-pill);
+    border-radius: 6px;
     font-size: 0.7rem;
-    font-weight: 700;
+    font-weight: 600;
+    line-height: 1.4;
+    border: 1px solid transparent;
 }
-.status-pill-small.synced { background: var(--success-light); color: var(--success); }
-.status-pill-small.late { background: var(--error-light); color: var(--error); }
-.status-pill-small.offline { background: var(--surface-3); color: var(--muted); }
+.status-pill-small.synced {
+    background: rgba(16, 185, 129, 0.08);
+    color: #10b981;
+    border-color: rgba(16, 185, 129, 0.2);
+}
+.status-pill-small.late {
+    background: rgba(239, 68, 68, 0.08);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.2);
+}
+.status-pill-small.offline {
+    background: var(--surface-3);
+    color: var(--text-muted);
+    border-color: var(--border);
+}
 
 /* ─── CONFIG CARDS ─── */
 .config-cards {
@@ -1573,20 +1649,104 @@ button:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; transfor
 }
 .staff-row {
     display: grid;
-    grid-template-columns: 1.2fr 110px 100px 140px;
+    grid-template-columns: 1.2fr 110px 100px 120px;
     align-items: center;
-    padding: 11px 14px;
+    padding: 12px 16px;
     border-bottom: 1px solid var(--border);
     background: var(--surface);
     transition: background 0.15s ease;
 }
 .staff-row:last-child { border-bottom: none; }
 .staff-row:hover { background: var(--surface-2); }
-.staff-name-cell { font-weight: 700; font-size: 0.92rem; color: var(--text); }
+.staff-name-cell { font-weight: 600; font-size: 0.92rem; color: var(--text); }
 .staff-policy-cell { font-size: 0.8rem; }
 .staff-device-cell { font-size: 0.8rem; }
-.staff-actions { display: flex; gap: 6px; justify-content: flex-end; }
-.staff-actions .admin-btn { margin-top: 0 !important; padding: 4px 8px; }
+
+/* ─── PROFESSIONAL MATCHING STAFF TAGS ─── */
+.staff-policy-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    background: var(--surface-3);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+.staff-lead-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    line-height: 1.2;
+}
+
+.staff-device-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.74rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.staff-device-tag.is-locked {
+    color: var(--text-secondary);
+}
+.staff-device-tag .lucide,
+.staff-device-tag svg.lucide {
+    width: 12px;
+    height: 12px;
+    opacity: 0.85;
+}
+
+.staff-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: flex-end;
+}
+
+.staff-action-btn {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    padding: 0;
+    outline: none;
+}
+.staff-action-btn .lucide,
+.staff-action-btn svg.lucide {
+    width: 13px;
+    height: 13px;
+    stroke-width: 1.75px;
+}
+.staff-action-btn:hover {
+    color: var(--text-primary);
+    background: var(--surface-3);
+    border-color: var(--border-strong);
+}
+.staff-action-btn.danger:hover {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.25);
+}
 
 @media (max-width: 640px) {
     .staff-header-row { display: none; }
@@ -1596,13 +1756,13 @@ button:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; transfor
         grid-template-areas:
             "name actions"
             "policy device";
-        row-gap: 10px;
-        column-gap: 12px;
+        row-gap: 12px;
+        column-gap: 14px;
         align-items: center;
-        padding: 13px 14px;
-        border-radius: var(--radius);
-        margin-bottom: 8px;
-        background: var(--surface);
+        padding: 15px 16px;
+        border-radius: 12px;
+        margin-bottom: 10px;
+        background: var(--surface-2);
         border: 1px solid var(--border);
     }
     .staff-name-cell {
@@ -1614,11 +1774,6 @@ button:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; transfor
         display: flex;
         gap: 6px;
         justify-content: flex-end;
-    }
-    .staff-actions .admin-btn {
-        padding: 5px 9px !important;
-        font-size: 0.88rem !important;
-        line-height: 1 !important;
     }
     .staff-policy-cell {
         grid-area: policy;

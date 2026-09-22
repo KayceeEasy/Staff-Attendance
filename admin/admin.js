@@ -1022,7 +1022,7 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
                 const isLate = inLog.status && String(inLog.status).trim().toUpperCase() === 'LATE';
                 if (isWfh) {
                     wfhCount++;
-                    cellText = `WFH (${inLog.time || 'Present'})`;
+                    cellText = `Home (${inLog.time || 'Present'})`;
                 } else {
                     cellText = inLog.time || 'Present';
                 }
@@ -1035,7 +1035,7 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
                 cellText = 'Leave';
             } else if (isWfh) {
                 wfhCount++;
-                cellText = 'WFH';
+                cellText = 'Home';
             } else {
                 missedCount++;
                 cellText = 'Missed';
@@ -1046,7 +1046,7 @@ function exportWeekMatrixToCSV(logs, schedule, weekStartStr) {
 
         row['Days Present'] = presentCount;
         row['Days Late'] = lateCount;
-        row['Days WFH'] = wfhCount;
+        row['Days Home'] = wfhCount;
         row['Days on Leave'] = leaveCount;
         row['Days Missed'] = missedCount;
 
@@ -1147,10 +1147,10 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                     if (isLate) {
                         staffLate++;
                         totalLates++;
-                        cellContent = `WFH: ${inLog.time || 'Present'} (Late)`;
+                        cellContent = `Home: ${inLog.time || 'Present'} (Late)`;
                         cellStyle += ' background: #fdf2f2; color: #9b1c1c; font-weight: 500;';
                     } else {
-                        cellContent = `WFH: ${inLog.time || 'Present'}`;
+                        cellContent = `Home: ${inLog.time || 'Present'}`;
                         cellStyle += ' background: #eff6ff; color: #1d4ed8; font-weight: 500;';
                     }
                 } else {
@@ -1172,7 +1172,7 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
             } else if (isWfh) {
                 staffWfh++;
                 totalWfh++;
-                cellContent = 'WFH';
+                cellContent = 'Home';
                 cellStyle += ' background: #f0fdf4; color: #166534; font-weight: 500;';
             } else {
                 staffMissed++;
@@ -1225,7 +1225,7 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
                         <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; width: 11%;">Fri ${weekDays[4]}</th>
                         <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #e2e8f0; width: 6%;">Pres</th>
                         <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #fee2e2; color: #991b1b; width: 6%;">Late</th>
-                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #dcfce7; color: #166534; width: 6%;">WFH</th>
+                        <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #dcfce7; color: #166534; width: 6%;">Home</th>
                         <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #f3e8ff; color: #6b21a8; width: 6%;">Leave</th>
                         <th style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; background: #fef9c3; color: #854d0e; width: 6%;">Miss</th>
                     </tr>
@@ -1535,7 +1535,7 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
                                 if (inLog) {
                                     const isLate = inLog.status && String(inLog.status).trim().toUpperCase() === 'LATE';
                                     if (cell.isWfh) {
-                                        status = `🏠 WFH In<br>${escapeHtml(inLog.time || '')}`;
+                                        status = `🏠 Home In<br>${escapeHtml(inLog.time || '')}`;
                                         statusClass = isLate ? 'matrix-late' : 'matrix-wfh';
                                     } else {
                                         status = `📍 In<br>${escapeHtml(inLog.time || '')}`;
@@ -1546,7 +1546,7 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
                                     status = '<span class="matrix-leave-text" aria-label="Leave" style="font-weight:600; color:#8b5cf6;">🌴 Leave</span>';
                                     statusClass = 'matrix-leave';
                                 } else if (cell.isWfh) {
-                                    status = '<span class="matrix-home-text" aria-label="Home" style="font-weight:600; color:#2563eb;">🏠 WFH</span>';
+                                    status = '<span class="matrix-home-text" aria-label="Home" style="font-weight:600; color:#2563eb;">🏠 Home</span>';
                                     statusClass = 'matrix-wfh';
                                 } else {
                                     status = '—';
@@ -1620,39 +1620,37 @@ function renderStaffList(staff) {
 
     const policyLabels = {
         weekly_hybrid: { label: 'Hybrid (2-Day)', style: '' },
-        field_flexible: { label: 'Field / Media', style: 'background:rgba(234,179,8,0.15);color:#ca8a04;border:1px solid rgba(234,179,8,0.3);' },
-        executive: { label: 'Executive', style: 'background:rgba(168,85,247,0.15);color:#9333ea;border:1px solid rgba(168,85,247,0.3);' },
-        office_only: { label: 'Office Only', style: 'background:rgba(59,130,246,0.15);color:#2563eb;border:1px solid rgba(59,130,246,0.3);' }
+        field_flexible: { label: 'Field / Media', style: 'color: #ca8a04; border-color: rgba(202, 138, 4, 0.25);' },
+        executive: { label: 'Executive', style: 'color: #9333ea; border-color: rgba(147, 51, 234, 0.25);' },
+        office_only: { label: 'Office Only', style: 'color: #2563eb; border-color: rgba(37, 99, 235, 0.25);' }
     };
 
     const rowsHtml = filteredStaff.map((entry) => {
         const isLocked = Boolean(entry.device_id || entry.deviceId);
         const pol = policyLabels[entry.schedule_policy] || policyLabels.weekly_hybrid;
-        const polHtml = pol.style 
-            ? `<span class="status-pill-small" style="${pol.style}">${pol.label}</span>`
-            : `<span class="status-pill-small synced">${pol.label}</span>`;
+        const polHtml = `<span class="staff-policy-tag"${pol.style ? ` style="${pol.style}"` : ''}>${pol.label}</span>`;
 
         return `
         <div class="staff-row">
             <div class="staff-name-cell">
-                <div style="display:flex; align-items:center; gap:6px;">
-                    <span>${escapeHtml(entry.name)}</span>
-                    ${entry.is_team_lead ? '<span class="status-pill-small" style="background:rgba(245,158,11,0.15);color:#d97706;font-weight:700;padding:2px 6px;"><i data-lucide="award" size="11" style="vertical-align:middle; margin-right:2px;"></i>Lead</span>' : ''}
+                <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                    <span style="font-weight:600; font-size:0.92rem; color:var(--text);">${escapeHtml(entry.name)}</span>
+                    ${entry.is_team_lead ? '<span class="staff-lead-badge"><i data-lucide="award"></i>Lead</span>' : ''}
                 </div>
-                <div style="font-size:0.75rem; color:var(--text-muted); font-weight:400; margin-top:2px;">
-                    ${escapeHtml(entry.dept || 'General')} ${entry.include_in_reports === false ? '• <span style="color:var(--text-muted);">(Excluded from reports)</span>' : ''}
+                <div style="font-size:0.76rem; color:var(--text-muted); font-weight:400; margin-top:2px;">
+                    ${escapeHtml(entry.dept || 'General')}
                 </div>
             </div>
             <div class="staff-policy-cell">
                 ${polHtml}
             </div>
             <div class="staff-device-cell">
-                <span class="status-pill-small ${isLocked ? 'synced' : 'pending'}">${isLocked ? '<i data-lucide="smartphone" size="11" style="vertical-align:middle; margin-right:2px;"></i>Linked' : '<i data-lucide="circle" size="10" style="vertical-align:middle; margin-right:2px;"></i>Unlinked'}</span>
+                <span class="staff-device-tag ${isLocked ? 'is-locked' : 'is-unlocked'}"><i data-lucide="${isLocked ? 'smartphone' : 'unlock'}"></i>${isLocked ? 'Linked' : 'Unlinked'}</span>
             </div>
             <div class="staff-actions">
-                <button class="admin-btn secondary small" type="button" title="Edit ${escapeHtml(entry.name)}" data-edit-name="${escapeHtml(entry.name)}"><i data-lucide="edit-2" size="12"></i></button>
-                <button class="admin-btn secondary small" type="button" title="Unlink device for ${escapeHtml(entry.name)}" data-reset-name="${escapeHtml(entry.name)}"><i data-lucide="rotate-cw" size="12"></i></button>
-                <button class="admin-btn secondary small danger" type="button" title="Remove ${escapeHtml(entry.name)}" data-remove-name="${escapeHtml(entry.name)}"><i data-lucide="trash-2" size="12"></i></button>
+                <button class="staff-action-btn" type="button" title="Edit ${escapeHtml(entry.name)}" data-edit-name="${escapeHtml(entry.name)}" aria-label="Edit staff"><i data-lucide="edit-2"></i></button>
+                <button class="staff-action-btn" type="button" title="Unlink device for ${escapeHtml(entry.name)}" data-reset-name="${escapeHtml(entry.name)}" aria-label="Reset device lock"><i data-lucide="rotate-cw"></i></button>
+                <button class="staff-action-btn danger" type="button" title="Remove ${escapeHtml(entry.name)}" data-remove-name="${escapeHtml(entry.name)}" aria-label="Remove staff"><i data-lucide="trash-2"></i></button>
             </div>
         </div>
     `;}).join('');
@@ -1685,7 +1683,7 @@ async function handleEditStaff(name) {
                 value: member.schedule_policy || 'weekly_hybrid',
                 options: [
                     { value: 'weekly_hybrid', label: 'Standard Weekly Hybrid (2 Days Office)' },
-                    { value: 'field_flexible', label: 'Field / Media Flexible (3 WFH, Variable Shoots, No GPS Block)' },
+                    { value: 'field_flexible', label: 'Field / Media Flexible (3 Home Days, Variable Shoots, No GPS Block)' },
                     { value: 'executive', label: 'Executive / Leadership (Exempt from Grid & GPS)' },
                     { value: 'office_only', label: 'Office Only (100% In-Office)' }
                 ]
@@ -2339,7 +2337,7 @@ function renderAnalytics() {
         
         <div class="analytics-section">
             <h4><i data-lucide="alert-triangle" size="16" style="vertical-align:middle; margin-right:5px; color:#eab308;"></i> Least Active Staff</h4>
-            <p class="admin-intro">Staff with lowest office attendance rate. Scheduled WFH days are excluded from requirements.</p>
+            <p class="admin-intro">Staff with lowest office attendance rate. Scheduled Home days are excluded from requirements.</p>
             <div class="analytics-table-wrapper">
                 <div class="analytics-table">
                     <div class="breakdown-row breakdown-head">
@@ -2348,7 +2346,7 @@ function renderAnalytics() {
                         <span class="col-center">Sign In</span>
                         <span class="col-center">Sign Out</span>
                         <span class="col-center">Rate</span>
-                        <span class="col-center">WFH</span>
+                        <span class="col-center">Home</span>
                         <span class="col-center">Late</span>
                     </div>
                     ${data.leastActive.map(s => `
@@ -2378,7 +2376,7 @@ function renderAnalytics() {
                         <span class="col-center">Sign In</span>
                         <span class="col-center">Sign Out</span>
                         <span class="col-center">Rate</span>
-                        <span class="col-center">WFH</span>
+                        <span class="col-center">Home</span>
                         <span class="col-center">Late</span>
                     </div>
                     ${data.mostActive.map(s => `
@@ -2408,7 +2406,7 @@ function renderAnalytics() {
                         <span class="col-center">Sign In</span>
                         <span class="col-center">Sign Out</span>
                         <span class="col-center">Rate</span>
-                        <span class="col-center">WFH</span>
+                        <span class="col-center">Home</span>
                         <span class="col-center">Late</span>
                     </div>
                     ${data.staffBreakdown.map(s => `
@@ -2464,7 +2462,7 @@ function renderAnalytics() {
     document.getElementById('export-analytics-btn')?.addEventListener('click', () => {
         const exportData = analyticsData.staffBreakdown.map(s => ({
             Name: s.name, 'Sign Ins': s.signIns, 'Sign Outs': s.signOuts,
-            'Late': s.lateCount, 'WFH Days': s.wfhDays, 'Attendance Rate': s.attendanceRate + '%'
+            'Late': s.lateCount, 'Home Days': s.wfhDays, 'Attendance Rate': s.attendanceRate + '%'
         }));
         exportToCSV(exportData, 'attendance_analytics');
     });
@@ -2715,7 +2713,7 @@ function renderAdminPanel() {
                     <div style="display:grid; grid-template-columns: 1.3fr 1fr; gap:10px; align-items:center;">
                         <select id="new-staff-policy" style="width:100%; padding:9px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:0.86rem;">
                             <option value="weekly_hybrid">Standard Weekly Hybrid (2 Days Office)</option>
-                            <option value="field_flexible">Field / Media Flexible (3 WFH, Shoot Days)</option>
+                            <option value="field_flexible">Field / Media Flexible (3 Home Days, Shoot Days)</option>
                             <option value="executive">Executive / Leadership (Exempt)</option>
                             <option value="office_only">Office Only (100% In-Office)</option>
                         </select>
@@ -2828,7 +2826,7 @@ function renderAdminPanel() {
                     </div>
                     <div class="config-card">
                         <span class="config-icon"><i data-lucide="pie-chart" size="18"></i></span>
-                        <div class="config-info"><strong>WFH Attendance Quota</strong><span class="config-value" id="config-wfh-quota-current">Counted in Quota</span></div>
+                        <div class="config-info"><strong>Home Attendance Quota</strong><span class="config-value" id="config-wfh-quota-current">Counted in Quota</span></div>
                         <button id="config-wfh-quota-btn" class="admin-btn secondary small" type="button">Toggle</button>
                     </div>
                     <div class="config-card">
@@ -2877,7 +2875,7 @@ function renderAdminPanel() {
                             <span class="status-pill-small" style="background:rgba(16,185,129,0.15); color:#059669; font-weight:700;">PRO TRIAL</span>
                         </div>
                         <p class="admin-intro" id="billing-trial-status-text">
-                            14-Day Trial active. 28-day decline grace period protection enabled.
+                            14-Day Free Trial active. Full access to all features.
                         </p>
                         <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
                             <button class="admin-btn secondary small" type="button" onclick="openCouponModal()">
@@ -3167,7 +3165,7 @@ function renderAdminPanel() {
         try {
             const res = await callBackend({ mode: 'update-config', key: 'COUNT_WFH_IN_ATTENDANCE_QUOTA', value: nextVal });
             tenantWfhQuotaEnabled = (nextVal === 'true');
-            showToast(`WFH Quota Contribution ${nextVal === 'true' ? 'Enabled' : 'Disabled'}.`, res.ok ? 'success' : 'error');
+            showToast(`Home Quota Contribution ${nextVal === 'true' ? 'Enabled' : 'Disabled'}.`, res.ok ? 'success' : 'error');
             if (res.ok && currentEl) {
                 currentEl.textContent = nextVal === 'true' ? 'Counted in Quota' : 'Office Only';
             }
