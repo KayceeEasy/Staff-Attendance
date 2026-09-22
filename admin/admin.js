@@ -16,6 +16,7 @@ let currentWeekStart = null;
 let hybridScheduleCache = {};
 let logsSortField = 'id';
 let logsSortAsc = false;
+let tenantWfhQuotaEnabled = true;
 
 // Session timeout (15 min idle sliding window inactivity → 60s countdown)
 let inactivityTimer = null;
@@ -407,6 +408,24 @@ async function loadConfigValues() {
             if (leadPriorityEl) {
                 const isEnabled = leadPriority === 'true' || leadPriority === true;
                 leadPriorityEl.textContent = isEnabled ? 'Enabled' : 'Disabled';
+            }
+
+            const closingEl = document.getElementById('config-closing-time-current');
+            const closingTimeMinutes = cfg.WORKDAY_END_MINUTES !== undefined ? Number(cfg.WORKDAY_END_MINUTES) : (cfg.CLOSING_TIME_MINUTES !== undefined ? Number(cfg.CLOSING_TIME_MINUTES) : 1020);
+            if (closingEl) closingEl.textContent = formatMinutesAsTime(closingTimeMinutes);
+
+            const remoteSignoutEl = document.getElementById('config-remote-signout-current');
+            const allowRemoteSignout = cfg.ALLOW_REMOTE_SIGNOUT_POST_CLOSING !== undefined ? cfg.ALLOW_REMOTE_SIGNOUT_POST_CLOSING : true;
+            if (remoteSignoutEl) {
+                const isRemoteEnabled = (allowRemoteSignout === true || allowRemoteSignout === 'true');
+                remoteSignoutEl.textContent = isRemoteEnabled ? 'Enabled' : 'Disabled';
+            }
+
+            const wfhQuotaEl = document.getElementById('config-wfh-quota-current');
+            const countWfhQuota = cfg.COUNT_WFH_IN_ATTENDANCE_QUOTA !== undefined ? cfg.COUNT_WFH_IN_ATTENDANCE_QUOTA : true;
+            tenantWfhQuotaEnabled = (countWfhQuota === true || countWfhQuota === 'true');
+            if (wfhQuotaEl) {
+                wfhQuotaEl.textContent = tenantWfhQuotaEnabled ? 'Counted in Quota' : 'Office Only';
             }
         }
     } catch (e) {
@@ -1177,7 +1196,8 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
     });
 
     const totalWorkingDays = totalPresent + totalWfh + totalMissed;
-    const attendanceRate = totalWorkingDays > 0 ? Math.round(((totalPresent + totalWfh) / totalWorkingDays) * 100) : 0;
+    const attendedCount = tenantWfhQuotaEnabled ? (totalPresent + totalWfh) : totalPresent;
+    const attendanceRate = totalWorkingDays > 0 ? Math.round((attendedCount / totalWorkingDays) * 100) : 0;
     const onTimeRate = totalPresent > 0 ? Math.round(((totalPresent - totalLates) / totalPresent) * 100) : 0;
 
     const printDiv = document.createElement('div');
@@ -2261,7 +2281,9 @@ function processAnalyticsData(logs, schedule, filterType = 'all', customFromDate
             daysPresent: counts.daysPresent.size,
             expectedOfficeDays: totalDaysInRange - counts.wfhDays,
             attendanceRate: totalDaysInRange > 0 
-                ? Math.round((counts.daysPresent.size / Math.max(totalDaysInRange - counts.wfhDays, 1)) * 100)
+                ? (tenantWfhQuotaEnabled
+                    ? Math.min(100, Math.round(((counts.daysPresent.size + counts.wfhDays) / Math.max(totalDaysInRange, 1)) * 100))
+                    : Math.round((counts.daysPresent.size / Math.max(totalDaysInRange, 1)) * 100))
                 : 0
         }))
         .sort((a, b) => a.totalActions - b.totalActions);
@@ -2787,12 +2809,27 @@ function renderAdminPanel() {
             </div>
 
             <div class="config-section-group">
-                <h4>Attendance Schedule</h4>
+                <h4>Attendance Schedule & Policies</h4>
                 <div class="config-cards">
                     <div class="config-card">
                         <span class="config-icon"><i data-lucide="clock" size="18"></i></span>
-                        <div class="config-info"><strong>Late Cutoff Time</strong><span class="config-value" id="config-late-cutoff-current">8:30 AM</span></div>
+                        <div class="config-info"><strong>Workday Start (Late Cutoff)</strong><span class="config-value" id="config-late-cutoff-current">8:30 AM</span></div>
                         <button id="config-late-cutoff-btn" class="admin-btn secondary small" type="button">Edit</button>
+                    </div>
+                    <div class="config-card">
+                        <span class="config-icon"><i data-lucide="clock-4" size="18"></i></span>
+                        <div class="config-info"><strong>Workday Closing Time</strong><span class="config-value" id="config-closing-time-current">5:00 PM</span></div>
+                        <button id="config-closing-time-btn" class="admin-btn secondary small" type="button">Edit</button>
+                    </div>
+                    <div class="config-card">
+                        <span class="config-icon"><i data-lucide="log-out" size="18"></i></span>
+                        <div class="config-info"><strong>Post-Closing Remote Sign-Out</strong><span class="config-value" id="config-remote-signout-current">Enabled</span></div>
+                        <button id="config-remote-signout-btn" class="admin-btn secondary small" type="button">Toggle</button>
+                    </div>
+                    <div class="config-card">
+                        <span class="config-icon"><i data-lucide="pie-chart" size="18"></i></span>
+                        <div class="config-info"><strong>WFH Attendance Quota</strong><span class="config-value" id="config-wfh-quota-current">Counted in Quota</span></div>
+                        <button id="config-wfh-quota-btn" class="admin-btn secondary small" type="button">Toggle</button>
                     </div>
                     <div class="config-card">
                         <span class="config-icon"><i data-lucide="calendar" size="18"></i></span>
@@ -3089,6 +3126,54 @@ function renderAdminPanel() {
         }
     });
 
+    document.getElementById('config-closing-time-btn')?.addEventListener('click', async () => {
+        const r = await showInlineDialog({
+            title: 'Workday Closing Time',
+            message: 'Employees who verified attendance on-site can sign out remotely after this hour without office GPS.',
+            fields: [{ placeholder: 'Closing Time', type: 'time' }],
+            confirmLabel: 'Update'
+        });
+        if (!r || !r[0]) return;
+        const [hh, mm] = r[0].split(':').map(Number);
+        if (isNaN(hh) || isNaN(mm)) { showToast('Invalid time format.', 'error'); return; }
+        const totalMinutes = hh * 60 + mm;
+        try {
+            const res = await callBackend({ mode: 'update-config', key: 'WORKDAY_END_MINUTES', value: totalMinutes });
+            showToast(res.message || 'Closing time updated.', res.ok ? 'success' : 'error');
+            if (res.ok) {
+                const closingEl = document.getElementById('config-closing-time-current');
+                if (closingEl) closingEl.textContent = formatMinutesAsTime(totalMinutes);
+            }
+        } catch (e) { showToast('Server error.', 'error'); }
+    });
+
+    document.getElementById('config-remote-signout-btn')?.addEventListener('click', async () => {
+        const currentEl = document.getElementById('config-remote-signout-current');
+        const isCurrentlyEnabled = currentEl?.textContent.trim() === 'Enabled';
+        const nextVal = isCurrentlyEnabled ? 'false' : 'true';
+        try {
+            const res = await callBackend({ mode: 'update-config', key: 'ALLOW_REMOTE_SIGNOUT_POST_CLOSING', value: nextVal });
+            showToast(`Post-Closing Remote Sign-Out ${nextVal === 'true' ? 'Enabled' : 'Disabled'}.`, res.ok ? 'success' : 'error');
+            if (res.ok && currentEl) {
+                currentEl.textContent = nextVal === 'true' ? 'Enabled' : 'Disabled';
+            }
+        } catch (e) { showToast('Server error.', 'error'); }
+    });
+
+    document.getElementById('config-wfh-quota-btn')?.addEventListener('click', async () => {
+        const currentEl = document.getElementById('config-wfh-quota-current');
+        const isCurrentlyCounted = currentEl?.textContent.trim().includes('Counted');
+        const nextVal = isCurrentlyCounted ? 'false' : 'true';
+        try {
+            const res = await callBackend({ mode: 'update-config', key: 'COUNT_WFH_IN_ATTENDANCE_QUOTA', value: nextVal });
+            tenantWfhQuotaEnabled = (nextVal === 'true');
+            showToast(`WFH Quota Contribution ${nextVal === 'true' ? 'Enabled' : 'Disabled'}.`, res.ok ? 'success' : 'error');
+            if (res.ok && currentEl) {
+                currentEl.textContent = nextVal === 'true' ? 'Counted in Quota' : 'Office Only';
+            }
+        } catch (e) { showToast('Server error.', 'error'); }
+    });
+
     document.getElementById('config-auto-location-btn').addEventListener('click', () => {
         if (!navigator.geolocation) {
             showToast('Geolocation is not supported by your browser.', 'error');
@@ -3170,7 +3255,101 @@ function renderAdminPanel() {
 
     switchTab('dashboard');
     startAutoRefresh();
+    checkTenantTourAutoLaunch();
 }
+
+/* ============================================================
+   TENANT GUIDED TUTORIAL
+   ============================================================ */
+
+let currentTourStep = 0;
+const TOTAL_TOUR_STEPS = 5;
+
+function openTenantTourModal(step = 0) {
+    const modal = document.getElementById('tenant-guided-tour-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    setTourStep(step);
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+    }
+}
+
+function closeTenantTourModal() {
+    const modal = document.getElementById('tenant-guided-tour-modal');
+    if (modal) modal.style.display = 'none';
+    const slug = (currentTenantConfig && currentTenantConfig.slug) || 'default';
+    try { localStorage.setItem(`tenant_tour_seen_${slug}`, 'true'); } catch (e) {}
+}
+
+function navigateTourStep(direction) {
+    const newStep = currentTourStep + direction;
+    if (newStep >= TOTAL_TOUR_STEPS) {
+        closeTenantTourModal();
+        showToast('Guided tour completed! You can reopen it anytime from Quick Guide in the topbar.', 'success');
+        return;
+    }
+    if (newStep < 0) return;
+    setTourStep(newStep);
+}
+
+function setTourStep(stepIndex) {
+    currentTourStep = Math.max(0, Math.min(stepIndex, TOTAL_TOUR_STEPS - 1));
+    
+    // Update step badge
+    const badge = document.getElementById('tour-step-badge');
+    if (badge) badge.textContent = `Step ${currentTourStep + 1} of ${TOTAL_TOUR_STEPS}`;
+
+    // Update slides
+    const slides = document.querySelectorAll('.tour-slide');
+    slides.forEach((slide) => {
+        const sIdx = parseInt(slide.dataset.step, 10);
+        slide.style.display = sIdx === currentTourStep ? 'block' : 'none';
+    });
+
+    // Update dots
+    const dots = document.querySelectorAll('.tour-dot');
+    dots.forEach((dot) => {
+        const dIdx = parseInt(dot.dataset.step, 10);
+        if (dIdx === currentTourStep) {
+            dot.style.background = 'var(--primary)';
+            dot.style.width = '18px';
+            dot.style.borderRadius = '6px';
+        } else {
+            dot.style.background = 'var(--border)';
+            dot.style.width = '8px';
+            dot.style.borderRadius = '50%';
+        }
+    });
+
+    // Update buttons
+    const prevBtn = document.getElementById('tour-prev-btn');
+    const nextBtn = document.getElementById('tour-next-btn');
+    if (prevBtn) prevBtn.style.display = currentTourStep === 0 ? 'none' : 'inline-block';
+    if (nextBtn) {
+        nextBtn.textContent = currentTourStep === TOTAL_TOUR_STEPS - 1 ? 'Finish Guide ✓' : 'Next →';
+    }
+
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+    }
+}
+
+function checkTenantTourAutoLaunch() {
+    const slug = (currentTenantConfig && currentTenantConfig.slug) || 'default';
+    const tourKey = `tenant_tour_seen_${slug}`;
+    if (!localStorage.getItem(tourKey)) {
+        setTimeout(() => {
+            openTenantTourModal(0);
+        }, 600);
+    }
+}
+
+// Expose on window for inline HTML onclick attributes
+window.openTenantTourModal = openTenantTourModal;
+window.closeTenantTourModal = closeTenantTourModal;
+window.navigateTourStep = navigateTourStep;
+window.setTourStep = setTourStep;
 
 /* ============================================================
    FORGOT PASSWORD
@@ -3431,6 +3610,7 @@ function initAdminApp() {
     initRefreshButton();
     initAllPasswordToggles();
     initAdminTenantBranding();
+    document.getElementById('guided-tour-btn')?.addEventListener('click', () => openTenantTourModal(0));
 
     const urlParams = new URLSearchParams(window.location.search);
     const masqueradeToken = urlParams.get('masquerade');

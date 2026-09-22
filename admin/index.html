@@ -24,6 +24,10 @@
             </div>
         </div>
         <div class="topbar-actions" style="display:flex; align-items:center; gap:8px;">
+            <button id="guided-tour-btn" class="topbar-icon-btn" type="button" aria-label="Quick Guide" title="Quick Guide" style="display:inline-flex; align-items:center; gap:5px; padding:6px 10px; font-size:0.75rem; font-weight:600; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); cursor:pointer;">
+                <i data-lucide="help-circle" size="14"></i>
+                <span style="font-size:0.75rem;">Quick Guide</span>
+            </button>
             <button id="theme-toggle" class="topbar-icon-btn theme-toggle" type="button" aria-label="Switch theme" title="Toggle Theme">
                 <i data-lucide="moon" size="16"></i>
             </button>
@@ -106,6 +110,114 @@
                 <button id="apply-coupon-btn" class="admin-btn primary" type="button" onclick="handleApplyCoupon()" style="flex:1;">Apply Code</button>
                 <button class="admin-btn secondary" type="button" onclick="closeCouponModal()">Cancel</button>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Step-by-Step Tenant Guided Tutorial -->
+<div id="tenant-guided-tour-modal" class="modal-backdrop" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); backdrop-filter:blur(5px); z-index:99999; align-items:center; justify-content:center; padding:16px;">
+    <div class="modal-card" style="background:var(--surface); border:1px solid var(--border); border-radius:18px; width:100%; max-width:480px; padding:24px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.5); position:relative; overflow:hidden;">
+        <!-- Header -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; background:rgba(37,99,235,0.12); color:var(--primary); padding:3px 8px; border-radius:6px;" id="tour-step-badge">Step 1 of 5</span>
+                <span style="font-weight:700; font-size:0.95rem; color:var(--text);">Platform Quick Guide</span>
+            </div>
+            <button type="button" onclick="closeTenantTourModal()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:4px;" aria-label="Close guide"><i data-lucide="x" size="18"></i></button>
+        </div>
+
+        <!-- Tour Steps Carousel Container -->
+        <div id="tour-slides-wrap" style="min-height:230px; display:flex; flex-direction:column; justify-content:center;">
+            <!-- Step 1 -->
+            <div class="tour-slide" data-step="0" style="display:block;">
+                <div style="width:48px; height:48px; border-radius:12px; background:rgba(37,99,235,0.1); color:var(--primary); display:flex; align-items:center; justify-content:center; margin:0 auto 12px;">
+                    <i data-lucide="qr-code" size="24"></i>
+                </div>
+                <h3 style="font-size:1.15rem; font-weight:700; margin:0 0 6px; text-align:center; color:var(--text);">Workspace & Staff Pairing</h3>
+                <p style="font-size:0.84rem; line-height:1.5; color:var(--text-muted); text-align:center; margin:0 0 12px;">
+                    Employees don't need app stores. Simply share your unique <strong>6-character pairing code</strong> or <strong>QR code</strong>. When staff open the link on their phone or browser, their device instantly pairs to your workspace.
+                </p>
+                <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; font-size:0.78rem; color:var(--text-muted); display:flex; align-items:center; gap:8px;">
+                    <i data-lucide="lightbulb" size="16" style="color:var(--primary); flex-shrink:0;"></i>
+                    <span>Find your code and QR anytime in the <strong>Account Settings</strong> tab or header.</span>
+                </div>
+            </div>
+
+            <!-- Step 2 -->
+            <div class="tour-slide" data-step="1" style="display:none;">
+                <div style="width:48px; height:48px; border-radius:12px; background:rgba(16,185,129,0.1); color:#10b981; display:flex; align-items:center; justify-content:center; margin:0 auto 12px;">
+                    <i data-lucide="map-pin" size="24"></i>
+                </div>
+                <h3 style="font-size:1.15rem; font-weight:700; margin:0 0 6px; text-align:center; color:var(--text);">Office Geofence & Work Hours</h3>
+                <p style="font-size:0.84rem; line-height:1.5; color:var(--text-muted); text-align:center; margin:0 0 12px;">
+                    Calibrate your office GPS with 1-tap in <strong>System Configuration</strong>. Set your office radius (e.g. 100m), morning late cutoff time, and closing time (e.g. 5:00 PM).
+                </p>
+                <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; font-size:0.78rem; color:var(--text-muted); display:flex; align-items:center; gap:8px;">
+                    <i data-lucide="shield-check" size="16" style="color:#10b981; flex-shrink:0;"></i>
+                    <span><strong>Post-Closing Sign-Out</strong> allows staff who verified in at the office to sign out remotely if they forget before leaving.</span>
+                </div>
+            </div>
+
+            <!-- Step 3 -->
+            <div class="tour-slide" data-step="2" style="display:none;">
+                <div style="width:48px; height:48px; border-radius:12px; background:rgba(245,158,11,0.1); color:#f59e0b; display:flex; align-items:center; justify-content:center; margin:0 auto 12px;">
+                    <i data-lucide="users" size="24"></i>
+                </div>
+                <h3 style="font-size:1.15rem; font-weight:700; margin:0 0 6px; text-align:center; color:var(--text);">Staff Roster & Biometric Locks</h3>
+                <p style="font-size:0.84rem; line-height:1.5; color:var(--text-muted); text-align:center; margin:0 0 12px;">
+                    Add employees individually or bulk-import via CSV in the <strong>Staff</strong> tab. The system locks each employee to their first authorized device, completely preventing buddy punching.
+                </p>
+                <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; font-size:0.78rem; color:var(--text-muted); display:flex; align-items:center; gap:8px;">
+                    <i data-lucide="smartphone" size="16" style="color:#f59e0b; flex-shrink:0;"></i>
+                    <span>Employees can also enable <strong>Face ID / Fingerprint</strong> biometrics on their device for 1-tap sign-ins.</span>
+                </div>
+            </div>
+
+            <!-- Step 4 -->
+            <div class="tour-slide" data-step="3" style="display:none;">
+                <div style="width:48px; height:48px; border-radius:12px; background:rgba(139,92,246,0.1); color:#8b5cf6; display:flex; align-items:center; justify-content:center; margin:0 auto 12px;">
+                    <i data-lucide="calendar" size="24"></i>
+                </div>
+                <h3 style="font-size:1.15rem; font-weight:700; margin:0 0 6px; text-align:center; color:var(--text);">Hybrid Weekly Matrix</h3>
+                <p style="font-size:0.84rem; line-height:1.5; color:var(--text-muted); text-align:center; margin:0 0 12px;">
+                    Manage flexible work arrangements directly from the <strong>Dashboard Matrix</strong> or <strong>Hybrid Portal</strong>. Toggle any employee day between <em>Office</em> and <em>Home (WFH)</em>.
+                </p>
+                <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; font-size:0.78rem; color:var(--text-muted); display:flex; align-items:center; gap:8px;">
+                    <i data-lucide="check" size="16" style="color:#8b5cf6; flex-shrink:0;"></i>
+                    <span>On scheduled Home days, staff can sign in remotely without triggering geofence distance violations.</span>
+                </div>
+            </div>
+
+            <!-- Step 5 -->
+            <div class="tour-slide" data-step="4" style="display:none;">
+                <div style="width:48px; height:48px; border-radius:12px; background:rgba(6,182,212,0.1); color:#06b6d4; display:flex; align-items:center; justify-content:center; margin:0 auto 12px;">
+                    <i data-lucide="file-spreadsheet" size="24"></i>
+                </div>
+                <h3 style="font-size:1.15rem; font-weight:700; margin:0 0 6px; text-align:center; color:var(--text);">Live Feed, Quotas & Exports</h3>
+                <p style="font-size:0.84rem; line-height:1.5; color:var(--text-muted); text-align:center; margin:0 0 12px;">
+                    Track real-time check-ins under <strong>Logs</strong> and review overall attendance percentages in <strong>Analytics</strong>. You can configure whether WFH days count toward your attendance quota.
+                </p>
+                <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; font-size:0.78rem; color:var(--text-muted); display:flex; align-items:center; gap:8px;">
+                    <i data-lucide="download" size="16" style="color:#06b6d4; flex-shrink:0;"></i>
+                    <span>Click <strong>Export CSV</strong> or print formatted PDF summaries anytime for monthly payroll processing.</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dots indicator -->
+        <div style="display:flex; justify-content:center; gap:6px; margin:16px 0 18px;" id="tour-dots">
+            <span class="tour-dot active" data-step="0" style="width:8px; height:8px; border-radius:50%; background:var(--primary); transition:all 0.2s;"></span>
+            <span class="tour-dot" data-step="1" style="width:8px; height:8px; border-radius:50%; background:var(--border); transition:all 0.2s;"></span>
+            <span class="tour-dot" data-step="2" style="width:8px; height:8px; border-radius:50%; background:var(--border); transition:all 0.2s;"></span>
+            <span class="tour-dot" data-step="3" style="width:8px; height:8px; border-radius:50%; background:var(--border); transition:all 0.2s;"></span>
+            <span class="tour-dot" data-step="4" style="width:8px; height:8px; border-radius:50%; background:var(--border); transition:all 0.2s;"></span>
+        </div>
+
+        <!-- Actions -->
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+            <button id="tour-prev-btn" class="admin-btn secondary small" type="button" onclick="navigateTourStep(-1)" style="display:none; padding:8px 14px;">Back</button>
+            <button id="tour-skip-btn" class="admin-btn secondary small" type="button" onclick="closeTenantTourModal()" style="color:var(--text-muted); border-color:transparent;">Skip</button>
+            <button id="tour-next-btn" class="admin-btn primary small" type="button" onclick="navigateTourStep(1)" style="margin-left:auto; padding:8px 18px; font-weight:600;">Next →</button>
         </div>
     </div>
 </div>

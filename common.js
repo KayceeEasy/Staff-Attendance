@@ -567,7 +567,12 @@ async function getTenantConfig(tenantSlug) {
         grace_period_minutes: 15,
         default_policy: 'weekly_hybrid',
         brand_color: t.brand_color || '#1a56db',
-        logo_url: t.logo_url || ''
+        logo_url: t.logo_url || '',
+        workday_start_time: '08:30',
+        workday_end_time: '17:00',
+        workday_end_minutes: 1020,
+        allow_remote_signout_post_closing: true,
+        count_wfh_in_attendance_quota: true
     };
 }
 
@@ -616,14 +621,50 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, message: 'Logged out.' };
             }
             case 'attendance': {
+                let lat = payload.lat;
+                let lon = payload.lon;
+                const isRemoteSignout = Boolean(payload.isRemoteSignOut);
+
+                // If remote sign-out post-closing is requested, resolve office coordinates if needed
+                if (payload.action === 'OUT' && isRemoteSignout) {
+                    try {
+                        const { data: configData } = await supabaseClient.from('app_config').select('*');
+                        const cfg = {};
+                        if (configData) configData.forEach(r => cfg[r.key] = r.value);
+                        const allowRemote = cfg.ALLOW_REMOTE_SIGNOUT_POST_CLOSING !== undefined ? cfg.ALLOW_REMOTE_SIGNOUT_POST_CLOSING : true;
+                        if (allowRemote === true || allowRemote === 'true') {
+                            if (!lat || !lon || (Number(lat) === 0 && Number(lon) === 0)) {
+                                lat = Number(cfg.OFFICE_LAT || 6.4518631);
+                                lon = Number(cfg.OFFICE_LON || 3.5277863);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Error checking remote signout config:', e);
+                    }
+                }
+
                 const { data, error } = await supabaseClient.rpc('process_attendance', {
                     p_name: payload.name,
                     p_action: payload.action,
-                    p_lat: payload.lat,
-                    p_lon: payload.lon,
+                    p_lat: lat,
+                    p_lon: lon,
                     p_device_id: payload.deviceId || ''
                 });
                 if (error) throw error;
+
+                if (data && data.ok && payload.action === 'OUT' && isRemoteSignout) {
+                    data.status = 'Off-Site Sign-Out';
+                    data.message = `Remote sign-out recorded for ${payload.name} (Post-Closing). Have a great evening!`;
+                    try {
+                        await supabaseClient.from('attendance_logs')
+                            .update({ status: 'Off-Site Sign-Out' })
+                            .eq('name', payload.name)
+                            .eq('action', 'OUT')
+                            .order('created_at', { ascending: false })
+                            .limit(1);
+                    } catch (e) {}
+                }
+
                 return {
                     ok: data.ok,
                     allowed: data.ok,
@@ -830,8 +871,12 @@ async function callBackend(payload, timeoutMs = 20000) {
             case 'get-config': {
                 const { data, error } = await supabaseClient.from('app_config').select('*');
                 if (error) throw error;
-                const configObj = {};
-                data.forEach(row => configObj[row.key] = row.value);
+                const configObj = {
+                    WORKDAY_END_MINUTES: 1020,
+                    ALLOW_REMOTE_SIGNOUT_POST_CLOSING: 'true',
+                    COUNT_WFH_IN_ATTENDANCE_QUOTA: 'true'
+                };
+                if (data) data.forEach(row => configObj[row.key] = row.value);
                 return { ok: true, config: configObj };
             }
             case 'update-config': {

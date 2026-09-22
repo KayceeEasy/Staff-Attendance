@@ -439,6 +439,52 @@ function initLiveClock() {
     setInterval(update, 1000);
 }
 
+/* ---------- Tenant Config & Remote Sign-Out State ---------- */
+
+let tenantConfigCache = null;
+
+async function getTenantAppConfig() {
+    if (tenantConfigCache) return tenantConfigCache;
+    try {
+        const res = await callBackend({ mode: 'get-config' });
+        if (res && res.ok && res.config) {
+            tenantConfigCache = res.config;
+            return tenantConfigCache;
+        }
+    } catch (e) {
+        console.warn('Could not fetch app config:', e);
+    }
+    return {};
+}
+
+function hasStaffSignedInToday(name) {
+    if (!name) return false;
+    const todayKey = getTodayKey();
+    const recentLogs = readStoredJson(STORAGE_KEYS.recentLog, []);
+    return recentLogs.some((entry) => {
+        if (!entry || entry.name !== name || entry.status === 'failed') return false;
+        const matchesDate = (entry.timestamp && entry.timestamp.startsWith(todayKey)) || (entry.date && entry.date === todayKey);
+        return matchesDate && entry.action === 'IN';
+    });
+}
+
+function isPostClosingRemoteSignoutActive(name) {
+    if (!name) return false;
+    // Must have signed in today
+    if (!hasStaffSignedInToday(name)) return false;
+
+    // Check tenant config
+    const cfg = tenantConfigCache || {};
+    const allowRemote = cfg.ALLOW_REMOTE_SIGNOUT_POST_CLOSING !== undefined ? cfg.ALLOW_REMOTE_SIGNOUT_POST_CLOSING : true;
+    if (allowRemote === false || allowRemote === 'false') return false;
+
+    // Check time: closing time default 17:00 (1020 mins)
+    const closingMinutes = cfg.WORKDAY_END_MINUTES !== undefined ? Number(cfg.WORKDAY_END_MINUTES) : (cfg.CLOSING_TIME_MINUTES !== undefined ? Number(cfg.CLOSING_TIME_MINUTES) : 1020);
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    return currentMinutes >= closingMinutes;
+}
+
 /* ---------- Action Hero Button State Machine ---------- */
 
 function updateActionHeroState() {
@@ -532,12 +578,22 @@ function updateActionHeroState() {
     // Case 4: Signed in, awaiting sign-out
     if (currentHeroAction === 'OUT') {
         setClasses('state-out');
-        if (inBtnText) inBtnText.textContent = 'SIGN OUT';
-        inBtn.disabled = !canUse;
+        const isRemoteSignoutEligible = isPostClosingRemoteSignoutActive(name);
+        const canSignOut = Boolean(coords) || isWfh || isRemoteSignoutEligible;
+        if (inBtnText) {
+            inBtnText.textContent = (isRemoteSignoutEligible && !coords && !isWfh) ? 'SIGN OUT (REMOTE)' : 'SIGN OUT';
+        }
+        inBtn.disabled = !canSignOut;
         inBtn.dataset.heroMode = 'OUT';
-        inBtn.setAttribute('aria-label', 'Sign out');
+        inBtn.setAttribute('aria-label', isRemoteSignoutEligible && !coords ? 'Sign out remotely (post-closing)' : 'Sign out');
         setIcon('log-out');
-        if (outBtn) outBtn.disabled = !canUse;
+        if (outBtn) outBtn.disabled = !canSignOut;
+
+        const locStatus = document.getElementById('location-status');
+        if (locStatus && isRemoteSignoutEligible && !coords && !isWfh) {
+            locStatus.innerText = '🏠 Remote Sign-Out Active';
+            locStatus.className = 'status ready';
+        }
         return;
     }
 
@@ -1023,13 +1079,14 @@ async function submit(action) {
     }
 
     const isWfh = isCurrentStaffWfhToday();
+    const isRemoteSignout = (action === 'OUT' && isPostClosingRemoteSignoutActive(name));
 
     if (navigator.geolocation) {
         setMessage('Checking your current location...', 'msg-welcome');
         await getFreshCoordsForSubmit();
     }
 
-    if (!coords && !isWfh) {
+    if (!coords && !isWfh && !isRemoteSignout) {
         requestLocation();
         updateSignInButtonsState();
         showToast('Could not get your current location. Please try again.', 'error');
@@ -1040,7 +1097,7 @@ async function submit(action) {
     const submitLon = coords ? coords.lon : 0;
 
     if (!navigator.onLine) {
-        if (!isWfh && (!coords || !coords.lat || !coords.lon)) {
+        if (!isWfh && !isRemoteSignout && (!coords || !coords.lat || !coords.lon)) {
             showToast('Location required. Cannot sign in without GPS.', 'error');
             updateSignInButtonsState();
             return;
@@ -1095,7 +1152,8 @@ async function submit(action) {
             action,
             lat: submitLat,
             lon: submitLon,
-            deviceId
+            deviceId,
+            isRemoteSignOut: Boolean(isRemoteSignout)
         });
         await handleAttendanceResponse(data);
     } catch (error) {
@@ -1383,6 +1441,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initRefreshButton();
     initLiveClock();
     initStaffIdentityView();
+    getTenantAppConfig();
     if (window.lucide && typeof window.lucide.createIcons === 'function') {
         window.lucide.createIcons();
     }
