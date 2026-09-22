@@ -78,7 +78,7 @@ const scriptJs = fs.readFileSync(path.join(ROOT_DIR, 'script.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(ROOT_DIR, 'index.html'), 'utf8');
 
 assert(indexHtml.includes('device-locked-pill'), 'index.html missing device-locked-pill');
-assert(indexHtml.includes('Bound'), 'index.html missing Bound badge');
+assert(indexHtml.includes('Linked'), 'index.html missing Linked badge');
 assert(scriptJs.includes('Device unlinking is restricted'), 'script.js must restrict client-side self unlinking');
 assert(scriptJs.includes('res.is_linked === false'), 'script.js loadStaffDropdown must detect remote admin reset');
 assert(scriptJs.includes('Your device binding was reset by the administrator'), 'script.js missing unbind notification');

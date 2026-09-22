@@ -1134,7 +1134,7 @@ function exportStaffRosterCSV() {
         'Work Policy': s.schedule_policy || 'weekly_hybrid',
         'Team Lead': s.is_team_lead ? 'Yes' : 'No',
         'Include In Reports': s.include_in_reports !== false ? 'Yes' : 'No',
-        'Device Status': (s.device_id || s.deviceId) ? 'Bound / Linked' : 'Unlinked',
+        'Device Status': (s.device_id || s.deviceId) ? 'Linked' : 'Unlinked',
         'Device ID': s.device_id || s.deviceId || 'None'
     }));
     const tenantSlug = currentTenantConfig ? currentTenantConfig.slug : 'workspace';
