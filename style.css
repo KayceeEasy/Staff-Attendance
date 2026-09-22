@@ -1690,14 +1690,18 @@ button:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; transfor
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--surface-2);
-    overflow: hidden;
+    overflow-x: auto;
     margin-bottom: 14px;
 }
-.staff-header-row {
+.staff-header-row,
+.staff-row {
     display: grid;
-    grid-template-columns: 1.2fr 110px 100px 140px;
+    grid-template-columns: minmax(180px, 1.4fr) 135px 110px 116px;
     align-items: center;
-    padding: 10px 14px;
+    padding: 11px 16px;
+    box-sizing: border-box;
+}
+.staff-header-row {
     background: var(--surface-3);
     border-bottom: 1px solid var(--border);
     font-weight: 700;
@@ -1705,21 +1709,35 @@ button:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; transfor
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.03em;
+    user-select: none;
+}
+.staff-actions-header {
+    text-align: right;
+    padding-right: 2px;
 }
 .staff-row {
-    display: grid;
-    grid-template-columns: 1.2fr 110px 100px 120px;
-    align-items: center;
-    padding: 12px 16px;
     border-bottom: 1px solid var(--border);
     background: var(--surface);
     transition: background 0.15s ease;
 }
 .staff-row:last-child { border-bottom: none; }
 .staff-row:hover { background: var(--surface-2); }
-.staff-name-cell { font-weight: 600; font-size: 0.92rem; color: var(--text); }
-.staff-policy-cell { font-size: 0.8rem; }
-.staff-device-cell { font-size: 0.8rem; }
+.staff-name-cell {
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: var(--text);
+    min-width: 0;
+}
+.staff-policy-cell {
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+}
+.staff-device-cell {
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+}
 
 /* ─── PROFESSIONAL MATCHING STAFF TAGS ─── */
 .staff-policy-tag {
@@ -1773,11 +1791,13 @@ button:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; transfor
     align-items: center;
     gap: 6px;
     justify-content: flex-end;
+    flex-wrap: nowrap;
 }
 
 .staff-action-btn {
     width: 32px;
     height: 32px;
+    flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;

@@ -1607,7 +1607,7 @@ function renderStaffList(staff) {
             <div>Staff Member</div>
             <div>Work Policy</div>
             <div>Device Link</div>
-            <div style="text-align: right;">Actions</div>
+            <div class="staff-actions-header">Actions</div>
         </div>
     `;
 
