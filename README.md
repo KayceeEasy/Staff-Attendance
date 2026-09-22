@@ -16,7 +16,7 @@ Whether your team is fully on-site or works a modern hybrid schedule, Staff Atte
 
 ### 📍 True On-Site Verification (GPS Geofencing)
 - Staff can only check in when they are physically within your company's designated office radius.
-- Eliminates "buddy punching" and fraudulent off-site check-ins.
+- Eliminates proxy check-ins (staff signing in for coworkers) and fraudulent off-site check-ins.
 
 ### 🔒 Device-Locked Accounts (Zero Proxy Sign-Ins)
 - Each employee account is bound to that staff member's specific phone.
