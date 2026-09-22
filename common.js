@@ -1703,16 +1703,23 @@ function getTodayKey() {
 
 let toastTimer = null;
 
-function showToast(message, type = 'default', durationMs = 3200) {
+function showToast(message, type = 'default', durationMs = 3400) {
     let toastEl = document.getElementById('app-toast');
     if (!toastEl) {
         toastEl = document.createElement('div');
         toastEl.id = 'app-toast';
-        toastEl.className = 'toast';
         document.body.appendChild(toastEl);
     }
-    toastEl.textContent = message;
-    toastEl.className = `toast visible${type === 'error' ? ' toast-error' : type === 'success' ? ' toast-success' : ''}`;
+    let iconSvg = '';
+    if (type === 'success') {
+        iconSvg = '<svg class="toast-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>';
+    } else if (type === 'error') {
+        iconSvg = '<svg class="toast-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
+    } else {
+        iconSvg = '<svg class="toast-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
+    }
+    toastEl.innerHTML = `${iconSvg}<span style="flex:1;">${escapeHtml(message)}</span>`;
+    toastEl.className = `toast visible${type === 'error' ? ' toast-error' : type === 'success' ? ' toast-success' : ' toast-info'}`;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => {
         toastEl.classList.remove('visible');

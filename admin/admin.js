@@ -2676,6 +2676,9 @@ function renderAdminPanel() {
                 <a class="admin-btn secondary small" href="../hybrid/?key=admin" target="_blank" rel="noopener" style="text-decoration:none;" data-tooltip="Open full-screen interactive hybrid schedule matrix">
                     <i data-lucide="calendar" size="13"></i> Hybrid Scheduler
                 </a>
+                <button class="admin-btn secondary small" type="button" onclick="openTenantTourModal(0)" data-tooltip="Launch step-by-step onboarding walkthrough">
+                    <i data-lucide="help-circle" size="13"></i> Quick Guide
+                </button>
             </div>
         </div>
         
