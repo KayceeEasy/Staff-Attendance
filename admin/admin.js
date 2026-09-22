@@ -3911,20 +3911,39 @@ async function handleMasqueradeLogin(tokenStr) {
         }
 
         // Validate HMAC/Hash against platform master key
-        const defaultSecret = 'LifecardMaster2026!';
         let valid = false;
-        const expectedDefault = await sha256Hex(`${slug}:${ts}:${defaultSecret}`);
-        if (hash === expectedDefault) {
-            valid = true;
-        } else {
-            try {
-                if (supabaseClient) {
-                    const { data } = await supabaseClient.from('app_config').select('value').eq('key', 'SUPER_ADMIN_MASTER_KEY_HASH').single();
-                    if (data && data.value) {
-                        if (hash === expectedDefault) valid = true;
-                    }
+        try {
+            let activeMasterHash = null;
+            if (supabaseClient) {
+                const { data } = await supabaseClient.from('app_config').select('value').eq('key', 'SUPER_ADMIN_MASTER_KEY_HASH').single();
+                if (data && data.value) {
+                    activeMasterHash = String(data.value).trim();
                 }
-            } catch(e) {}
+            }
+
+            if (activeMasterHash) {
+                // If a stored hash is configured in app_config, token MUST match that active hash
+                const expectedHash = await sha256Hex(`${slug}:${ts}:${activeMasterHash}`);
+                if (hash === expectedHash) {
+                    valid = true;
+                }
+            } else {
+                // Only if no custom hash exists in database, fall back to default platform key
+                const defaultSecret = 'LifecardMaster2026!';
+                const defaultHash = await sha256Hex(defaultSecret);
+                const expectedDefaultHash = await sha256Hex(`${slug}:${ts}:${defaultHash}`);
+                const expectedDefaultRaw = await sha256Hex(`${slug}:${ts}:${defaultSecret}`);
+                if (hash === expectedDefaultHash || hash === expectedDefaultRaw) {
+                    valid = true;
+                }
+            }
+        } catch(e) {
+            console.error('Masquerade validation error:', e);
+        }
+
+        if (!valid) {
+            showToast('Invalid operator masquerade token signature.', 'error');
+            return;
         }
 
         // Authenticate session as Developer

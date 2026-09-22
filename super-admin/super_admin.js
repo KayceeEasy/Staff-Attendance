@@ -25,9 +25,9 @@ async function verifyMasterKey(inputKey) {
     if (storedHash) {
         try {
             const inputHash = await sha256Hex(clean);
-            return inputHash === storedHash || clean === MASTER_PLATFORM_KEY;
+            return inputHash === storedHash;
         } catch(e) {
-            return clean === MASTER_PLATFORM_KEY;
+            return false;
         }
     }
     return clean === MASTER_PLATFORM_KEY;
@@ -622,7 +622,8 @@ async function handleSuperAdminToggleRetention() {
 async function generateMasqueradeToken(slug) {
     const ts = Date.now();
     const activeSecret = sessionStorage.getItem('active_master_key_secret') || MASTER_PLATFORM_KEY;
-    const hash = await sha256Hex(`${slug}:${ts}:${activeSecret}`);
+    const masterKeyHash = await sha256Hex(activeSecret);
+    const hash = await sha256Hex(`${slug}:${ts}:${masterKeyHash}`);
     const tokenPayload = { slug, ts, hash, op: 'SuperAdmin' };
     return btoa(JSON.stringify(tokenPayload));
 }
