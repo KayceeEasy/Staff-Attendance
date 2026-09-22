@@ -11,13 +11,408 @@ const STORAGE_KEYS = {
     pendingAction: 'attendance_pending_action',
     theme: 'attendance_theme',
     deviceLock: 'attendance_device_lock',
-    analytics: 'attendance_analytics'
+    analytics: 'attendance_analytics',
+    language: 'attendance_language'
 };
 
 // Supabase Initialization
 const supabaseUrl = 'https://akhditjeiwjuzvubnacw.supabase.co';
 const supabaseKey = 'sb_publishable_9BkVRtmi-6UG15Va5xNHbw_R7J_hKhi';
-const supabaseClient = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
+const supabaseClient = (typeof window !== 'undefined' && window.supabase) ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
+
+/* ---------- Multi-Language Internationalization (i18n) ---------- */
+
+const I18N_DICTIONARY = {
+    en: {
+        appName: "Staff Attendance",
+        verifyingGps: "Verifying GPS...",
+        withinPerimeter: "Within office premises",
+        awayFromOffice: "Away from office",
+        metersFromOffice: "meters from office",
+        officeRequired: "📍 Office (Required)",
+        officeMode: "📍 Office",
+        homeMode: "🏠 Home",
+        flexibleMode: "🏠 Flexible Mode",
+        executiveMode: "🏠 Executive Mode",
+        signIn: "SIGN IN",
+        signOut: "SIGN OUT",
+        signOutRemote: "SIGN OUT (REMOTE)",
+        remoteActive: "🏠 Remote Sign-Out Active",
+        selectYourName: "SELECT YOUR NAME",
+        verifying: "VERIFYING...",
+        pleaseWait: "PLEASE WAIT...",
+        readyToSignIn: "Ready to sign in",
+        readyToSignOut: "Ready to sign out",
+        typeSearchName: "Type to search your name...",
+        switchWorkspace: "Switch",
+        connectWorkspaceTitle: "Connect to Your Workspace",
+        connectWorkspaceDesc: "Enter your organization's 6-character Workspace Code or open your company's setup link to pair this phone.",
+        connectWorkspaceBtn: "Connect Workspace",
+        scanQrBtn: "Scan a QR Code",
+        cancelScan: "Cancel Scan",
+        cameraBlockedNotice: "Camera access blocked: Tap the 🔒 icon in your browser address bar to allow camera, or enter your 6-character code below.",
+        tryCameraAgain: "Try Camera Again",
+        switchAccount: "Change",
+        deviceBound: "Bound",
+        biometricsBadge: "Biometrics",
+        adminLogin: "Admin Login",
+        quickGuide: "Quick Guide",
+        toggleTheme: "Toggle Theme",
+        refresh: "Refresh",
+        onLeave: "🌴 On Leave",
+        completed: "COMPLETED",
+        adminEmail: "Admin Email",
+        password: "Password",
+        logIn: "Log in",
+        forgotPassword: "Forgot password?",
+        backToAttendance: "← Back to attendance",
+        signInSuccess: "Sign-in successful!",
+        signOutSuccess: "Sign-out successful!",
+        connectedTo: "Connected to",
+        invalidCode: "Invalid Workspace Code. Please verify with your team administrator."
+    },
+    es: {
+        appName: "Asistencia de Personal",
+        verifyingGps: "Verificando GPS...",
+        withinPerimeter: "Dentro de la oficina",
+        awayFromOffice: "Fuera de la oficina",
+        metersFromOffice: "metros de la oficina",
+        officeRequired: "📍 Oficina (Obligatorio)",
+        officeMode: "📍 Oficina",
+        homeMode: "🏠 En Casa",
+        flexibleMode: "🏠 Modo Flexible",
+        executiveMode: "🏠 Modo Ejecutivo",
+        signIn: "REGISTRAR ENTRADA",
+        signOut: "REGISTRAR SALIDA",
+        signOutRemote: "SALIDA (REMOTO)",
+        remoteActive: "🏠 Salida remota activa",
+        selectYourName: "SELECCIONA TU NOMBRE",
+        verifying: "VERIFICANDO...",
+        pleaseWait: "ESPERE POR FAVOR...",
+        readyToSignIn: "Listo para registrar entrada",
+        readyToSignOut: "Listo para registrar salida",
+        typeSearchName: "Escribe para buscar tu nombre...",
+        switchWorkspace: "Cambiar",
+        connectWorkspaceTitle: "Conéctate a tu Espacio de Trabajo",
+        connectWorkspaceDesc: "Ingresa el código de 6 caracteres de tu empresa o usa el enlace de invitación para vincular este teléfono.",
+        connectWorkspaceBtn: "Conectar Espacio",
+        scanQrBtn: "Escanear Código QR",
+        cancelScan: "Cancelar Escaneo",
+        cameraBlockedNotice: "Acceso a la cámara bloqueado: toca el icono 🔒 en la barra del navegador para permitirla, o escribe tu código de 6 caracteres abajo.",
+        tryCameraAgain: "Reintentar Cámara",
+        switchAccount: "Cambiar",
+        deviceBound: "Vinculado",
+        biometricsBadge: "Biometría",
+        adminLogin: "Acceso Admin",
+        quickGuide: "Guía Rápida",
+        toggleTheme: "Cambiar Tema",
+        refresh: "Actualizar",
+        onLeave: "🌴 De Permiso",
+        completed: "COMPLETADO",
+        adminEmail: "Correo del Administrador",
+        password: "Contraseña",
+        logIn: "Iniciar Sesión",
+        forgotPassword: "¿Olvidaste tu contraseña?",
+        backToAttendance: "← Volver a asistencia",
+        signInSuccess: "¡Entrada registrada con éxito!",
+        signOutSuccess: "¡Salida registrada con éxito!",
+        connectedTo: "Conectado a",
+        invalidCode: "Código de espacio de trabajo inválido. Consulta con tu administrador."
+    },
+    fr: {
+        appName: "Présence du Personnel",
+        verifyingGps: "Vérification GPS...",
+        withinPerimeter: "Dans les locaux du bureau",
+        awayFromOffice: "Hors du bureau",
+        metersFromOffice: "mètres du bureau",
+        officeRequired: "📍 Bureau (Obligatoire)",
+        officeMode: "📍 Bureau",
+        homeMode: "🏠 Télétravail",
+        flexibleMode: "🏠 Mode Flexible",
+        executiveMode: "🏠 Mode Direction",
+        signIn: "ENREGISTRER L'ARRIVÉE",
+        signOut: "ENREGISTRER LE DÉPART",
+        signOutRemote: "DÉPART (À DISTANCE)",
+        remoteActive: "🏠 Départ à distance actif",
+        selectYourName: "SÉLECTIONNEZ VOTRE NOM",
+        verifying: "VÉRIFICATION...",
+        pleaseWait: "VEUILLEZ PATIENTER...",
+        readyToSignIn: "Prêt pour l'arrivée",
+        readyToSignOut: "Prêt pour le départ",
+        typeSearchName: "Tapez pour chercher votre nom...",
+        switchWorkspace: "Changer",
+        connectWorkspaceTitle: "Connectez-vous à votre Espace",
+        connectWorkspaceDesc: "Saisissez le code d'entreprise à 6 caractères ou ouvrez le lien d'invitation pour jumeler ce téléphone.",
+        connectWorkspaceBtn: "Rejoindre l'Espace",
+        scanQrBtn: "Scanner un QR Code",
+        cancelScan: "Annuler le Scan",
+        cameraBlockedNotice: "Accès caméra bloqué : appuyez sur l'icône 🔒 dans votre barre d'adresse pour l'autoriser, ou saisissez votre code ci-dessous.",
+        tryCameraAgain: "Réessayer la Caméra",
+        switchAccount: "Changer",
+        deviceBound: "Jumelé",
+        biometricsBadge: "Biométrie",
+        adminLogin: "Accès Admin",
+        quickGuide: "Guide Rapide",
+        toggleTheme: "Changer de Thème",
+        refresh: "Actualiser",
+        onLeave: "🌴 En Congé",
+        completed: "TERMINÉ",
+        adminEmail: "E-mail Administrateur",
+        password: "Mot de passe",
+        logIn: "Se connecter",
+        forgotPassword: "Mot de passe oublié ?",
+        backToAttendance: "← Retour à la présence",
+        signInSuccess: "Arrivée enregistrée avec succès !",
+        signOutSuccess: "Départ enregistré avec succès !",
+        connectedTo: "Connecté à",
+        invalidCode: "Code d'espace invalide. Veuillez vérifier auprès de votre administrateur."
+    },
+    pt: {
+        appName: "Presença de Funcionários",
+        verifyingGps: "Verificando GPS...",
+        withinPerimeter: "Dentro do escritório",
+        awayFromOffice: "Fora do escritório",
+        metersFromOffice: "metros do escritório",
+        officeRequired: "📍 Escritório (Obrigatório)",
+        officeMode: "📍 Escritório",
+        homeMode: "🏠 Home Office",
+        flexibleMode: "🏠 Modo Flexível",
+        executiveMode: "🏠 Modo Executivo",
+        signIn: "REGISTRAR ENTRADA",
+        signOut: "REGISTRAR SAÍDA",
+        signOutRemote: "SAÍDA (REMOTO)",
+        remoteActive: "🏠 Saída remota ativa",
+        selectYourName: "SELECIONE SEU NOME",
+        verifying: "VERIFICANDO...",
+        pleaseWait: "POR FAVOR, AGUARDE...",
+        readyToSignIn: "Pronto para registrar entrada",
+        readyToSignOut: "Pronto para registrar saída",
+        typeSearchName: "Digite para buscar seu nome...",
+        switchWorkspace: "Trocar",
+        connectWorkspaceTitle: "Conecte-se ao seu Espaço",
+        connectWorkspaceDesc: "Insira o código de 6 caracteres da sua empresa ou use o link de convite para emparelhar este celular.",
+        connectWorkspaceBtn: "Conectar Espaço",
+        scanQrBtn: "Escanear Código QR",
+        cancelScan: "Cancelar Leitura",
+        cameraBlockedNotice: "Acesso à câmera bloqueado: toque no ícone 🔒 na barra de endereço para permitir, ou digite seu código de 6 dígitos abaixo.",
+        tryCameraAgain: "Tentar Câmera Novamente",
+        switchAccount: "Trocar",
+        deviceBound: "Vinculado",
+        biometricsBadge: "Biometria",
+        adminLogin: "Acesso Admin",
+        quickGuide: "Guia Rápido",
+        toggleTheme: "Mudar Tema",
+        refresh: "Atualizar",
+        onLeave: "🌴 De Licença",
+        completed: "CONCLUÍDO",
+        adminEmail: "E-mail do Administrador",
+        password: "Senha",
+        logIn: "Entrar",
+        forgotPassword: "Esqueceu a senha?",
+        backToAttendance: "← Voltar para presença",
+        signInSuccess: "Entrada registrada com sucesso!",
+        signOutSuccess: "Saída registrada com sucesso!",
+        connectedTo: "Conectado a",
+        invalidCode: "Código de espaço inválido. Confirme com o administrador da sua equipe."
+    },
+    ar: {
+        appName: "حضور الموظفين",
+        verifyingGps: "جاري التحقق من الموقع (GPS)...",
+        withinPerimeter: "داخل مقر العمل",
+        awayFromOffice: "خارج مقر العمل",
+        metersFromOffice: "متر من المكتب",
+        officeRequired: "📍 المكتب (مطلوب)",
+        officeMode: "📍 المكتب",
+        homeMode: "🏠 العمل من المنزل",
+        flexibleMode: "🏠 النمط المرن",
+        executiveMode: "🏠 نمط الإدارة",
+        signIn: "تسجيل الدخول",
+        signOut: "تسجيل الخروج",
+        signOutRemote: "تسجيل خروج (عن بُعد)",
+        remoteActive: "🏠 تسجيل الخروج عن بُعد متاح",
+        selectYourName: "اختر اسمك",
+        verifying: "جاري التحقق...",
+        pleaseWait: "يرجى الانتظار...",
+        readyToSignIn: "جاهز لتسجيل الحضور",
+        readyToSignOut: "جاهز لتسجيل الانصراف",
+        typeSearchName: "اكتب للبحث عن اسمك...",
+        switchWorkspace: "تبديل",
+        connectWorkspaceTitle: "الاتصال بمساحة عملك",
+        connectWorkspaceDesc: "أدخل رمز مساحة العمل المكون من 6 خانات أو افتح رابط الدعوة لربط هذا الجهاز.",
+        connectWorkspaceBtn: "اتصال بمساحة العمل",
+        scanQrBtn: "مسح رمز QR",
+        cancelScan: "إلغاء المسح",
+        cameraBlockedNotice: "تم حظر الوصول إلى الكاميرا: انقر على أيقونة 🔒 في شريط المتصفح للسماح بالكاميرا، أو أدخل الرمز أدناه.",
+        tryCameraAgain: "إعادة محاولة الكاميرا",
+        switchAccount: "تغيير",
+        deviceBound: "مقترن",
+        biometricsBadge: "البصمة",
+        adminLogin: "دخول المسؤول",
+        quickGuide: "دليل سريع",
+        toggleTheme: "تبديل السمة",
+        refresh: "تحديث",
+        onLeave: "🌴 في إجازة",
+        completed: "مكتمل",
+        adminEmail: "بريد المسؤول",
+        password: "كلمة المرور",
+        logIn: "تسجيل الدخول",
+        forgotPassword: "نسيت كلمة المرور؟",
+        backToAttendance: "← العودة إلى الحضور",
+        signInSuccess: "تم تسجيل الحضور بنجاح!",
+        signOutSuccess: "تم تسجيل الانصراف بنجاح!",
+        connectedTo: "متصل بـ",
+        invalidCode: "رمز مساحة العمل غير صالح. يرجى مراجعة مسؤول فريقك."
+    }
+};
+
+const LANG_CONFIG = {
+    en: { flag: "🇬🇧", label: "English", code: "EN" },
+    es: { flag: "🇪🇸", label: "Español", code: "ES" },
+    fr: { flag: "🇫🇷", label: "Français", code: "FR" },
+    pt: { flag: "🇵🇹", label: "Português", code: "PT" },
+    ar: { flag: "🇸🇦", label: "العربية", code: "AR" }
+};
+
+function getAppLanguage() {
+    try {
+        if (typeof safeStorage !== 'undefined') {
+            return safeStorage.getItem('app_language') || 'en';
+        }
+        if (typeof localStorage !== 'undefined') {
+            return localStorage.getItem('app_language') || 'en';
+        }
+    } catch (e) {}
+    return 'en';
+}
+
+function setAppLanguage(lang) {
+    const supported = ['en', 'es', 'fr', 'pt', 'ar'];
+    const validLang = supported.includes(lang) ? lang : 'en';
+    try {
+        if (typeof safeStorage !== 'undefined') {
+            safeStorage.setItem('app_language', validLang);
+        } else if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('app_language', validLang);
+        }
+    } catch (e) {}
+
+    if (typeof document !== 'undefined' && document.documentElement) {
+        document.documentElement.lang = validLang;
+        document.documentElement.dir = (validLang === 'ar') ? 'rtl' : 'ltr';
+    }
+
+    applyLanguageTranslations(validLang);
+
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: validLang } }));
+    }
+}
+
+function t(key, defaultFallback = '') {
+    const lang = getAppLanguage();
+    if (I18N_DICTIONARY[lang] && I18N_DICTIONARY[lang][key]) {
+        return I18N_DICTIONARY[lang][key];
+    }
+    if (I18N_DICTIONARY.en && I18N_DICTIONARY.en[key]) {
+        return I18N_DICTIONARY.en[key];
+    }
+    return defaultFallback;
+}
+
+function applyLanguageTranslations(lang) {
+    if (typeof document === 'undefined') return;
+
+    // 1. Text content with data-i18n
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (key) {
+            const val = t(key);
+            if (val) el.textContent = val;
+        }
+    });
+
+    // 2. Placeholders with data-i18n-placeholder
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+        const key = el.getAttribute('data-i18n-placeholder');
+        if (key) {
+            const val = t(key);
+            if (val) el.placeholder = val;
+        }
+    });
+
+    // 3. Update topbar language indicator
+    const meta = LANG_CONFIG[lang] || LANG_CONFIG.en;
+    document.querySelectorAll('.current-lang-flag, #current-lang-flag').forEach(el => {
+        el.textContent = meta.flag;
+    });
+    document.querySelectorAll('.current-lang-code, #current-lang-code').forEach(el => {
+        el.textContent = meta.code;
+    });
+
+    // 4. Update dropdown menu active states
+    document.querySelectorAll('.lang-option-btn').forEach(btn => {
+        const btnLang = btn.getAttribute('data-lang');
+        if (btnLang === lang) btn.classList.add('active');
+        else btn.classList.remove('active');
+    });
+}
+
+function initLanguageSelector() {
+    if (typeof document === 'undefined') return;
+
+    document.querySelectorAll('.lang-selector-wrap').forEach(wrap => {
+        const langBtn = wrap.querySelector('.lang-btn') || wrap.querySelector('#lang-select-btn');
+        const menu = wrap.querySelector('.lang-dropdown-menu') || wrap.querySelector('#lang-dropdown-menu');
+        if (langBtn && menu && !langBtn.dataset.bound) {
+            langBtn.dataset.bound = 'true';
+            langBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // Close any other open dropdown menus first
+                document.querySelectorAll('.lang-dropdown-menu').forEach(m => {
+                    if (m !== menu) m.style.display = 'none';
+                });
+                menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+            });
+
+            menu.querySelectorAll('.lang-option-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const lang = btn.getAttribute('data-lang');
+                    if (lang) setAppLanguage(lang);
+                    menu.style.display = 'none';
+                });
+            });
+        }
+    });
+
+    if (!document.__langClickBound) {
+        document.__langClickBound = true;
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.lang-selector-wrap')) {
+                document.querySelectorAll('.lang-dropdown-menu').forEach(m => {
+                    m.style.display = 'none';
+                });
+            }
+        });
+    }
+
+    // Apply currently saved language immediately
+    const curLang = getAppLanguage();
+    if (document.documentElement) {
+        document.documentElement.lang = curLang;
+        document.documentElement.dir = (curLang === 'ar') ? 'rtl' : 'ltr';
+    }
+    applyLanguageTranslations(curLang);
+}
+
+// Automatically initialize language on DOMContentLoaded
+if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initLanguageSelector);
+    } else {
+        initLanguageSelector();
+    }
+}
 
 
 /* ---------- HTML Escaping & Date Utilities ---------- */

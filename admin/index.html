@@ -24,6 +24,19 @@
             </div>
         </div>
         <div class="topbar-actions" style="display:flex; align-items:center; gap:8px;">
+            <div class="lang-selector-wrap">
+                <button class="lang-btn" type="button" aria-label="Select Language" data-tooltip="Language / Idioma / Langue">
+                    <span class="current-lang-flag">🇬🇧</span>
+                    <span class="current-lang-code">EN</span>
+                </button>
+                <div class="lang-dropdown-menu" style="display:none;">
+                    <button type="button" class="lang-option-btn" data-lang="en">🇬🇧 English</button>
+                    <button type="button" class="lang-option-btn" data-lang="es">🇪🇸 Español</button>
+                    <button type="button" class="lang-option-btn" data-lang="fr">🇫🇷 Français</button>
+                    <button type="button" class="lang-option-btn" data-lang="pt">🇵🇹 Português</button>
+                    <button type="button" class="lang-option-btn" data-lang="ar">🇸🇦 العربية</button>
+                </div>
+            </div>
             <button id="guided-tour-btn" class="topbar-icon-btn" type="button" aria-label="Quick Guide" title="Quick Guide" data-tooltip="Quick Guide: Interactive walkthrough" data-tooltip-pos="bottom">
                 <i data-lucide="help-circle"></i>
             </button>
@@ -35,24 +48,24 @@
     <div class="admin-hero">
         <div class="admin-badge"><i data-lucide="shield-check" size="32"></i></div>
         <div>
-            <h1>Admin Access</h1>
+            <h1 data-i18n="adminLogin">Admin Access</h1>
             <p class="admin-intro">Use admin credentials to manage device ownership, staff access, and local sync state.</p>
         </div>
     </div>
     <form id="admin-login-form" class="admin-form">
-        <input id="admin-email" type="email" placeholder="Admin Email" autocomplete="username" required />
+        <input id="admin-email" type="email" placeholder="Admin Email" data-i18n-placeholder="adminEmail" autocomplete="username" required />
         <div class="password-field-wrap">
-            <input id="admin-password" type="password" placeholder="Password" autocomplete="current-password" required />
+            <input id="admin-password" type="password" placeholder="Password" data-i18n-placeholder="password" autocomplete="current-password" required />
             <button type="button" class="password-toggle" data-toggle-target="admin-password" aria-label="Show password"><i data-lucide="eye" size="16"></i></button>
         </div>
         <div class="admin-actions">
-            <button id="admin-login-btn" class="btn-in" type="submit">Log in</button>
+            <button id="admin-login-btn" class="btn-in" type="submit" data-i18n="logIn">Log in</button>
         </div>
-        <a id="forgot-password-link" class="admin-link secondary forgot-link" href="#">Forgot password?</a>
+        <a id="forgot-password-link" class="admin-link secondary forgot-link" href="#" data-i18n="forgotPassword">Forgot password?</a>
     </form>
     <div id="admin-message" class="admin-message" role="status" aria-live="polite"></div>
     <div id="admin-panel-host"></div>
-    <a class="admin-btn secondary" href="../" target="_self">← Back to attendance</a>
+    <a class="admin-btn secondary" href="../" target="_self" data-i18n="backToAttendance">← Back to attendance</a>
 </div>
 
 <!-- Modal: Share Invite Link & QR Code -->

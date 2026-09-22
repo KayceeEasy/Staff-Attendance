@@ -518,7 +518,7 @@ function updateActionHeroState() {
     // Case 1: No staff selected
     if (!name) {
         setClasses('state-in');
-        if (inBtnText) inBtnText.textContent = 'SIGN IN';
+        if (inBtnText) inBtnText.textContent = t('signIn', 'SIGN IN');
         inBtn.disabled = true;
         inBtn.dataset.heroMode = 'IN';
         inBtn.setAttribute('aria-label', 'Sign in (select name to start)');
@@ -530,7 +530,7 @@ function updateActionHeroState() {
     // Case 2: On Leave today
     if (isLeave) {
         setClasses('state-leave');
-        if (inBtnText) inBtnText.textContent = 'ON LEAVE';
+        if (inBtnText) inBtnText.textContent = t('onLeave', 'ON LEAVE');
         inBtn.disabled = true;
         inBtn.dataset.heroMode = 'LEAVE';
         inBtn.setAttribute('aria-label', 'On Leave today');
@@ -566,7 +566,7 @@ function updateActionHeroState() {
     // Case 3: Completed attendance for today
     if (currentHeroAction === 'DONE') {
         setClasses('state-done');
-        if (inBtnText) inBtnText.textContent = 'COMPLETED';
+        if (inBtnText) inBtnText.textContent = t('completed', 'COMPLETED');
         inBtn.disabled = true;
         inBtn.dataset.heroMode = 'DONE';
         inBtn.setAttribute('aria-label', 'Attendance completed for today');
@@ -581,7 +581,7 @@ function updateActionHeroState() {
         const isRemoteSignoutEligible = isPostClosingRemoteSignoutActive(name);
         const canSignOut = Boolean(coords) || isWfh || isRemoteSignoutEligible;
         if (inBtnText) {
-            inBtnText.textContent = (isRemoteSignoutEligible && !coords && !isWfh) ? 'SIGN OUT (REMOTE)' : 'SIGN OUT';
+            inBtnText.textContent = (isRemoteSignoutEligible && !coords && !isWfh) ? t('signOutRemote', 'SIGN OUT (REMOTE)') : t('signOut', 'SIGN OUT');
         }
         inBtn.disabled = !canSignOut;
         inBtn.dataset.heroMode = 'OUT';
@@ -591,7 +591,7 @@ function updateActionHeroState() {
 
         const locStatus = document.getElementById('location-status');
         if (locStatus && isRemoteSignoutEligible && !coords && !isWfh) {
-            locStatus.innerText = '🏠 Remote Sign-Out Active';
+            locStatus.innerText = t('remoteActive', '🏠 Remote Sign-Out Active');
             locStatus.className = 'status ready';
         }
         return;
@@ -599,7 +599,7 @@ function updateActionHeroState() {
 
     // Case 5: Not signed in yet today
     setClasses('state-in');
-    if (inBtnText) inBtnText.textContent = 'SIGN IN';
+    if (inBtnText) inBtnText.textContent = t('signIn', 'SIGN IN');
     inBtn.disabled = !canUse;
     inBtn.dataset.heroMode = 'IN';
     inBtn.setAttribute('aria-label', 'Sign in');
@@ -1307,13 +1307,13 @@ function requestLocation() {
             const distLabel = document.getElementById('distance-label');
             if (isCurrentStaffWfhToday()) {
                 if (locStatus) {
-                    locStatus.innerText = '🏠 Virtual Mode';
+                    locStatus.innerText = t('homeMode', '🏠 Virtual Mode');
                     locStatus.className = 'status ready';
                 }
                 if (distLabel) distLabel.textContent = '';
             } else {
                 if (locStatus) {
-                    locStatus.innerText = '📍 Office';
+                    locStatus.innerText = t('officeMode', '📍 Office');
                     locStatus.className = 'status ready';
                 }
             }
@@ -1332,13 +1332,13 @@ function requestLocation() {
             const distLabel = document.getElementById('distance-label');
             if (isCurrentStaffWfhToday()) {
                 if (locStatus) {
-                    locStatus.innerText = '🏠 Virtual Mode';
+                    locStatus.innerText = t('homeMode', '🏠 Virtual Mode');
                     locStatus.className = 'status ready';
                 }
                 if (distLabel) distLabel.textContent = '';
             } else {
                 if (locStatus) {
-                    locStatus.innerText = 'GPS Required';
+                    locStatus.innerText = t('officeRequired', '📍 Office (Required)');
                     locStatus.className = 'status waiting';
                 }
             }
@@ -2352,7 +2352,7 @@ async function updateScheduleBanner(name) {
     if (!name) {
         currentStaffTodayMode = 'office';
         if (locStatus) {
-            locStatus.innerText = coords ? '📍 Office' : 'Verifying GPS...';
+            locStatus.innerText = coords ? t('officeMode', '📍 Office') : t('verifyingGps', 'Verifying GPS...');
             locStatus.className = coords ? 'status ready' : 'status waiting';
         }
         updateActionHeroState();
@@ -2367,7 +2367,7 @@ async function updateScheduleBanner(name) {
         if (policy === 'field_flexible') {
             currentStaffTodayMode = 'home';
             if (locStatus) {
-                locStatus.innerText = '🏠 Flexible Mode';
+                locStatus.innerText = t('flexibleMode', '🏠 Flexible Mode');
                 locStatus.className = 'status ready';
             }
             if (distLabel) distLabel.textContent = '';
@@ -2378,7 +2378,7 @@ async function updateScheduleBanner(name) {
         if (policy === 'executive') {
             currentStaffTodayMode = 'home';
             if (locStatus) {
-                locStatus.innerText = '🏠 Executive Mode';
+                locStatus.innerText = t('executiveMode', '🏠 Executive Mode');
                 locStatus.className = 'status ready';
             }
             if (distLabel) distLabel.textContent = '';
@@ -2389,7 +2389,7 @@ async function updateScheduleBanner(name) {
         if (policy === 'office_only') {
             currentStaffTodayMode = 'office';
             if (locStatus) {
-                locStatus.innerText = coords ? '📍 Office (Required)' : 'Verifying GPS...';
+                locStatus.innerText = coords ? t('officeRequired', '📍 Office (Required)') : t('verifyingGps', 'Verifying GPS...');
                 locStatus.className = coords ? 'status ready' : 'status waiting';
             }
             updateActionHeroState();
@@ -2444,19 +2444,19 @@ async function updateScheduleBanner(name) {
 
         if (normalizedLoc === 'home') {
             if (locStatus) {
-                locStatus.innerText = '🏠 Virtual Mode';
+                locStatus.innerText = t('homeMode', '🏠 Virtual Mode');
                 locStatus.className = 'status ready';
             }
             if (distLabel) distLabel.textContent = '';
         } else if (normalizedLoc === 'leave') {
             if (locStatus) {
-                locStatus.innerText = '🌴 On Leave';
+                locStatus.innerText = t('onLeave', '🌴 On Leave');
                 locStatus.className = 'status synced';
             }
             if (distLabel) distLabel.textContent = '';
         } else {
             if (locStatus) {
-                locStatus.innerText = coords ? '📍 Office' : 'Verifying GPS...';
+                locStatus.innerText = coords ? t('officeMode', '📍 Office') : t('verifyingGps', 'Verifying GPS...');
                 locStatus.className = coords ? 'status ready' : 'status waiting';
             }
         }
@@ -2465,10 +2465,25 @@ async function updateScheduleBanner(name) {
         console.warn('updateScheduleBanner error:', e.message);
         currentStaffTodayMode = 'office';
         if (locStatus) {
-            locStatus.innerText = coords ? '📍 Office' : 'Verifying GPS...';
+            locStatus.innerText = coords ? t('officeMode', '📍 Office') : t('verifyingGps', 'Verifying GPS...');
             locStatus.className = coords ? 'status ready' : 'status waiting';
         }
         updateActionHeroState();
     }
 }
+
+// React dynamically to real-time language changes across the app
+window.addEventListener('languageChanged', () => {
+    updateActionHeroState();
+    const nameSelect = document.getElementById('staff-name');
+    if (nameSelect && nameSelect.value) {
+        updateScheduleBanner(nameSelect.value);
+    } else {
+        const locStatus = document.getElementById('loc-status');
+        if (locStatus && !coords) {
+            locStatus.innerText = t('verifyingGps', 'Verifying GPS...');
+        }
+    }
+});
+
 

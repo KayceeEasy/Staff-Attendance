@@ -2284,4 +2284,86 @@ button:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; transfor
     font-weight: 600;
 }
 
+/* ─── LANGUAGE SELECTOR DROPDOWN & RTL ─── */
+.lang-selector-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+.lang-btn {
+    border-radius: 8px;
+    height: 36px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 0 10px;
+    gap: 6px;
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.15s ease;
+}
+.lang-btn:hover {
+    background: var(--surface-3);
+    border-color: var(--border-strong);
+}
+.lang-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 5px;
+    min-width: 145px;
+    z-index: 1000;
+    backdrop-filter: blur(16px);
+    animation: fadeIn 0.15s ease;
+}
+:root[data-theme="dark"] .lang-dropdown-menu {
+    background: rgba(15, 23, 42, 0.96);
+}
+.lang-option-btn {
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 0.84rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.15s ease;
+}
+.lang-option-btn:hover {
+    background: var(--surface-2);
+}
+.lang-option-btn.active {
+    background: rgba(37, 99, 235, 0.12);
+    color: var(--primary);
+    font-weight: 700;
+}
+:root[dir="rtl"] {
+    direction: rtl;
+    text-align: right;
+}
+:root[dir="rtl"] .topbar-brand {
+    direction: rtl;
+}
+:root[dir="rtl"] .lang-dropdown-menu {
+    right: auto;
+    left: 0;
+}
+:root[dir="rtl"] .lang-option-btn {
+    text-align: right;
+}
+
+
 

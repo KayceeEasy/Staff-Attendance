@@ -53,13 +53,26 @@
                 </div>
                 <div>
                     <div style="display:flex; align-items:center; gap:6px;">
-                        <span class="eyebrow" id="tenant-brand-name">Staff Attendance</span>
-                        <button id="switch-workspace-btn" type="button" title="Switch Company Workspace" data-tooltip="Pair with a different company workspace" style="background:transparent; border:none; color:var(--text-muted); font-size:0.72rem; cursor:pointer; text-decoration:underline;">Switch</button>
+                        <span class="eyebrow" id="tenant-brand-name" data-i18n="appName">Staff Attendance</span>
+                        <button id="switch-workspace-btn" type="button" title="Switch Company Workspace" data-tooltip="Pair with a different company workspace" data-i18n="switchWorkspace" style="background:transparent; border:none; color:var(--text-muted); font-size:0.72rem; cursor:pointer; text-decoration:underline;">Switch</button>
                     </div>
                     <div id="live-clock" class="live-clock" aria-live="polite">--:-- --</div>
                 </div>
             </div>
             <div class="topbar-actions">
+                <div class="lang-selector-wrap">
+                    <button id="lang-select-btn" class="lang-btn" type="button" aria-label="Select Language" data-tooltip="Language / Idioma / Langue">
+                        <span class="current-lang-flag" id="current-lang-flag">🇬🇧</span>
+                        <span class="current-lang-code" id="current-lang-code">EN</span>
+                    </button>
+                    <div id="lang-dropdown-menu" class="lang-dropdown-menu" style="display:none;">
+                        <button type="button" class="lang-option-btn" data-lang="en">🇬🇧 English</button>
+                        <button type="button" class="lang-option-btn" data-lang="es">🇪🇸 Español</button>
+                        <button type="button" class="lang-option-btn" data-lang="fr">🇫🇷 Français</button>
+                        <button type="button" class="lang-option-btn" data-lang="pt">🇵🇹 Português</button>
+                        <button type="button" class="lang-option-btn" data-lang="ar">🇸🇦 العربية</button>
+                    </div>
+                </div>
                 <button id="refresh-btn" class="topbar-icon-btn" type="button" aria-label="Refresh app" title="Refresh" data-tooltip="Refresh GPS & connection" data-tooltip-pos="bottom">
                     <i data-lucide="rotate-cw" size="16"></i>
                 </button>
@@ -69,7 +82,7 @@
             </div>
         </div>
         <div class="loc-status-bar">
-            <div id="loc-status" class="status waiting" aria-live="polite" data-tooltip="Verifies you are within registered workplace perimeter" data-tooltip-pos="bottom">Verifying GPS...</div>
+            <div id="loc-status" class="status waiting" aria-live="polite" data-tooltip="Verifies you are within registered workplace perimeter" data-tooltip-pos="bottom" data-i18n="verifyingGps">Verifying GPS...</div>
             <div id="distance-label" class="distance-label" aria-live="polite"></div>
         </div>
 
@@ -86,8 +99,8 @@
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:6px;">
-                    <span class="device-locked-pill" title="Device linked to this employee." data-tooltip="Device securely bound to your employee profile"><i data-lucide="lock" size="12"></i> Bound</span>
-                    <button type="button" id="switch-identity-btn" class="btn-switch-identity" style="display:inline-flex; align-items:center; gap:4px; font-size:0.72rem; padding:3px 8px; border-radius:4px; border:1px solid var(--border); background:var(--surface); color:var(--text-muted); cursor:pointer;" title="Switch Staff Account" data-tooltip="Unlink device or select a different name">Change</button>
+                    <span class="device-locked-pill" title="Device linked to this employee." data-tooltip="Device securely bound to your employee profile"><i data-lucide="lock" size="12"></i> <span data-i18n="deviceBound">Bound</span></span>
+                    <button type="button" id="switch-identity-btn" class="btn-switch-identity" style="display:inline-flex; align-items:center; gap:4px; font-size:0.72rem; padding:3px 8px; border-radius:4px; border:1px solid var(--border); background:var(--surface); color:var(--text-muted); cursor:pointer;" title="Switch Staff Account" data-tooltip="Unlink device or select a different name" data-i18n="switchAccount">Change</button>
                 </div>
             </div>
 
@@ -101,6 +114,7 @@
                             id="staff-search-input" 
                             class="staff-search-input" 
                             placeholder="Type to search your name..." 
+                            data-i18n-placeholder="typeSearchName"
                             autocomplete="off" 
                             aria-label="Search or select your name"
                             aria-autocomplete="list"
@@ -128,7 +142,7 @@
             <button id="in-btn" class="btn-in-hero state-in" disabled aria-label="Sign in">
                 <div class="hero-btn-content">
                     <i id="in-btn-icon" data-lucide="log-in" class="hero-btn-icon" size="36" aria-hidden="true"></i>
-                    <span id="in-btn-text" class="hero-btn-text">SIGN IN</span>
+                    <span id="in-btn-text" class="hero-btn-text" data-i18n="signIn">SIGN IN</span>
                 </div>
             </button>
             <button id="out-btn" class="sr-only" aria-hidden="true" tabindex="-1" style="display: none;">Sign Out</button>
@@ -147,7 +161,7 @@
             </div>
             <ul id="log-list" aria-label="Recent attendance records"></ul>
         </div>
-        <a id="admin-access-btn" class="admin-btn admin-link" href="./admin/" target="_self" aria-label="Admin access" data-tooltip="Sign in to the tenant administration console">Admin access</a>
+        <a id="admin-access-btn" class="admin-btn admin-link" href="./admin/" target="_self" aria-label="Admin access" data-tooltip="Sign in to the tenant administration console" data-i18n="adminLogin">Admin access</a>
         <button id="install-btn" class="install-btn" aria-label="Install app as PWA">
             <i data-lucide="download" size="15"></i>
             <span>Install App</span>
@@ -642,8 +656,8 @@
     <div id="workspace-connect-overlay" class="faq-overlay" role="dialog" aria-modal="true" style="display:none; z-index: 9999; backdrop-filter: blur(8px); background: rgba(0,0,0,0.75);">
         <div class="faq-modal-content" style="max-width: 440px; text-align: center; padding: 28px 24px;">
             <div style="margin-bottom: 12px; color: var(--primary); display: flex; justify-content: center;"><i data-lucide="building" size="42"></i></div>
-            <h2 style="font-size: 1.3rem; font-weight: 700; margin-bottom: 6px; color: var(--text);">Connect to Your Workspace</h2>
-            <p style="font-size: 0.86rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">
+            <h2 style="font-size: 1.3rem; font-weight: 700; margin-bottom: 6px; color: var(--text);" data-i18n="connectWorkspaceTitle">Connect to Your Workspace</h2>
+            <p style="font-size: 0.86rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;" data-i18n="connectWorkspaceDesc">
                 Enter your organization's 6-character Workspace Code or open your company's setup link to pair this phone.
             </p>
             <div style="margin-bottom: 14px;">
@@ -660,6 +674,7 @@
             <button 
                 type="button" 
                 id="connect-workspace-btn" 
+                data-i18n="connectWorkspaceBtn"
                 style="width: 100%; padding: 12px; background: var(--primary); color: #ffffff; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;"
             >
                 <i data-lucide="arrow-right" size="16"></i> Connect Workspace
@@ -675,6 +690,7 @@
                 type="button" 
                 id="scan-workspace-qr-btn" 
                 class="admin-btn secondary" 
+                data-i18n="scanQrBtn"
                 style="width: 100%; padding: 11px; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; font-size: 0.9rem;"
             >
                 <i data-lucide="qr-code" size="18"></i> Scan a QR Code
@@ -689,6 +705,7 @@
                 <button 
                     type="button" 
                     id="close-qr-scanner-btn" 
+                    data-i18n="cancelScan"
                     style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 20px; padding: 4px 14px; font-size: 0.76rem; cursor: pointer; backdrop-filter: blur(4px);"
                 >
                     Cancel Scan
@@ -698,7 +715,7 @@
             <!-- Permission Denied / Retry Helper -->
             <div id="workspace-qr-guidance" style="display:none; margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; text-align: left;">
                 <div id="workspace-qr-guidance-text"></div>
-                <button type="button" id="retry-qr-camera-btn" style="background:none; border:none; color:var(--primary); font-weight:600; font-size:0.8rem; cursor:pointer; padding:0; margin-top:6px; text-decoration:underline;">
+                <button type="button" id="retry-qr-camera-btn" data-i18n="tryCameraAgain" style="background:none; border:none; color:var(--primary); font-weight:600; font-size:0.8rem; cursor:pointer; padding:0; margin-top:6px; text-decoration:underline;">
                     Try Camera Again
                 </button>
             </div>
