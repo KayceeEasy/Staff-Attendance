@@ -1,7 +1,8 @@
 mobile_app/.expo/
 mobile_app/node_modules/
 node_modules/
+dist/
+.wrangler/
 
 .env
 .env.local
-
