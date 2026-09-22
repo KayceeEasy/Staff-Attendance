@@ -1938,15 +1938,43 @@ function openWorkspaceConnectModal() {
 function closeWorkspaceConnectModal() {
     const overlay = document.getElementById('workspace-connect-overlay');
     if (overlay) overlay.style.display = 'none';
+    if (typeof stopWorkspaceQrScanner === 'function') stopWorkspaceQrScanner();
+}
+
+let activeWorkspaceQrStream = null;
+let activeWorkspaceQrInterval = null;
+
+function stopWorkspaceQrScanner() {
+    if (activeWorkspaceQrInterval) {
+        clearInterval(activeWorkspaceQrInterval);
+        activeWorkspaceQrInterval = null;
+    }
+    if (activeWorkspaceQrStream) {
+        activeWorkspaceQrStream.getTracks().forEach(track => {
+            try { track.stop(); } catch (e) {}
+        });
+        activeWorkspaceQrStream = null;
+    }
+    const scannerBox = document.getElementById('workspace-qr-scanner-box');
+    if (scannerBox) scannerBox.classList.remove('active');
+    const scanBtn = document.getElementById('scan-workspace-qr-btn');
+    if (scanBtn) scanBtn.style.display = 'flex';
 }
 
 function initWorkspaceConnect() {
     const connectBtn = document.getElementById('connect-workspace-btn');
     const input = document.getElementById('workspace-code-input');
     const err = document.getElementById('workspace-connect-error');
+    const scanBtn = document.getElementById('scan-workspace-qr-btn');
+    const scannerBox = document.getElementById('workspace-qr-scanner-box');
+    const videoEl = document.getElementById('workspace-qr-video');
+    const closeScanBtn = document.getElementById('close-qr-scanner-btn');
+    const guidanceBox = document.getElementById('workspace-qr-guidance');
+    const guidanceText = document.getElementById('workspace-qr-guidance-text');
+    const retryCamBtn = document.getElementById('retry-qr-camera-btn');
 
-    async function handleConnect() {
-        const raw = input ? input.value.trim() : '';
+    async function handleConnect(overrideCode) {
+        const raw = (overrideCode && typeof overrideCode === 'string') ? overrideCode.trim() : (input ? input.value.trim() : '');
         if (!raw) {
             if (err) {
                 err.textContent = 'Please enter your 6-character Workspace Code.';
@@ -1977,6 +2005,7 @@ function initWorkspaceConnect() {
             }
 
             safeStorage.setItem('active_tenant_slug', matched.slug);
+            stopWorkspaceQrScanner();
             closeWorkspaceConnectModal();
             showToast(`Connected to ${matched.name}!`, 'success');
 
@@ -1995,6 +2024,108 @@ function initWorkspaceConnect() {
                 connectBtn.textContent = 'Connect Workspace';
             }
         }
+    }
+
+    function extractCodeFromQrData(dataString) {
+        if (!dataString) return '';
+        try {
+            if (dataString.includes('http://') || dataString.includes('https://')) {
+                const url = new URL(dataString);
+                const joinParam = url.searchParams.get('join') || url.searchParams.get('code') || url.searchParams.get('tenant') || url.searchParams.get('company');
+                if (joinParam) return joinParam.trim();
+            }
+        } catch (e) {}
+        return dataString.trim();
+    }
+
+    async function startWorkspaceQrScanner() {
+        if (err) err.style.display = 'none';
+        if (guidanceBox) guidanceBox.style.display = 'none';
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            if (guidanceBox && guidanceText) {
+                guidanceText.innerHTML = '<strong>Camera not supported:</strong> Your browser does not support live camera scanning. Please type your 6-character code below.';
+                guidanceBox.style.display = 'block';
+            }
+            if (input) input.focus();
+            return;
+        }
+
+        try {
+            stopWorkspaceQrScanner();
+            if (scanBtn) scanBtn.style.display = 'none';
+            if (scannerBox) scannerBox.classList.add('active');
+
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment' }
+            });
+            activeWorkspaceQrStream = stream;
+
+            if (videoEl) {
+                videoEl.srcObject = stream;
+                await videoEl.play();
+            }
+
+            // QR detection loop using BarcodeDetector API if available
+            if ('BarcodeDetector' in window) {
+                const detector = new BarcodeDetector({ formats: ['qr_code'] });
+                activeWorkspaceQrInterval = setInterval(async () => {
+                    if (!videoEl || videoEl.readyState < 2) return;
+                    try {
+                        const barcodes = await detector.detect(videoEl);
+                        if (barcodes && barcodes.length > 0) {
+                            const raw = barcodes[0].rawValue;
+                            const extracted = extractCodeFromQrData(raw);
+                            if (extracted) {
+                                stopWorkspaceQrScanner();
+                                if (input) input.value = extracted.toUpperCase();
+                                showToast('QR code scanned successfully!', 'success');
+                                handleConnect(extracted);
+                            }
+                        }
+                    } catch (detErr) {}
+                }, 300);
+            } else {
+                // If BarcodeDetector is not natively present, keep stream visible and guide user
+                showToast('Camera active. Align QR code within frame.', 'info');
+            }
+        } catch (camErr) {
+            console.warn('Camera scan access error:', camErr);
+            stopWorkspaceQrScanner();
+
+            const isDenied = (camErr.name === 'NotAllowedError' || camErr.name === 'PermissionDeniedError');
+            const isNotFound = (camErr.name === 'NotFoundError' || camErr.name === 'DevicesNotFoundError');
+
+            if (guidanceBox && guidanceText) {
+                if (isDenied) {
+                    guidanceText.innerHTML = '<strong>Camera access blocked:</strong> Tap the <strong>🔒 icon</strong> in your browser address bar to allow camera, or enter your 6-character code below.';
+                } else if (isNotFound) {
+                    guidanceText.innerHTML = '<strong>No camera detected:</strong> No active camera hardware was found. Enter your 6-character code below.';
+                } else {
+                    guidanceText.innerHTML = '<strong>Camera unavailable:</strong> Could not start video feed. Enter your 6-character code below.';
+                }
+                guidanceBox.style.display = 'block';
+            }
+
+            if (input) {
+                setTimeout(() => input.focus(), 100);
+            }
+        }
+    }
+
+    if (scanBtn && !scanBtn.dataset.bound) {
+        scanBtn.dataset.bound = 'true';
+        scanBtn.addEventListener('click', startWorkspaceQrScanner);
+    }
+
+    if (closeScanBtn && !closeScanBtn.dataset.bound) {
+        closeScanBtn.dataset.bound = 'true';
+        closeScanBtn.addEventListener('click', stopWorkspaceQrScanner);
+    }
+
+    if (retryCamBtn && !retryCamBtn.dataset.bound) {
+        retryCamBtn.dataset.bound = 'true';
+        retryCamBtn.addEventListener('click', startWorkspaceQrScanner);
     }
 
     if (connectBtn && !connectBtn.dataset.bound) {

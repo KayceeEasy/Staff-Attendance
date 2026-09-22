@@ -17,6 +17,9 @@ let hybridScheduleCache = {};
 let logsSortField = 'id';
 let logsSortAsc = false;
 let tenantWfhQuotaEnabled = true;
+let tenantLateCutoffMinutes = 510;
+let tenantClosingMinutes = 1020;
+let tenantTimezone = 'Africa/Lagos';
 
 // Session timeout (15 min idle sliding window inactivity → 60s countdown)
 let inactivityTimer = null;
@@ -285,6 +288,371 @@ function formatMinutesAsTime(minutes) {
     return `${hh}:${mm} ${ampm}`;
 }
 
+const GLOBAL_TIMEZONES = [
+    { id: 'Africa/Lagos', label: 'West Africa (Lagos, Abuja)', offset: 'GMT+1', flag: '🇳🇬' },
+    { id: 'Africa/Accra', label: 'Ghana (Accra)', offset: 'GMT+0', flag: '🇬🇭' },
+    { id: 'Africa/Johannesburg', label: 'South Africa (Johannesburg, Cape Town)', offset: 'GMT+2', flag: '🇿🇦' },
+    { id: 'Africa/Cairo', label: 'Egypt (Cairo)', offset: 'GMT+2', flag: '🇪🇬' },
+    { id: 'Africa/Nairobi', label: 'East Africa (Nairobi)', offset: 'GMT+3', flag: '🇰🇪' },
+    { id: 'Europe/London', label: 'United Kingdom (London, Dublin)', offset: 'GMT/BST', flag: '🇬🇧' },
+    { id: 'Europe/Paris', label: 'Central Europe (Paris, Berlin, Rome, Madrid)', offset: 'GMT+1 / CET', flag: '🇪🇺' },
+    { id: 'Europe/Amsterdam', label: 'Netherlands (Amsterdam)', offset: 'GMT+1 / CET', flag: '🇳🇱' },
+    { id: 'America/New_York', label: 'US Eastern (New York, Miami, Atlanta)', offset: 'GMT-5 / EST', flag: '🇺🇸' },
+    { id: 'America/Chicago', label: 'US Central (Chicago, Dallas, Houston)', offset: 'GMT-6 / CST', flag: '🇺🇸' },
+    { id: 'America/Denver', label: 'US Mountain (Denver, Phoenix)', offset: 'GMT-7 / MST', flag: '🇺🇸' },
+    { id: 'America/Los_Angeles', label: 'US Pacific (Los Angeles, San Francisco, Seattle)', offset: 'GMT-8 / PST', flag: '🇺🇸' },
+    { id: 'America/Toronto', label: 'Canada (Toronto, Montreal)', offset: 'GMT-5 / EST', flag: '🇨🇦' },
+    { id: 'America/Vancouver', label: 'Canada (Vancouver)', offset: 'GMT-8 / PST', flag: '🇨🇦' },
+    { id: 'Asia/Dubai', label: 'Gulf (Dubai, Abu Dhabi)', offset: 'GMT+4 / GST', flag: '🇦🇪' },
+    { id: 'Asia/Riyadh', label: 'Saudi Arabia (Riyadh)', offset: 'GMT+3 / AST', flag: '🇸🇦' },
+    { id: 'Asia/Kolkata', label: 'India (New Delhi, Mumbai, Bengaluru)', offset: 'GMT+5:30 / IST', flag: '🇮🇳' },
+    { id: 'Asia/Singapore', label: 'Singapore', offset: 'GMT+8 / SGT', flag: '🇸🇬' },
+    { id: 'Asia/Hong_Kong', label: 'Hong Kong', offset: 'GMT+8 / HKT', flag: '🇭🇰' },
+    { id: 'Asia/Tokyo', label: 'Japan (Tokyo)', offset: 'GMT+9 / JST', flag: '🇯🇵' },
+    { id: 'Australia/Sydney', label: 'Australia (Sydney, Melbourne)', offset: 'GMT+10 / AEST', flag: '🇦🇺' },
+    { id: 'Australia/Perth', label: 'Australia (Perth)', offset: 'GMT+8 / AWST', flag: '🇦🇺' },
+    { id: 'UTC', label: 'UTC (Coordinated Universal Time)', offset: 'GMT+0', flag: '🌐' }
+];
+
+function formatTimezoneLabel(tzId) {
+    const found = GLOBAL_TIMEZONES.find(t => t.id === tzId);
+    if (found) return `${found.label} (${found.offset})`;
+    return tzId || 'Africa/Lagos (GMT+1)';
+}
+
+function minutesToTimeComponents(totalMinutes) {
+    const safeMin = Math.max(0, Math.min(1439, Number(totalMinutes) || 0));
+    let hh24 = Math.floor(safeMin / 60);
+    const mm = safeMin % 60;
+    const ampm = hh24 >= 12 ? 'PM' : 'AM';
+    let hh12 = hh24 % 12;
+    if (hh12 === 0) hh12 = 12;
+    return { hh12, mm, ampm, totalMinutes: safeMin };
+}
+
+function timeComponentsToMinutes(hh12, mm, ampm) {
+    let hh = Number(hh12) % 12;
+    if (ampm === 'PM') hh += 12;
+    return hh * 60 + Number(mm);
+}
+
+function openTimezoneModal() {
+    const currentTz = tenantTimezone || 'Africa/Lagos';
+    let selectedTz = currentTz;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+
+    function renderList(query = '') {
+        const q = query.trim().toLowerCase();
+        const filtered = GLOBAL_TIMEZONES.filter(t => 
+            !q || t.label.toLowerCase().includes(q) || t.id.toLowerCase().includes(q) || t.offset.toLowerCase().includes(q)
+        );
+
+        if (!filtered.length) {
+            return '<div style="padding:14px; text-align:center; color:var(--text-muted); font-size:0.84rem;">No matching timezones found.</div>';
+        }
+
+        return filtered.map(t => {
+            let liveTime = '';
+            try {
+                liveTime = new Intl.DateTimeFormat('en-US', { timeZone: t.id, hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date());
+            } catch (e) { liveTime = ''; }
+
+            const isSel = (t.id === selectedTz);
+            return `
+                <div class="tz-list-item${isSel ? ' selected' : ''}" data-tz="${escapeHtml(t.id)}">
+                    <div>
+                        <div style="font-weight:600; display:flex; align-items:center; gap:6px;">
+                            <span>${t.flag}</span>
+                            <span>${escapeHtml(t.label)}</span>
+                        </div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">
+                            ${escapeHtml(t.id)} · <strong style="color:var(--text-secondary);">${escapeHtml(t.offset)}</strong>
+                        </div>
+                    </div>
+                    <div style="text-align:right;">
+                        <span style="font-size:0.88rem; font-weight:700; color:var(--text); font-variant-numeric:tabular-nums;">${liveTime}</span>
+                        ${isSel ? '<span style="display:block; font-size:0.7rem; color:var(--primary); font-weight:700;">ACTIVE</span>' : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    overlay.innerHTML = `
+        <div class="tz-modal-box">
+            <h3 style="margin:0 0 6px; font-size:1.1rem; color:var(--text); font-weight:700;">Organization Timezone</h3>
+            <p style="margin:0 0 12px; font-size:0.84rem; color:var(--text-muted);">
+                Select your primary operating timezone. Attendance logs, workday closing, and late cutoffs will use this reference.
+            </p>
+            <input 
+                type="text" 
+                id="tz-search-input" 
+                placeholder="Search city, country, or GMT offset..." 
+                style="width:100%; padding:9px 12px; border-radius:var(--radius); border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.86rem; box-sizing:border-box;"
+            />
+            <div id="tz-list" class="tz-list-container">
+                ${renderList()}
+            </div>
+            <div class="dialog-actions">
+                <button type="button" class="admin-btn secondary" id="tz-cancel-btn">Cancel</button>
+                <button type="button" class="admin-btn primary" id="tz-save-btn">Save Timezone</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const searchInput = overlay.querySelector('#tz-search-input');
+    const listEl = overlay.querySelector('#tz-list');
+    const cancelBtn = overlay.querySelector('#tz-cancel-btn');
+    const saveBtn = overlay.querySelector('#tz-save-btn');
+
+    function bindItemClicks() {
+        listEl.querySelectorAll('.tz-list-item').forEach(item => {
+            item.addEventListener('click', () => {
+                selectedTz = item.getAttribute('data-tz');
+                listEl.querySelectorAll('.tz-list-item').forEach(i => i.classList.remove('selected'));
+                item.classList.add('selected');
+            });
+        });
+    }
+    bindItemClicks();
+
+    searchInput.addEventListener('input', () => {
+        listEl.innerHTML = renderList(searchInput.value);
+        bindItemClicks();
+    });
+
+    cancelBtn.addEventListener('click', () => overlay.remove());
+
+    saveBtn.addEventListener('click', async () => {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving...';
+        try {
+            const res = await callBackend({ mode: 'update-config', key: 'TIMEZONE', value: selectedTz });
+            if (res && res.ok) {
+                tenantTimezone = selectedTz;
+                const tzEl = document.getElementById('config-timezone-current');
+                if (tzEl) tzEl.textContent = formatTimezoneLabel(selectedTz);
+                showToast(`Timezone updated to ${formatTimezoneLabel(selectedTz)}!`, 'success');
+                overlay.remove();
+            } else {
+                showToast(res?.message || 'Failed to update timezone.', 'error');
+            }
+        } catch (e) {
+            showToast('Server error updating timezone.', 'error');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save Timezone';
+        }
+    });
+
+    setTimeout(() => searchInput.focus(), 100);
+}
+
+function openTimePickerModal({ title, subtitle, currentMinutes, mode = 'start', onSave }) {
+    let minutes = Number(currentMinutes) || (mode === 'start' ? 510 : 1020);
+    let { hh12, mm, ampm } = minutesToTimeComponents(minutes);
+
+    const startPresets = [
+        { label: '8:00 AM', minutes: 480 },
+        { label: '8:30 AM', minutes: 510 },
+        { label: '9:00 AM', minutes: 540 },
+        { label: '9:30 AM', minutes: 570 },
+        { label: '10:00 AM', minutes: 600 }
+    ];
+
+    const closePresets = [
+        { label: '4:30 PM', minutes: 990 },
+        { label: '5:00 PM', minutes: 1020 },
+        { label: '5:30 PM', minutes: 1050 },
+        { label: '6:00 PM', minutes: 1080 },
+        { label: '6:30 PM', minutes: 1110 },
+        { label: '7:00 PM', minutes: 1140 }
+    ];
+
+    const presets = mode === 'start' ? startPresets : closePresets;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+
+    function getFormattedTime() {
+        return `${String(hh12).padStart(2, '0')}:${String(mm).padStart(2, '0')} ${ampm}`;
+    }
+
+    function getHelperText() {
+        const timeStr = getFormattedTime();
+        if (mode === 'start') {
+            return `Employees clocking in at or after <strong>${timeStr}</strong> will be flagged as Late.`;
+        } else {
+            return `Staff who checked in on-site can sign out remotely after <strong>${timeStr}</strong> without office GPS.`;
+        }
+    }
+
+    function renderPresetPills() {
+        const curMin = timeComponentsToMinutes(hh12, mm, ampm);
+        return presets.map(p => `
+            <button type="button" class="time-preset-pill${curMin === p.minutes ? ' active' : ''}" data-min="${p.minutes}">
+                ${p.label}
+            </button>
+        `).join('');
+    }
+
+    function renderHoursOptions() {
+        let opts = '';
+        for (let h = 1; h <= 12; h++) {
+            opts += `<option value="${h}" ${h === hh12 ? 'selected' : ''}>${String(h).padStart(2, '0')}</option>`;
+        }
+        return opts;
+    }
+
+    function renderMinuteOptions() {
+        const standardMinutes = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+        if (!standardMinutes.includes(mm)) standardMinutes.push(mm);
+        standardMinutes.sort((a, b) => a - b);
+        return standardMinutes.map(m => `
+            <option value="${m}" ${m === mm ? 'selected' : ''}>${String(m).padStart(2, '0')}</option>
+        `).join('');
+    }
+
+    overlay.innerHTML = `
+        <div class="time-picker-box">
+            <h3 style="margin:0 0 4px; font-size:1.15rem; color:var(--text); font-weight:700;">${escapeHtml(title)}</h3>
+            ${subtitle ? `<p style="margin:0 0 10px; font-size:0.84rem; color:var(--text-muted);">${escapeHtml(subtitle)}</p>` : ''}
+
+            <!-- Large Digital Clock Display -->
+            <div class="time-display-hero">
+                <span id="tp-hero-time">${getFormattedTime()}</span>
+            </div>
+            <div id="tp-hero-desc" style="font-size:0.82rem; color:var(--text-muted); margin-bottom:14px; min-height:36px; line-height:1.4;">
+                ${getHelperText()}
+            </div>
+
+            <!-- Quick Presets -->
+            <div style="font-size:0.74rem; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-muted); margin-bottom:6px;">
+                Quick Presets
+            </div>
+            <div id="tp-presets-container" class="time-picker-presets">
+                ${renderPresetPills()}
+            </div>
+
+            <!-- Hour / Minute / AM-PM Steppers -->
+            <div class="time-stepper-row">
+                <select id="tp-hour-select" class="time-select-pill">
+                    ${renderHoursOptions()}
+                </select>
+                <span style="font-size:1.4rem; font-weight:700; color:var(--text);">:</span>
+                <select id="tp-minute-select" class="time-select-pill">
+                    ${renderMinuteOptions()}
+                </select>
+                <div class="time-period-group">
+                    <button type="button" id="tp-am-btn" class="time-period-btn${ampm === 'AM' ? ' active' : ''}">AM</button>
+                    <button type="button" id="tp-pm-btn" class="time-period-btn${ampm === 'PM' ? ' active' : ''}">PM</button>
+                </div>
+            </div>
+
+            <!-- Quick +/- Step Adjusters -->
+            <div class="time-step-btns">
+                <button type="button" class="time-step-btn" data-step="-15">-15 min</button>
+                <button type="button" class="time-step-btn" data-step="-5">-5 min</button>
+                <button type="button" class="time-step-btn" data-step="+5">+5 min</button>
+                <button type="button" class="time-step-btn" data-step="+15">+15 min</button>
+            </div>
+
+            <div class="dialog-actions">
+                <button type="button" class="admin-btn secondary" id="tp-cancel-btn">Cancel</button>
+                <button type="button" class="admin-btn primary" id="tp-save-btn">Update Time</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const heroTime = overlay.querySelector('#tp-hero-time');
+    const heroDesc = overlay.querySelector('#tp-hero-desc');
+    const presetsBox = overlay.querySelector('#tp-presets-container');
+    const hourSelect = overlay.querySelector('#tp-hour-select');
+    const minuteSelect = overlay.querySelector('#tp-minute-select');
+    const amBtn = overlay.querySelector('#tp-am-btn');
+    const pmBtn = overlay.querySelector('#tp-pm-btn');
+
+    function syncUI() {
+        heroTime.textContent = getFormattedTime();
+        heroDesc.innerHTML = getHelperText();
+        presetsBox.innerHTML = renderPresetPills();
+        bindPresetClicks();
+        hourSelect.value = String(hh12);
+        minuteSelect.innerHTML = renderMinuteOptions();
+        minuteSelect.value = String(mm);
+        if (ampm === 'AM') {
+            amBtn.classList.add('active');
+            pmBtn.classList.remove('active');
+        } else {
+            pmBtn.classList.add('active');
+            amBtn.classList.remove('active');
+        }
+    }
+
+    function bindPresetClicks() {
+        presetsBox.querySelectorAll('.time-preset-pill').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetMin = Number(btn.getAttribute('data-min'));
+                const comps = minutesToTimeComponents(targetMin);
+                hh12 = comps.hh12;
+                mm = comps.mm;
+                ampm = comps.ampm;
+                syncUI();
+            });
+        });
+    }
+    bindPresetClicks();
+
+    hourSelect.addEventListener('change', () => {
+        hh12 = Number(hourSelect.value);
+        syncUI();
+    });
+
+    minuteSelect.addEventListener('change', () => {
+        mm = Number(minuteSelect.value);
+        syncUI();
+    });
+
+    amBtn.addEventListener('click', () => {
+        ampm = 'AM';
+        syncUI();
+    });
+
+    pmBtn.addEventListener('click', () => {
+        ampm = 'PM';
+        syncUI();
+    });
+
+    overlay.querySelectorAll('.time-step-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const step = Number(btn.getAttribute('data-step'));
+            let curMin = timeComponentsToMinutes(hh12, mm, ampm);
+            curMin = (curMin + step + 1440) % 1440;
+            const comps = minutesToTimeComponents(curMin);
+            hh12 = comps.hh12;
+            mm = comps.mm;
+            ampm = comps.ampm;
+            syncUI();
+        });
+    });
+
+    overlay.querySelector('#tp-cancel-btn').addEventListener('click', () => overlay.remove());
+
+    overlay.querySelector('#tp-save-btn').addEventListener('click', async () => {
+        const finalMin = timeComponentsToMinutes(hh12, mm, ampm);
+        overlay.remove();
+        if (typeof onSave === 'function') {
+            await onSave(finalMin);
+        }
+    });
+}
+
 function getMondayFromDate(date) {
     const d = new Date(date);
     const day = d.getDay();
@@ -412,7 +780,14 @@ async function loadConfigValues() {
 
             const closingEl = document.getElementById('config-closing-time-current');
             const closingTimeMinutes = cfg.WORKDAY_END_MINUTES !== undefined ? Number(cfg.WORKDAY_END_MINUTES) : (cfg.CLOSING_TIME_MINUTES !== undefined ? Number(cfg.CLOSING_TIME_MINUTES) : 1020);
+            tenantLateCutoffMinutes = lateCutoffMinutes !== undefined ? Number(lateCutoffMinutes) : 510;
+            tenantClosingMinutes = closingTimeMinutes;
+            tenantTimezone = cfg.TIMEZONE || cfg.timezone || 'Africa/Lagos';
+
             if (closingEl) closingEl.textContent = formatMinutesAsTime(closingTimeMinutes);
+
+            const tzEl = document.getElementById('config-timezone-current');
+            if (tzEl) tzEl.textContent = formatTimezoneLabel(tenantTimezone);
 
             const wfhQuotaEl = document.getElementById('config-wfh-quota-current');
             const countWfhQuota = cfg.COUNT_WFH_IN_ATTENDANCE_QUOTA !== undefined ? cfg.COUNT_WFH_IN_ATTENDANCE_QUOTA : true;
@@ -2805,6 +3180,11 @@ function renderAdminPanel() {
             <div class="config-section-group">
                 <h4>Attendance Schedule & Policies</h4>
                 <div class="config-cards">
+                    <div class="config-card" data-tooltip="Primary operating timezone for workday hours, late cutoff, and attendance logs">
+                        <span class="config-icon"><i data-lucide="globe" size="18"></i></span>
+                        <div class="config-info"><strong>Organization Timezone</strong><span class="config-value" id="config-timezone-current">Africa/Lagos (GMT+1)</span></div>
+                        <button id="config-timezone-btn" class="admin-btn secondary small" type="button" data-tooltip="Select organization timezone">Edit</button>
+                    </div>
                     <div class="config-card" data-tooltip="Official start of business. Arrivals after this time are flagged as Late">
                         <span class="config-icon"><i data-lucide="clock" size="18"></i></span>
                         <div class="config-info"><strong>Workday Start (Late Cutoff)</strong><span class="config-value" id="config-late-cutoff-current">8:30 AM</span></div>
@@ -3087,17 +3467,30 @@ function renderAdminPanel() {
         if (!r) return;
         try { const res = await callBackend({ mode: 'update-config', key: 'RADIUS_METERS', value: r[0] }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-radius-current').textContent = r[0] + ' meters'; } catch (e) { showToast('Server error.', 'error'); }
     });
-    document.getElementById('config-late-cutoff-btn').addEventListener('click', async () => {
-        const r = await showInlineDialog({ title: 'Late Cutoff Time', message: 'Sign-ins at or after this time are marked Late.', fields: [{ placeholder: 'Time', type: 'time' }], confirmLabel: 'Update' });
-        if (!r || !r[0]) return;
-        const [hh, mm] = r[0].split(':').map(Number);
-        if (isNaN(hh) || isNaN(mm)) { showToast('Invalid time.', 'error'); return; }
-        const totalMinutes = hh * 60 + mm;
-        try {
-            const res = await callBackend({ mode: 'update-config', key: 'LATE_CUTOFF_MINUTES', value: totalMinutes });
-            showToast(res.message, res.ok ? 'success' : 'error');
-            if (res.ok) document.getElementById('config-late-cutoff-current').textContent = formatMinutesAsTime(totalMinutes);
-        } catch (e) { showToast('Server error.', 'error'); }
+    document.getElementById('config-timezone-btn')?.addEventListener('click', () => {
+        openTimezoneModal();
+    });
+
+    document.getElementById('config-late-cutoff-btn')?.addEventListener('click', () => {
+        openTimePickerModal({
+            title: 'Workday Start Time (Late Cutoff)',
+            subtitle: 'Sign-ins recorded at or after this time are marked Late.',
+            currentMinutes: tenantLateCutoffMinutes,
+            mode: 'start',
+            onSave: async (totalMinutes) => {
+                try {
+                    const res = await callBackend({ mode: 'update-config', key: 'LATE_CUTOFF_MINUTES', value: totalMinutes });
+                    showToast(res.message || 'Late cutoff time updated.', res.ok ? 'success' : 'error');
+                    if (res.ok) {
+                        tenantLateCutoffMinutes = totalMinutes;
+                        const cutoffEl = document.getElementById('config-late-cutoff-current');
+                        if (cutoffEl) cutoffEl.textContent = formatMinutesAsTime(totalMinutes);
+                    }
+                } catch (e) {
+                    showToast('Server error.', 'error');
+                }
+            }
+        });
     });
 
     document.getElementById('config-lead-priority-btn')?.addEventListener('click', async () => {
@@ -3115,25 +3508,26 @@ function renderAdminPanel() {
         }
     });
 
-    document.getElementById('config-closing-time-btn')?.addEventListener('click', async () => {
-        const r = await showInlineDialog({
+    document.getElementById('config-closing-time-btn')?.addEventListener('click', () => {
+        openTimePickerModal({
             title: 'Workday Closing Time',
-            message: 'Employees who verified attendance on-site can sign out remotely after this hour without office GPS.',
-            fields: [{ placeholder: 'Closing Time', type: 'time' }],
-            confirmLabel: 'Update'
-        });
-        if (!r || !r[0]) return;
-        const [hh, mm] = r[0].split(':').map(Number);
-        if (isNaN(hh) || isNaN(mm)) { showToast('Invalid time format.', 'error'); return; }
-        const totalMinutes = hh * 60 + mm;
-        try {
-            const res = await callBackend({ mode: 'update-config', key: 'WORKDAY_END_MINUTES', value: totalMinutes });
-            showToast(res.message || 'Closing time updated.', res.ok ? 'success' : 'error');
-            if (res.ok) {
-                const closingEl = document.getElementById('config-closing-time-current');
-                if (closingEl) closingEl.textContent = formatMinutesAsTime(totalMinutes);
+            subtitle: 'Employees who verified attendance on-site can sign out remotely after this hour without office GPS.',
+            currentMinutes: tenantClosingMinutes,
+            mode: 'close',
+            onSave: async (totalMinutes) => {
+                try {
+                    const res = await callBackend({ mode: 'update-config', key: 'WORKDAY_END_MINUTES', value: totalMinutes });
+                    showToast(res.message || 'Closing time updated.', res.ok ? 'success' : 'error');
+                    if (res.ok) {
+                        tenantClosingMinutes = totalMinutes;
+                        const closingEl = document.getElementById('config-closing-time-current');
+                        if (closingEl) closingEl.textContent = formatMinutesAsTime(totalMinutes);
+                    }
+                } catch (e) {
+                    showToast('Server error.', 'error');
+                }
             }
-        } catch (e) { showToast('Server error.', 'error'); }
+        });
     });
 
     document.getElementById('config-wfh-quota-btn')?.addEventListener('click', async () => {

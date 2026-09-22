@@ -572,7 +572,8 @@ async function getTenantConfig(tenantSlug) {
         workday_end_time: '17:00',
         workday_end_minutes: 1020,
         allow_remote_signout_post_closing: true,
-        count_wfh_in_attendance_quota: true
+        count_wfh_in_attendance_quota: true,
+        timezone: 'Africa/Lagos'
     };
 }
 
@@ -874,7 +875,8 @@ async function callBackend(payload, timeoutMs = 20000) {
                 const configObj = {
                     WORKDAY_END_MINUTES: 1020,
                     ALLOW_REMOTE_SIGNOUT_POST_CLOSING: 'true',
-                    COUNT_WFH_IN_ATTENDANCE_QUOTA: 'true'
+                    COUNT_WFH_IN_ATTENDANCE_QUOTA: 'true',
+                    TIMEZONE: 'Africa/Lagos'
                 };
                 if (data) data.forEach(row => configObj[row.key] = row.value);
                 return { ok: true, config: configObj };

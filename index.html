@@ -664,8 +664,47 @@
             >
                 <i data-lucide="arrow-right" size="16"></i> Connect Workspace
             </button>
+
+            <div style="display: flex; align-items: center; margin: 16px 0; color: var(--text-muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em;">
+                <div style="flex: 1; height: 1px; background: var(--border);"></div>
+                <span style="padding: 0 10px; font-weight: 600;">or</span>
+                <div style="flex: 1; height: 1px; background: var(--border);"></div>
+            </div>
+
+            <button 
+                type="button" 
+                id="scan-workspace-qr-btn" 
+                class="admin-btn secondary" 
+                style="width: 100%; padding: 11px; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; font-size: 0.9rem;"
+            >
+                <i data-lucide="qr-code" size="18"></i> Scan a QR Code
+            </button>
+
+            <!-- In-App Camera Viewport -->
+            <div id="workspace-qr-scanner-box" class="qr-scanner-box">
+                <video id="workspace-qr-video" playsinline muted></video>
+                <div class="qr-scanner-reticle">
+                    <div class="qr-scanner-line"></div>
+                </div>
+                <button 
+                    type="button" 
+                    id="close-qr-scanner-btn" 
+                    style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 20px; padding: 4px 14px; font-size: 0.76rem; cursor: pointer; backdrop-filter: blur(4px);"
+                >
+                    Cancel Scan
+                </button>
+            </div>
+
+            <!-- Permission Denied / Retry Helper -->
+            <div id="workspace-qr-guidance" style="display:none; margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; text-align: left;">
+                <div id="workspace-qr-guidance-text"></div>
+                <button type="button" id="retry-qr-camera-btn" style="background:none; border:none; color:var(--primary); font-weight:600; font-size:0.8rem; cursor:pointer; padding:0; margin-top:6px; text-decoration:underline;">
+                    Try Camera Again
+                </button>
+            </div>
+
             <p style="font-size: 0.76rem; color: var(--text-muted); margin-top: 14px;">
-                Ask your HR or team administrator for your company's Workspace Code.
+                Ask your HR or team administrator for your company's Workspace Code or invite QR.
             </p>
         </div>
     </div>
