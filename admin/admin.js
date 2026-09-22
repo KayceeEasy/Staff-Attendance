@@ -1987,10 +1987,10 @@ function renderStaffList(staff) {
     `;
 
     const policyLabels = {
-        weekly_hybrid: { label: 'Hybrid (2-Day)', tooltip: 'Standard Hybrid: 2 required in-office days per week', style: '' },
-        field_flexible: { label: 'Field / Media', tooltip: 'Field / Media: 3 Home days with variable shoots (no GPS block)', style: 'color: #ca8a04; border-color: rgba(202, 138, 4, 0.25);' },
-        executive: { label: 'Executive', tooltip: 'Executive: Exempt from geofencing and weekly grid requirements', style: 'color: #9333ea; border-color: rgba(147, 51, 234, 0.25);' },
-        office_only: { label: 'Office Only', tooltip: 'Office Only: 100% in-office attendance required every day', style: 'color: #2563eb; border-color: rgba(37, 99, 235, 0.25);' }
+        weekly_hybrid: { label: 'Hybrid', tooltip: 'Hybrid: Weekly schedule of in-office and remote days', style: '' },
+        field_flexible: { label: 'Flexible / Remote', tooltip: 'Flexible / Remote: Check in from anywhere (no GPS restriction)', style: 'color: #ca8a04; border-color: rgba(202, 138, 4, 0.25);' },
+        executive: { label: 'Flexible / Remote', tooltip: 'Flexible / Remote: Check in from anywhere (no GPS restriction)', style: 'color: #ca8a04; border-color: rgba(202, 138, 4, 0.25);' },
+        office_only: { label: 'On-site Only', tooltip: 'On-site Only: 100% in-office attendance required daily', style: 'color: #2563eb; border-color: rgba(37, 99, 235, 0.25);' }
     };
 
     const rowsHtml = filteredStaff.map((entry) => {
@@ -2048,12 +2048,11 @@ async function handleEditStaff(name) {
             { 
                 label: 'Work Policy', 
                 type: 'select', 
-                value: member.schedule_policy || 'weekly_hybrid',
+                value: (member.schedule_policy === 'executive') ? 'field_flexible' : (member.schedule_policy || 'weekly_hybrid'),
                 options: [
-                    { value: 'weekly_hybrid', label: 'Standard Weekly Hybrid (2 Days Office)' },
-                    { value: 'field_flexible', label: 'Field / Media Flexible (3 Home Days, Variable Shoots, No GPS Block)' },
-                    { value: 'executive', label: 'Executive / Leadership (Exempt from Grid & GPS)' },
-                    { value: 'office_only', label: 'Office Only (100% In-Office)' }
+                    { value: 'weekly_hybrid', label: 'Hybrid' },
+                    { value: 'field_flexible', label: 'Flexible / Remote' },
+                    { value: 'office_only', label: 'On-site Only' }
                 ]
             },
             {
@@ -2200,11 +2199,9 @@ function parseStaffCsv(text) {
         const dept = parts[1] || 'General';
         let rawPolicy = (parts[2] || 'weekly_hybrid').toLowerCase().replace(/\s+/g, '_');
         let schedule_policy = 'weekly_hybrid';
-        if (rawPolicy.includes('field') || rawPolicy.includes('media') || rawPolicy.includes('shoot')) {
+        if (rawPolicy.includes('flex') || rawPolicy.includes('remote') || rawPolicy.includes('field') || rawPolicy.includes('media') || rawPolicy.includes('shoot') || rawPolicy.includes('exec') || rawPolicy.includes('leader')) {
             schedule_policy = 'field_flexible';
-        } else if (rawPolicy.includes('exec') || rawPolicy.includes('leader')) {
-            schedule_policy = 'executive';
-        } else if (rawPolicy.includes('office')) {
+        } else if (rawPolicy.includes('office') || rawPolicy.includes('site') || rawPolicy.includes('onsite')) {
             schedule_policy = 'office_only';
         }
 
@@ -2238,11 +2235,11 @@ async function handleImportStaffCsv() {
             </div>
             <div>
                 <label style="display:block; font-size:0.75rem; font-weight:600; color:var(--text-muted); margin-bottom:4px; text-transform:uppercase;">Or Paste CSV Lines Below:</label>
-                <textarea id="staff-csv-textarea" rows="6" placeholder="Name, Department, Policy, Team Lead, Include In Reports&#10;Adaeze, Operations, weekly_hybrid, yes, yes&#10;Alex Taylor, Media, field_flexible, no, no" style="width:100%; padding:9px 11px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--surface); color:var(--text); font-family:monospace; font-size:0.82rem; resize:vertical;"></textarea>
+                <textarea id="staff-csv-textarea" rows="6" placeholder="Name, Department, Policy, Team Lead, Include In Reports&#10;Adaeze, Operations, Hybrid, yes, yes&#10;Alex Taylor, Media, Flexible / Remote, no, no" style="width:100%; padding:9px 11px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--surface); color:var(--text); font-family:monospace; font-size:0.82rem; resize:vertical;"></textarea>
             </div>
             <div id="staff-csv-preview" style="font-size:0.78rem; color:var(--muted); line-height:1.4;">
                 Format: <code>Name, Department, Policy, Team Lead, Include In Reports</code><br/>
-                Policies: <code>weekly_hybrid</code>, <code>field_flexible</code>, <code>executive</code>, <code>office_only</code>
+                Policies: <code>Hybrid</code> (weekly_hybrid), <code>Flexible / Remote</code> (field_flexible), <code>On-site Only</code> (office_only)
             </div>
         </div>
     `;
@@ -3083,10 +3080,9 @@ function renderAdminPanel() {
                     </div>
                     <div style="display:grid; grid-template-columns: 1.3fr 1fr; gap:10px; align-items:center;">
                         <select id="new-staff-policy" style="width:100%; padding:9px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:0.86rem;">
-                            <option value="weekly_hybrid">Standard Weekly Hybrid (2 Days Office)</option>
-                            <option value="field_flexible">Field / Media Flexible (3 Home Days, Shoot Days)</option>
-                            <option value="executive">Executive / Leadership (Exempt)</option>
-                            <option value="office_only">Office Only (100% In-Office)</option>
+                            <option value="weekly_hybrid">Hybrid</option>
+                            <option value="field_flexible">Flexible / Remote</option>
+                            <option value="office_only">On-site Only</option>
                         </select>
                         <div style="display:flex; flex-direction:column; gap:6px;">
                             <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; color:var(--text); cursor:pointer;">

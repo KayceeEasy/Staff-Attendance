@@ -2364,21 +2364,10 @@ async function updateScheduleBanner(name) {
         const staffObj = staffDirectoryData.find(s => String(s.name || '').trim().toLowerCase() === String(name || '').trim().toLowerCase());
         const policy = staffObj ? String(staffObj.schedule_policy || '').toLowerCase() : '';
 
-        if (policy === 'field_flexible') {
+        if (policy === 'field_flexible' || policy === 'executive' || policy === 'flexible_remote') {
             currentStaffTodayMode = 'home';
             if (locStatus) {
-                locStatus.innerText = t('flexibleMode', '🏠 Flexible Mode');
-                locStatus.className = 'status ready';
-            }
-            if (distLabel) distLabel.textContent = '';
-            updateActionHeroState();
-            return;
-        }
-
-        if (policy === 'executive') {
-            currentStaffTodayMode = 'home';
-            if (locStatus) {
-                locStatus.innerText = t('executiveMode', '🏠 Executive Mode');
+                locStatus.innerText = t('flexibleMode', '🏠 Flexible / Remote');
                 locStatus.className = 'status ready';
             }
             if (distLabel) distLabel.textContent = '';
@@ -2389,7 +2378,7 @@ async function updateScheduleBanner(name) {
         if (policy === 'office_only') {
             currentStaffTodayMode = 'office';
             if (locStatus) {
-                locStatus.innerText = coords ? t('officeRequired', '📍 Office (Required)') : t('verifyingGps', 'Verifying GPS...');
+                locStatus.innerText = coords ? t('officeRequired', '📍 On-site (Required)') : t('verifyingGps', 'Verifying GPS...');
                 locStatus.className = coords ? 'status ready' : 'status waiting';
             }
             updateActionHeroState();
