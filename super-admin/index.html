@@ -16,7 +16,22 @@
 
 <!-- Master Access Gate Modal (Shows if not authenticated) -->
 <div id="auth-gate-modal" class="auth-gate-overlay">
-    <div class="auth-gate-card">
+    <div class="auth-gate-card" style="position: relative;">
+        <div style="position: absolute; top: 16px; right: 16px;">
+            <div class="lang-selector-wrap">
+                <button class="lang-btn" type="button" aria-label="Select Language" data-tooltip="Language / Idioma / Langue">
+                    <span class="current-lang-flag">🇬🇧</span>
+                    <span class="current-lang-code">EN</span>
+                </button>
+                <div class="lang-dropdown-menu" style="display:none; text-align:left;">
+                    <button type="button" class="lang-option-btn" data-lang="en">🇬🇧 English</button>
+                    <button type="button" class="lang-option-btn" data-lang="es">🇪🇸 Español</button>
+                    <button type="button" class="lang-option-btn" data-lang="fr">🇫🇷 Français</button>
+                    <button type="button" class="lang-option-btn" data-lang="pt">🇵🇹 Português</button>
+                    <button type="button" class="lang-option-btn" data-lang="ar">🇸🇦 العربية</button>
+                </div>
+            </div>
+        </div>
         <div class="auth-gate-icon"><i data-lucide="shield-alert" size="44"></i></div>
         <h2>Super Admin Access</h2>
         <p>Restricted to authorized platform operators and engineering administrators only. Enter your Master Platform Key to continue.</p>
@@ -40,6 +55,19 @@
             <h1>Attendance Cloud <span>Fleet Control</span></h1>
         </div>
         <div class="header-actions">
+            <div class="lang-selector-wrap">
+                <button class="lang-btn" type="button" aria-label="Select Language" data-tooltip="Language / Idioma / Langue">
+                    <span class="current-lang-flag">🇬🇧</span>
+                    <span class="current-lang-code">EN</span>
+                </button>
+                <div class="lang-dropdown-menu" style="display:none; text-align:left;">
+                    <button type="button" class="lang-option-btn" data-lang="en">🇬🇧 English</button>
+                    <button type="button" class="lang-option-btn" data-lang="es">🇪🇸 Español</button>
+                    <button type="button" class="lang-option-btn" data-lang="fr">🇫🇷 Français</button>
+                    <button type="button" class="lang-option-btn" data-lang="pt">🇵🇹 Português</button>
+                    <button type="button" class="lang-option-btn" data-lang="ar">🇸🇦 العربية</button>
+                </div>
+            </div>
             <div class="sys-health-chip" id="health-chip">
                 <span class="health-dot live"></span>
                 <span id="health-text">Supabase DB: Connected</span>

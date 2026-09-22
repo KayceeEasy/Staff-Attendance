@@ -314,6 +314,7 @@ time,
     display: flex;
     gap: 8px;
     align-items: center;
+    flex-shrink: 0;
 }
 
 .topbar-icon-btn,
@@ -2289,6 +2290,7 @@ button:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; transfor
     position: relative;
     display: inline-flex;
     align-items: center;
+    flex-shrink: 0;
 }
 .lang-btn {
     border-radius: 8px;
@@ -2303,6 +2305,7 @@ button:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; transfor
     gap: 6px;
     display: inline-flex;
     align-items: center;
+    flex-shrink: 0;
     transition: all 0.15s ease;
 }
 .lang-btn:hover {

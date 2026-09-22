@@ -2142,6 +2142,33 @@ function initWorkspaceConnect() {
             }
         });
     }
+
+    const switchBtn = document.getElementById('switch-workspace-btn');
+    if (switchBtn && !switchBtn.dataset.bound) {
+        switchBtn.dataset.bound = 'true';
+        switchBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            openWorkspaceConnectModal();
+        });
+    }
+
+    const closeBtn = document.getElementById('workspace-connect-close');
+    if (closeBtn && !closeBtn.dataset.bound) {
+        closeBtn.dataset.bound = 'true';
+        closeBtn.addEventListener('click', () => {
+            closeWorkspaceConnectModal();
+        });
+    }
+
+    const overlay = document.getElementById('workspace-connect-overlay');
+    if (overlay && !overlay.dataset.bound) {
+        overlay.dataset.bound = 'true';
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                closeWorkspaceConnectModal();
+            }
+        });
+    }
 }
 
 async function initTenantBranding() {

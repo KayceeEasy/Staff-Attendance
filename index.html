@@ -654,8 +654,26 @@
         </div>
     <!-- Workspace Connect Modal (Shown on clean '/' if device is unlinked from any workspace) -->
     <div id="workspace-connect-overlay" class="faq-overlay" role="dialog" aria-modal="true" style="display:none; z-index: 9999; backdrop-filter: blur(8px); background: rgba(0,0,0,0.75);">
-        <div class="faq-modal-content" style="max-width: 440px; text-align: center; padding: 28px 24px;">
-            <div style="margin-bottom: 12px; color: var(--primary); display: flex; justify-content: center;"><i data-lucide="building" size="42"></i></div>
+        <div class="faq-modal-content" style="max-width: 440px; text-align: center; padding: 22px 24px; position: relative;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; width: 100%;">
+                <div class="lang-selector-wrap">
+                    <button class="lang-btn" type="button" aria-label="Select Language" data-tooltip="Language / Idioma / Langue">
+                        <span class="current-lang-flag">🇬🇧</span>
+                        <span class="current-lang-code">EN</span>
+                    </button>
+                    <div class="lang-dropdown-menu" style="display:none; text-align:left;">
+                        <button type="button" class="lang-option-btn" data-lang="en">🇬🇧 English</button>
+                        <button type="button" class="lang-option-btn" data-lang="es">🇪🇸 Español</button>
+                        <button type="button" class="lang-option-btn" data-lang="fr">🇫🇷 Français</button>
+                        <button type="button" class="lang-option-btn" data-lang="pt">🇵🇹 Português</button>
+                        <button type="button" class="lang-option-btn" data-lang="ar">🇸🇦 العربية</button>
+                    </div>
+                </div>
+                <button id="workspace-connect-close" class="faq-close-btn" type="button" aria-label="Close" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:4px; display:inline-flex; align-items:center;">
+                    <i data-lucide="x" size="22"></i>
+                </button>
+            </div>
+            <div style="margin-bottom: 8px; color: var(--primary); display: flex; justify-content: center;"><i data-lucide="building" size="38"></i></div>
             <h2 style="font-size: 1.3rem; font-weight: 700; margin-bottom: 6px; color: var(--text);" data-i18n="connectWorkspaceTitle">Connect to Your Workspace</h2>
             <p style="font-size: 0.86rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;" data-i18n="connectWorkspaceDesc">
                 Enter your organization's 6-character Workspace Code or open your company's setup link to pair this phone.
@@ -753,8 +771,8 @@
         </div>
     </div>
 
-    <script src="common.js?v=3.0.0"></script>
-    <script src="script.js?v=3.0.0"></script>
+    <script src="common.js?v=3.0.1"></script>
+    <script src="script.js?v=3.0.1"></script>
     <script>
         if ('serviceWorker' in navigator) {
             // Force browser to bypass HTTP cache when checking for Service Worker updates
