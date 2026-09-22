@@ -1859,3 +1859,149 @@ button:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; transfor
     letter-spacing: 0.3px;
 }
 
+/* ─── INTERACTIVE TOOLTIPS ─── */
+[data-tooltip] {
+    position: relative;
+}
+
+[data-tooltip]::before {
+    content: "";
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    border-width: 5px 5px 0 5px;
+    border-style: solid;
+    border-color: rgba(15, 23, 42, 0.96) transparent transparent transparent;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+    z-index: 9999;
+}
+
+[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 5px);
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    background: rgba(15, 23, 42, 0.96);
+    color: #f8fafc;
+    font-size: 0.72rem;
+    font-weight: 500;
+    line-height: 1.35;
+    white-space: normal;
+    width: max-content;
+    max-width: 220px;
+    text-align: center;
+    padding: 5px 9px;
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+    z-index: 9999;
+}
+
+[data-tooltip]:hover::before,
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::before,
+[data-tooltip]:focus-visible::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Tooltip Positions */
+[data-tooltip-pos="bottom"]::before {
+    bottom: auto;
+    top: 100%;
+    transform: translateX(-50%) translateY(-4px);
+    border-width: 0 5px 5px 5px;
+    border-color: transparent transparent rgba(15, 23, 42, 0.96) transparent;
+}
+[data-tooltip-pos="bottom"]::after {
+    bottom: auto;
+    top: calc(100% + 5px);
+    transform: translateX(-50%) translateY(-4px);
+}
+[data-tooltip-pos="bottom"]:hover::before,
+[data-tooltip-pos="bottom"]:hover::after,
+[data-tooltip-pos="bottom"]:focus-visible::before,
+[data-tooltip-pos="bottom"]:focus-visible::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+[data-tooltip-pos="left"]::before {
+    bottom: 50%;
+    left: auto;
+    right: 100%;
+    top: auto;
+    transform: translateY(50%) translateX(4px);
+    border-width: 5px 0 5px 5px;
+    border-color: transparent transparent transparent rgba(15, 23, 42, 0.96);
+}
+[data-tooltip-pos="left"]::after {
+    bottom: 50%;
+    left: auto;
+    right: calc(100% + 5px);
+    top: auto;
+    transform: translateY(50%) translateX(4px);
+}
+[data-tooltip-pos="left"]:hover::before,
+[data-tooltip-pos="left"]:hover::after,
+[data-tooltip-pos="left"]:focus-visible::before,
+[data-tooltip-pos="left"]:focus-visible::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(50%) translateX(0);
+}
+
+[data-tooltip-pos="right"]::before {
+    bottom: 50%;
+    left: 100%;
+    top: auto;
+    transform: translateY(50%) translateX(-4px);
+    border-width: 5px 5px 5px 0;
+    border-color: transparent rgba(15, 23, 42, 0.96) transparent transparent;
+}
+[data-tooltip-pos="right"]::after {
+    bottom: 50%;
+    left: calc(100% + 5px);
+    top: auto;
+    transform: translateY(50%) translateX(-4px);
+}
+[data-tooltip-pos="right"]:hover::before,
+[data-tooltip-pos="right"]:hover::after,
+[data-tooltip-pos="right"]:focus-visible::before,
+[data-tooltip-pos="right"]:focus-visible::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(50%) translateX(0);
+}
+
+/* Tooltip info trigger icon */
+.tooltip-trigger-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 5px;
+    color: var(--text-muted);
+    vertical-align: middle;
+    cursor: help;
+    transition: color 0.15s ease;
+}
+.tooltip-trigger-icon:hover {
+    color: var(--primary);
+}
+.tooltip-trigger-icon .lucide,
+.tooltip-trigger-icon svg.lucide {
+    width: 12px;
+    height: 12px;
+}
+

@@ -46,16 +46,18 @@ test('admin/index.html includes Guided Tour topbar button and modal', () => {
 });
 
 // -------------------------------------------------------------
-// Test 2: Admin JS Config Cards & Handlers
+// Test 2: Admin JS Config Cards & Tooltips
 // -------------------------------------------------------------
-test('admin/admin.js includes Workday Closing Time, Remote Sign-Out & WFH Quota UI', () => {
+test('admin/admin.js includes Workday Closing Time & Home Quota UI with inherently allowed remote sign-out & tooltips', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'admin', 'admin.js'), 'utf8');
     assert(js.includes('id="config-closing-time-current"'), 'Missing #config-closing-time-current element in admin panel');
     assert(js.includes('id="config-closing-time-btn"'), 'Missing #config-closing-time-btn button');
-    assert(js.includes('id="config-remote-signout-current"'), 'Missing #config-remote-signout-current element');
-    assert(js.includes('id="config-remote-signout-btn"'), 'Missing #config-remote-signout-btn button');
+    // Remote signout is inherently allowed without requiring an admin toggle button
+    assert(!js.includes('id="config-remote-signout-btn"'), 'Post-closing remote sign-out must be inherently allowed without a toggle button');
     assert(js.includes('id="config-wfh-quota-current"'), 'Missing #config-wfh-quota-current element');
     assert(js.includes('id="config-wfh-quota-btn"'), 'Missing #config-wfh-quota-btn button');
+    // Verify tooltips on config cards and staff list
+    assert(js.includes('data-tooltip='), 'Missing data-tooltip attributes in admin.js');
 });
 
 // -------------------------------------------------------------

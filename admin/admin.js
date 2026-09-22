@@ -414,13 +414,6 @@ async function loadConfigValues() {
             const closingTimeMinutes = cfg.WORKDAY_END_MINUTES !== undefined ? Number(cfg.WORKDAY_END_MINUTES) : (cfg.CLOSING_TIME_MINUTES !== undefined ? Number(cfg.CLOSING_TIME_MINUTES) : 1020);
             if (closingEl) closingEl.textContent = formatMinutesAsTime(closingTimeMinutes);
 
-            const remoteSignoutEl = document.getElementById('config-remote-signout-current');
-            const allowRemoteSignout = cfg.ALLOW_REMOTE_SIGNOUT_POST_CLOSING !== undefined ? cfg.ALLOW_REMOTE_SIGNOUT_POST_CLOSING : true;
-            if (remoteSignoutEl) {
-                const isRemoteEnabled = (allowRemoteSignout === true || allowRemoteSignout === 'true');
-                remoteSignoutEl.textContent = isRemoteEnabled ? 'Enabled' : 'Disabled';
-            }
-
             const wfhQuotaEl = document.getElementById('config-wfh-quota-current');
             const countWfhQuota = cfg.COUNT_WFH_IN_ATTENDANCE_QUOTA !== undefined ? cfg.COUNT_WFH_IN_ATTENDANCE_QUOTA : true;
             tenantWfhQuotaEnabled = (countWfhQuota === true || countWfhQuota === 'true');
@@ -1619,23 +1612,23 @@ function renderStaffList(staff) {
     `;
 
     const policyLabels = {
-        weekly_hybrid: { label: 'Hybrid (2-Day)', style: '' },
-        field_flexible: { label: 'Field / Media', style: 'color: #ca8a04; border-color: rgba(202, 138, 4, 0.25);' },
-        executive: { label: 'Executive', style: 'color: #9333ea; border-color: rgba(147, 51, 234, 0.25);' },
-        office_only: { label: 'Office Only', style: 'color: #2563eb; border-color: rgba(37, 99, 235, 0.25);' }
+        weekly_hybrid: { label: 'Hybrid (2-Day)', tooltip: 'Standard Hybrid: 2 required in-office days per week', style: '' },
+        field_flexible: { label: 'Field / Media', tooltip: 'Field / Media: 3 Home days with variable shoots (no GPS block)', style: 'color: #ca8a04; border-color: rgba(202, 138, 4, 0.25);' },
+        executive: { label: 'Executive', tooltip: 'Executive: Exempt from geofencing and weekly grid requirements', style: 'color: #9333ea; border-color: rgba(147, 51, 234, 0.25);' },
+        office_only: { label: 'Office Only', tooltip: 'Office Only: 100% in-office attendance required every day', style: 'color: #2563eb; border-color: rgba(37, 99, 235, 0.25);' }
     };
 
     const rowsHtml = filteredStaff.map((entry) => {
         const isLocked = Boolean(entry.device_id || entry.deviceId);
         const pol = policyLabels[entry.schedule_policy] || policyLabels.weekly_hybrid;
-        const polHtml = `<span class="staff-policy-tag"${pol.style ? ` style="${pol.style}"` : ''}>${pol.label}</span>`;
+        const polHtml = `<span class="staff-policy-tag"${pol.style ? ` style="${pol.style}"` : ''} data-tooltip="${escapeHtml(pol.tooltip || pol.label)}">${pol.label}</span>`;
 
         return `
         <div class="staff-row">
             <div class="staff-name-cell">
                 <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                     <span style="font-weight:600; font-size:0.92rem; color:var(--text);">${escapeHtml(entry.name)}</span>
-                    ${entry.is_team_lead ? '<span class="staff-lead-badge"><i data-lucide="award"></i>Lead</span>' : ''}
+                    ${entry.is_team_lead ? '<span class="staff-lead-badge" data-tooltip="Team Lead: Has hybrid schedule priority"><i data-lucide="award"></i>Lead</span>' : ''}
                 </div>
                 <div style="font-size:0.76rem; color:var(--text-muted); font-weight:400; margin-top:2px;">
                     ${escapeHtml(entry.dept || 'General')}
@@ -1645,12 +1638,12 @@ function renderStaffList(staff) {
                 ${polHtml}
             </div>
             <div class="staff-device-cell">
-                <span class="staff-device-tag ${isLocked ? 'is-locked' : 'is-unlocked'}"><i data-lucide="${isLocked ? 'smartphone' : 'unlock'}"></i>${isLocked ? 'Linked' : 'Unlinked'}</span>
+                <span class="staff-device-tag ${isLocked ? 'is-locked' : 'is-unlocked'}" data-tooltip="${isLocked ? 'Device bound to staff smartphone hardware' : 'Unlinked: Binds to device hardware on next check-in'}"><i data-lucide="${isLocked ? 'smartphone' : 'unlock'}"></i>${isLocked ? 'Linked' : 'Unlinked'}</span>
             </div>
             <div class="staff-actions">
-                <button class="staff-action-btn" type="button" title="Edit ${escapeHtml(entry.name)}" data-edit-name="${escapeHtml(entry.name)}" aria-label="Edit staff"><i data-lucide="edit-2"></i></button>
-                <button class="staff-action-btn" type="button" title="Unlink device for ${escapeHtml(entry.name)}" data-reset-name="${escapeHtml(entry.name)}" aria-label="Reset device lock"><i data-lucide="rotate-cw"></i></button>
-                <button class="staff-action-btn danger" type="button" title="Remove ${escapeHtml(entry.name)}" data-remove-name="${escapeHtml(entry.name)}" aria-label="Remove staff"><i data-lucide="trash-2"></i></button>
+                <button class="staff-action-btn" type="button" title="Edit ${escapeHtml(entry.name)}" data-tooltip="Edit staff & policy" data-tooltip-pos="left" data-edit-name="${escapeHtml(entry.name)}" aria-label="Edit staff"><i data-lucide="edit-2"></i></button>
+                <button class="staff-action-btn" type="button" title="Unlink device for ${escapeHtml(entry.name)}" data-tooltip="Unlink device hardware lock" data-tooltip-pos="left" data-reset-name="${escapeHtml(entry.name)}" aria-label="Reset device lock"><i data-lucide="rotate-cw"></i></button>
+                <button class="staff-action-btn danger" type="button" title="Remove ${escapeHtml(entry.name)}" data-tooltip="Remove staff member" data-tooltip-pos="left" data-remove-name="${escapeHtml(entry.name)}" aria-label="Remove staff"><i data-lucide="trash-2"></i></button>
             </div>
         </div>
     `;}).join('');
@@ -2659,13 +2652,13 @@ function renderAdminPanel() {
         <div id="tab-dashboard" class="tab-content active">
             <div class="dashboard-header">
                 <div class="week-navigator">
-                    <button id="week-prev-btn" class="admin-btn secondary small" type="button">‹ Prev</button>
+                    <button id="week-prev-btn" class="admin-btn secondary small" type="button" data-tooltip="View previous week">‹ Prev</button>
                     <span id="week-label" class="week-label">Loading...</span>
-                    <button id="week-next-btn" class="admin-btn secondary small" type="button">Next ›</button>
+                    <button id="week-next-btn" class="admin-btn secondary small" type="button" data-tooltip="View next week">Next ›</button>
                 </div>
                 <div class="dashboard-actions">
                     <span id="refresh-label" class="refresh-label"></span>
-                    <button id="refresh-today-btn" class="admin-btn secondary small" type="button" title="Refresh"><i data-lucide="refresh-cw" size="13"></i></button>
+                    <button id="refresh-today-btn" class="admin-btn secondary small" type="button" title="Refresh" data-tooltip="Refresh live attendance feed"><i data-lucide="refresh-cw" size="13"></i></button>
                 </div>
             </div>
             <div id="today-attendance-list"><div class="staff-list-state">Loading this week...</div></div>
@@ -2674,13 +2667,13 @@ function renderAdminPanel() {
                 <div id="attendance-matrix"><div class="staff-list-state">Loading matrix...</div></div>
             </div>
             <div class="dashboard-quick-actions" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
-                <button id="dashboard-export-btn" class="admin-btn secondary small" type="button">
+                <button id="dashboard-export-btn" class="admin-btn secondary small" type="button" data-tooltip="Download weekly check-in logs as CSV">
                     <i data-lucide="download" size="13"></i> Export Week (CSV)
                 </button>
-                <button id="dashboard-print-btn" class="admin-btn secondary small" type="button" onclick="printWeeklyAttendanceReport()">
+                <button id="dashboard-print-btn" class="admin-btn secondary small" type="button" onclick="printWeeklyAttendanceReport()" data-tooltip="Generate clean printable weekly roster summary">
                     <i data-lucide="printer" size="13"></i> Printable Report (HTML)
                 </button>
-                <a class="admin-btn secondary small" href="../hybrid/?key=admin" target="_blank" rel="noopener" style="text-decoration:none;">
+                <a class="admin-btn secondary small" href="../hybrid/?key=admin" target="_blank" rel="noopener" style="text-decoration:none;" data-tooltip="Open full-screen interactive hybrid schedule matrix">
                     <i data-lucide="calendar" size="13"></i> Hybrid Scheduler
                 </a>
             </div>
@@ -2690,13 +2683,13 @@ function renderAdminPanel() {
             <div class="section-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                 <h3>Staff Management</h3>
                 <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                    <button id="share-invite-qr-btn" class="admin-btn primary small" type="button" onclick="openShareInviteModal()">
+                    <button id="share-invite-qr-btn" class="admin-btn primary small" type="button" onclick="openShareInviteModal()" data-tooltip="Share workspace invite code or scan QR code to pair staff phones">
                         <i data-lucide="qr-code" size="13"></i> Invite Link & QR
                     </button>
-                    <button id="export-staff-roster-btn" class="admin-btn secondary small" type="button" onclick="exportStaffRosterCSV()">
+                    <button id="export-staff-roster-btn" class="admin-btn secondary small" type="button" onclick="exportStaffRosterCSV()" data-tooltip="Download complete employee directory as CSV">
                         <i data-lucide="download" size="13"></i> Export Roster (CSV)
                     </button>
-                    <button id="import-staff-csv-btn" class="admin-btn secondary small" type="button">
+                    <button id="import-staff-csv-btn" class="admin-btn secondary small" type="button" data-tooltip="Bulk import employees from a CSV file">
                         <i data-lucide="upload" size="13"></i> Import via CSV
                     </button>
                 </div>
@@ -2788,20 +2781,20 @@ function renderAdminPanel() {
             <div class="config-section-group">
                 <h4>Office Location & Geofence</h4>
                 <div class="config-cards">
-                    <div class="config-card">
+                    <div class="config-card" data-tooltip="Physical GPS latitude coordinate of office premises">
                         <span class="config-icon"><i data-lucide="map-pin" size="18"></i></span>
                         <div class="config-info"><strong>Office Latitude</strong><span class="config-value" id="config-lat-current">6.4518631</span></div>
-                        <button id="config-office-lat-btn" class="admin-btn secondary small" type="button">Edit</button>
+                        <button id="config-office-lat-btn" class="admin-btn secondary small" type="button" data-tooltip="Edit office latitude">Edit</button>
                     </div>
-                    <div class="config-card">
+                    <div class="config-card" data-tooltip="Physical GPS longitude coordinate of office premises">
                         <span class="config-icon"><i data-lucide="map-pin" size="18"></i></span>
                         <div class="config-info"><strong>Office Longitude</strong><span class="config-value" id="config-lon-current">3.5277863</span></div>
-                        <button id="config-office-lon-btn" class="admin-btn secondary small" type="button">Edit</button>
+                        <button id="config-office-lon-btn" class="admin-btn secondary small" type="button" data-tooltip="Edit office longitude">Edit</button>
                     </div>
-                    <div class="config-card">
+                    <div class="config-card" data-tooltip="Allowable GPS radius for verified in-person check-ins">
                         <span class="config-icon"><i data-lucide="target" size="18"></i></span>
                         <div class="config-info"><strong>Geofence Radius</strong><span class="config-value" id="config-radius-current">100 meters</span></div>
-                        <button id="config-radius-btn" class="admin-btn secondary small" type="button">Edit</button>
+                        <button id="config-radius-btn" class="admin-btn secondary small" type="button" data-tooltip="Edit geofence radius in meters">Edit</button>
                     </div>
                 </div>
             </div>
@@ -2809,35 +2802,30 @@ function renderAdminPanel() {
             <div class="config-section-group">
                 <h4>Attendance Schedule & Policies</h4>
                 <div class="config-cards">
-                    <div class="config-card">
+                    <div class="config-card" data-tooltip="Official start of business. Arrivals after this time are flagged as Late">
                         <span class="config-icon"><i data-lucide="clock" size="18"></i></span>
                         <div class="config-info"><strong>Workday Start (Late Cutoff)</strong><span class="config-value" id="config-late-cutoff-current">8:30 AM</span></div>
-                        <button id="config-late-cutoff-btn" class="admin-btn secondary small" type="button">Edit</button>
+                        <button id="config-late-cutoff-btn" class="admin-btn secondary small" type="button" data-tooltip="Edit arrival cutoff time">Edit</button>
                     </div>
-                    <div class="config-card">
+                    <div class="config-card" data-tooltip="Official office closing time. After this hour, staff who checked in can sign out remotely without office GPS">
                         <span class="config-icon"><i data-lucide="clock-4" size="18"></i></span>
                         <div class="config-info"><strong>Workday Closing Time</strong><span class="config-value" id="config-closing-time-current">5:00 PM</span></div>
-                        <button id="config-closing-time-btn" class="admin-btn secondary small" type="button">Edit</button>
+                        <button id="config-closing-time-btn" class="admin-btn secondary small" type="button" data-tooltip="Edit office closing hour">Edit</button>
                     </div>
-                    <div class="config-card">
-                        <span class="config-icon"><i data-lucide="log-out" size="18"></i></span>
-                        <div class="config-info"><strong>Post-Closing Remote Sign-Out</strong><span class="config-value" id="config-remote-signout-current">Enabled</span></div>
-                        <button id="config-remote-signout-btn" class="admin-btn secondary small" type="button">Toggle</button>
-                    </div>
-                    <div class="config-card">
+                    <div class="config-card" data-tooltip="When enabled, scheduled Home days count towards attendance percentage; otherwise, quota reflects strictly in-office presence">
                         <span class="config-icon"><i data-lucide="pie-chart" size="18"></i></span>
                         <div class="config-info"><strong>Home Attendance Quota</strong><span class="config-value" id="config-wfh-quota-current">Counted in Quota</span></div>
-                        <button id="config-wfh-quota-btn" class="admin-btn secondary small" type="button">Toggle</button>
+                        <button id="config-wfh-quota-btn" class="admin-btn secondary small" type="button" data-tooltip="Toggle Home quota contribution">Toggle</button>
                     </div>
-                    <div class="config-card">
+                    <div class="config-card" data-tooltip="Official business operating days included in weekly attendance requirements">
                         <span class="config-icon"><i data-lucide="calendar" size="18"></i></span>
                         <div class="config-info"><strong>Working Days</strong><span class="config-value" id="config-workdays-current">Monday – Friday</span></div>
-                        <button id="config-workdays-btn" class="admin-btn secondary small" type="button">Edit</button>
+                        <button id="config-workdays-btn" class="admin-btn secondary small" type="button" data-tooltip="Edit active business days">Edit</button>
                     </div>
-                    <div class="config-card">
+                    <div class="config-card" data-tooltip="Gives designated team leads priority when reserving limited office slots">
                         <span class="config-icon"><i data-lucide="award" size="18"></i></span>
                         <div class="config-info"><strong>Team Lead Hybrid Priority</strong><span class="config-value" id="config-lead-priority-current">Enabled</span></div>
-                        <button id="config-lead-priority-btn" class="admin-btn secondary small" type="button">Toggle</button>
+                        <button id="config-lead-priority-btn" class="admin-btn secondary small" type="button" data-tooltip="Toggle team lead hybrid priority">Toggle</button>
                     </div>
                 </div>
             </div>
@@ -3141,19 +3129,6 @@ function renderAdminPanel() {
             if (res.ok) {
                 const closingEl = document.getElementById('config-closing-time-current');
                 if (closingEl) closingEl.textContent = formatMinutesAsTime(totalMinutes);
-            }
-        } catch (e) { showToast('Server error.', 'error'); }
-    });
-
-    document.getElementById('config-remote-signout-btn')?.addEventListener('click', async () => {
-        const currentEl = document.getElementById('config-remote-signout-current');
-        const isCurrentlyEnabled = currentEl?.textContent.trim() === 'Enabled';
-        const nextVal = isCurrentlyEnabled ? 'false' : 'true';
-        try {
-            const res = await callBackend({ mode: 'update-config', key: 'ALLOW_REMOTE_SIGNOUT_POST_CLOSING', value: nextVal });
-            showToast(`Post-Closing Remote Sign-Out ${nextVal === 'true' ? 'Enabled' : 'Disabled'}.`, res.ok ? 'success' : 'error');
-            if (res.ok && currentEl) {
-                currentEl.textContent = nextVal === 'true' ? 'Enabled' : 'Disabled';
             }
         } catch (e) { showToast('Server error.', 'error'); }
     });
