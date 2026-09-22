@@ -1,13 +1,35 @@
 let currentStep = 1;
 let uploadedLogoBase64 = "";
 
+function updateSlugPreview(slugVal) {
+    if (typeof window === 'undefined') return;
+    const origin = window.location.origin;
+    const pathname = window.location.pathname || '';
+    const basePath = pathname.includes('/onboard') ? pathname.substring(0, pathname.indexOf('/onboard')) : '';
+    const clean = String(slugVal || '').trim().toLowerCase() || 'acme';
+
+    const prefixEl = document.getElementById('slug-domain-prefix');
+    const adminPreviewEl = document.getElementById('full-admin-preview');
+    const slugPreviewEl = document.getElementById('full-slug-preview');
+
+    if (prefixEl) {
+        prefixEl.textContent = `${window.location.host}${basePath}/tenant/`;
+    }
+    if (adminPreviewEl) {
+        adminPreviewEl.textContent = `${origin}${basePath}/tenant/${clean}/admin/`;
+    }
+    if (slugPreviewEl) {
+        slugPreviewEl.textContent = `${origin}${basePath}/tenant/${clean}/`;
+    }
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     lucide.createIcons();
+    updateSlugPreview('');
 
     const companyNameInput = document.getElementById('company-name');
     const companySlugInput = document.getElementById('company-slug');
-    const slugPreview = document.getElementById('slug-preview');
 
     companyNameInput.addEventListener('input', () => {
         const generated = companyNameInput.value
@@ -17,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/^-|-$/g, '');
         if (!companySlugInput.dataset.touched) {
             companySlugInput.value = generated;
-            if (slugPreview) slugPreview.textContent = generated || 'acme';
+            updateSlugPreview(generated);
             checkSlugAvailabilityRealtime(generated);
         }
     });
@@ -26,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
         companySlugInput.dataset.touched = "true";
         const val = companySlugInput.value.toLowerCase().replace(/[^a-z0-9-]+/g, '');
         companySlugInput.value = val;
-        if (slugPreview) slugPreview.textContent = val || 'acme';
+        updateSlugPreview(val);
         checkSlugAvailabilityRealtime(val);
     });
 
@@ -232,16 +254,16 @@ function checkSlugAvailabilityRealtime(slug) {
             const res = await callBackend({ mode: 'check-tenant-slug', slug: clean });
             if (res.ok && res.available) {
                 msgEl.className = 'slug-status available';
-                msgEl.textContent = `Link is available: /tenant/${clean}/`;
+                msgEl.textContent = `✓ Identifier "${clean}" is available!`;
                 isSlugAvailable = true;
             } else {
                 msgEl.className = 'slug-status unavailable';
-                msgEl.textContent = `"${clean}" is already in use. Please choose another link.`;
+                msgEl.textContent = `"${clean}" is already in use. Please choose another identifier.`;
                 isSlugAvailable = false;
             }
         } catch (e) {
             msgEl.className = 'slug-status available';
-            msgEl.textContent = `Link selected: /tenant/${clean}/`;
+            msgEl.textContent = `✓ Identifier "${clean}" selected.`;
             isSlugAvailable = true;
         }
     }, 350);

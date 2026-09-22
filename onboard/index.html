@@ -61,13 +61,21 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="company-slug">Workspace Web Address / Custom Link <span class="req">*</span></label>
+                    <label for="company-slug">Workspace Identifier (Slug) <span class="req">*</span></label>
                     <div class="input-with-prefix">
-                        <span class="prefix">/tenant/</span>
+                        <span class="prefix" id="slug-domain-prefix">/tenant/</span>
                         <input type="text" id="company-slug" placeholder="acme" required />
                     </div>
                     <div id="slug-availability-msg" class="slug-status" style="margin-top:4px; font-size:0.78rem; font-weight:600; display:none;"></div>
-                    <small class="helper-text" id="slug-hint-text">Your team will sign in at: <code>/tenant/<span id="slug-preview">acme</span>/</code></small>
+                    <small class="helper-text" id="slug-hint-text" style="display:block; margin-top:6px; line-height:1.5;">
+                        <span style="display:block; margin-bottom:3px;">
+                            <strong>Admin Portal:</strong> <code id="full-admin-preview">https://.../tenant/acme/admin/</code>
+                        </span>
+                        <span style="display:block; color:var(--text-muted);">
+                            <strong>One-Time Staff Setup:</strong> <code id="full-slug-preview">https://.../tenant/acme/</code>
+                            <span style="display:block; font-size:0.75rem; opacity:0.85; margin-top:2px;">(Auto-cleans to root <code>/</code> after pairing for Zero-Exposure privacy)</span>
+                        </span>
+                    </small>
                 </div>
 
                 <div class="form-group">
