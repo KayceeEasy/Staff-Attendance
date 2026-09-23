@@ -12,11 +12,12 @@ const hybridSupabaseClient = (typeof window !== 'undefined' && window.supabaseCl
 const urlParams = new URLSearchParams(window.location.search);
 const activeTenantSlug = (typeof getActiveTenantSlug === 'function' ? getActiveTenantSlug() : null) || urlParams.get('tenant') || 'lifecard';
 
-const STORAGE_KEY = `chckpoint-hybrid-schedule-${activeTenantSlug}`;
-const HISTORY_STORAGE_KEY = `chckpoint-hybrid-history-${activeTenantSlug}`;
+const STORAGE_KEY = `perimetrr-hybrid-schedule-${activeTenantSlug}`;
+const HISTORY_STORAGE_KEY = `perimetrr-hybrid-history-${activeTenantSlug}`;
 
 // Admin Mode check: active admin session or explicit admin key parameter
 const hasAdminSession = Boolean(
+    sessionStorage.getItem(`perimetrr_admin_unlocked_${activeTenantSlug}`) ||
     sessionStorage.getItem(`chckpoint_admin_unlocked_${activeTenantSlug}`) || 
     sessionStorage.getItem('admin_session') ||
     sessionStorage.getItem('admin_token')
@@ -45,7 +46,7 @@ async function initTenantHybridBranding() {
         const companyName = tenant?.name || (activeTenantSlug.charAt(0).toUpperCase() + activeTenantSlug.slice(1));
         const titleEl = document.getElementById('page-brand-title');
         if (titleEl) titleEl.textContent = `${companyName} Hybrid Schedule`;
-        document.title = `${companyName} Hybrid Schedule | Chckpoint`;
+        document.title = `${companyName} Hybrid Schedule | Perimetrr`;
     } catch(e) {
         console.warn('Error applying tenant hybrid branding:', e);
     }

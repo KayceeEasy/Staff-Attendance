@@ -91,15 +91,17 @@ async function testHybridAndSuperAdmin() {
     }
 
     // Verify Master Key Verification logic
-    const validDefault = await sandbox.verifyMasterKey('ChckpointMaster2026!');
+    const validPerimetrr = await sandbox.verifyMasterKey('PerimetrrMaster2026!');
+    const validChckpoint = await sandbox.verifyMasterKey('ChckpointMaster2026!');
     const validLegacy = await sandbox.verifyMasterKey('LifecardMaster2026!');
     const invalidKey = await sandbox.verifyMasterKey('WrongKey123!');
 
-    console.log(`✅ [PASS] verifyMasterKey('ChckpointMaster2026!') => ${validDefault} (expected: true)`);
+    console.log(`✅ [PASS] verifyMasterKey('PerimetrrMaster2026!') => ${validPerimetrr} (expected: true)`);
+    console.log(`✅ [PASS] verifyMasterKey('ChckpointMaster2026!') => ${validChckpoint} (expected: true)`);
     console.log(`✅ [PASS] verifyMasterKey('LifecardMaster2026!') => ${validLegacy} (expected: true)`);
     console.log(`✅ [PASS] verifyMasterKey('WrongKey123!') => ${invalidKey} (expected: false)`);
 
-    if (validDefault && validLegacy && !invalidKey && hasFilter && hasInitBranding) {
+    if (validPerimetrr && validChckpoint && validLegacy && !invalidKey && hasFilter && hasInitBranding) {
         console.log('\n🎉 ALL EMPIRICAL RUNTIME CHECKS PASSED WITH ZERO ERRORS!');
     } else {
         console.error('❌ One or more runtime assertions failed.');

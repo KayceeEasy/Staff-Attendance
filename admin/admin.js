@@ -1204,7 +1204,7 @@ function requestWorkspaceDeletion() {
         overlay.remove();
         const subject = encodeURIComponent(`Workspace Deletion & Data Purge Request: ${name} (${slug})`);
         const body = encodeURIComponent(`Hello Platform Operations Team,\n\nI am requesting complete account decommissioning, tenant deletion, and database purging for:\n\nCompany: ${name}\nWorkspace Identifier: ${slug}\nRequested By: ${currentAdminUsername}\nDate: ${new Date().toISOString()}\n\nPlease confirm when deletion is scheduled.\n\nThank you.`);
-        const supportTarget = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG?.SUPPORT_EMAIL) || 'support@chckpoint.com';
+        const supportTarget = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG?.SUPPORT_EMAIL) || 'support@perimetrr.com';
         window.location.href = `mailto:${supportTarget}?subject=${subject}&body=${body}`;
     });
 }
@@ -1565,7 +1565,7 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
             </div>
             
             <div style="margin-top: 30px; font-size: 9px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 10px;">
-                Report generated on ${new Date().toLocaleString()} • ${escapeHtml(currentTenantConfig?.name || 'Chckpoint')} Attendance Systems
+                Report generated on ${new Date().toLocaleString()} • ${escapeHtml(currentTenantConfig?.name || 'Perimetrr')} Attendance Systems
             </div>
         </div>
     `;
@@ -3907,7 +3907,7 @@ async function handleMasqueradeLogin(tokenStr) {
                 }
             } else {
                 // Only if no custom hash exists in database, fall back to default platform key
-                const secrets = ['ChckpointMaster2026!', 'LifecardMaster2026!'];
+                const secrets = ['PerimetrrMaster2026!', 'ChckpointMaster2026!', 'LifecardMaster2026!'];
                 for (const s of secrets) {
                     const defaultHash = await sha256Hex(s);
                     const expectedDefaultHash = await sha256Hex(`${slug}:${ts}:${defaultHash}`);

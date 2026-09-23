@@ -2,7 +2,7 @@
  * Emergency Super Admin Master Key Reset Utility
  * 
  * Usage:
- *   node scripts/reset_master_key.js "YourNewMasterKey2026!"
+ *   node scripts/reset_master_key.js "PerimetrrMaster2026!"
  * 
  * If you ever forget the Super Admin Master Key, this tool generates
  * the cryptographic SHA-256 hash and provides the exact Supabase SQL
@@ -16,7 +16,7 @@ const newKey = process.argv[2];
 if (!newKey) {
     console.error('\n❌ Error: Please provide a new master key.');
     console.log('\nUsage:');
-    console.log('  node scripts/reset_master_key.js "YourNewMasterKey2026!"\n');
+    console.log('  node scripts/reset_master_key.js "PerimetrrMaster2026!"\n');
     process.exit(1);
 }
 

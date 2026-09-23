@@ -1,8 +1,8 @@
 {
-  "name": "Lifecard Staff Attendance",
-  "short_name": "Lifecard Attendance",
-  "description": "Daily attendance tracking for Lifecard staff with GPS geofencing. Sign in and sign out at the office.",
-  "id": "lifecard-staff-attendance-pwa",
+  "name": "Perimetrr Staff Attendance",
+  "short_name": "Perimetrr",
+  "description": "Daily attendance tracking with GPS geofencing. Sign in and sign out at the office.",
+  "id": "perimetrr-staff-attendance-pwa",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

@@ -25,8 +25,8 @@ function initSuperAdminModalDismissals() {
     });
 }
 
-const MASTER_PLATFORM_KEY = 'ChckpointMaster2026!';
-const LEGACY_MASTER_PLATFORM_KEY = 'LifecardMaster2026!';
+const MASTER_PLATFORM_KEY = 'PerimetrrMaster2026!';
+const LEGACY_MASTER_PLATFORM_KEYS = ['ChckpointMaster2026!', 'LifecardMaster2026!'];
 const SESSION_KEY = 'attendance_super_admin_unlocked';
 
 let tenantsCache = [];
@@ -51,7 +51,7 @@ async function getMasterKeyHash() {
 async function verifyMasterKey(inputKey) {
     if (!inputKey) return false;
     const clean = inputKey.trim();
-    if (clean === MASTER_PLATFORM_KEY || clean === LEGACY_MASTER_PLATFORM_KEY) return true;
+    if (clean === MASTER_PLATFORM_KEY || LEGACY_MASTER_PLATFORM_KEYS.includes(clean)) return true;
     const storedHash = await getMasterKeyHash();
     if (storedHash) {
         try {
