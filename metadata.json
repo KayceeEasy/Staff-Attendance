@@ -1,7 +1,7 @@
 {
-  "name": "Lifecard Staff Attendance Portal",
+  "name": "Perimetrr Presence Verification Portal",
   "version": "3.0.0",
-  "description": "Commercial multi-tenant staff attendance tracking with GPS geofencing. Sign in and sign out at the office.",
+  "description": "Enterprise multi-tenant presence verification and attendance tracking with perimeter geofencing. Presence you can prove.",
   "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

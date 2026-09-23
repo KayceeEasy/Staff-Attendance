@@ -14,12 +14,32 @@
 </head>
 <body id="main-body">
 
-<div class="container">
+<!-- Workspace Verification Gate (Shows on unlinked / unauthorized devices) -->
+<div id="hybrid-auth-gate" class="hybrid-gate-overlay" style="display:none;">
+    <div class="hybrid-gate-card">
+        <div class="hybrid-gate-icon"><i data-lucide="shield-lock" size="44" style="color:var(--primary);"></i></div>
+        <h2>Workspace Access Required</h2>
+        <p>To protect employee privacy, enter your organization's 6-character Workspace Code to access the hybrid schedule.</p>
+        <form id="hybrid-gate-form" onsubmit="handleUnlockGate(event)">
+            <input type="text" id="hybrid-workspace-code-input" class="hybrid-code-input" placeholder="e.g. ABC123" maxlength="10" autocomplete="off" autocapitalize="characters" aria-label="6-character Workspace Code" required autofocus />
+            <div id="hybrid-gate-error" class="hybrid-gate-error" style="display:none;"></div>
+            <button type="submit" class="btn-primary-gate">Unlock Schedule</button>
+        </form>
+        <div style="margin-top:16px; font-size:0.82rem; color:var(--text-muted); display:flex; justify-content:center; gap:12px;">
+            <a href="../" style="color:var(--text-muted); text-decoration:none;">← Attendance Kiosk</a>
+            <span>•</span>
+            <a href="../admin/" style="color:var(--primary); text-decoration:none;">Admin Login</a>
+        </div>
+    </div>
+</div>
+
+<div class="container" style="display:none;">
     <header>
         <div class="brand">
             <div style="display:flex; align-items:center; gap:8px;">
                 <a href="../" style="color:var(--text-muted); text-decoration:none; display:inline-flex; align-items:center;" title="Back to attendance" aria-label="Back to attendance"><i data-lucide="arrow-left" size="16"></i></a>
                 <h1 id="page-brand-title">Staff Hybrid Schedule</h1>
+                <button id="hybrid-switch-btn" type="button" onclick="handleSwitchWorkspace()" title="Switch Company Workspace" style="background:none; border:none; color:var(--text-muted); font-size:0.75rem; text-decoration:underline; cursor:pointer; margin-left:6px;">Switch</button>
             </div>
             <small id="display-date-range"></small>
             <div id="sync-status"></div>
@@ -32,12 +52,18 @@
             <button id="theme-toggle" class="icon-btn theme-toggle" type="button" aria-label="Switch theme" title="Toggle Theme">
                 <i data-lucide="moon" size="14"></i>
             </button>
-            <div id="admin-controls">
-                <button class="btn-gen" onclick="generateNew()"><i data-lucide="refresh-cw" size="14"></i> Regenerate</button>
+            <div id="export-controls" style="display:flex; gap:6px;">
                 <button class="btn-dl" onclick="downloadImage()"><i data-lucide="download" size="14"></i> JPG</button>
                 <button class="btn-wa" onclick="shareWhatsApp()"><i data-lucide="image" size="14"></i> WhatsApp</button>
                 <button class="btn-mail" onclick="shareGmail()"><i data-lucide="mail" size="14"></i> Gmail</button>
             </div>
+            <div id="admin-controls" style="display:none; gap:6px;">
+                <button class="btn-settings" onclick="openHybridSettingsModal()" title="Hybrid Quota Settings"><i data-lucide="sliders" size="14"></i> Quota</button>
+                <button class="btn-gen" onclick="generateNew()"><i data-lucide="refresh-cw" size="14"></i> Regenerate</button>
+            </div>
+            <button id="hybrid-admin-login-btn" class="btn-settings" onclick="openHybridAdminLoginModal()" title="Admin Edit Access" style="display:inline-flex; align-items:center; gap:5px;">
+                <i data-lucide="lock" size="14"></i> Admin Edit
+            </button>
         </div>
     </header>
 
@@ -64,6 +90,66 @@
             <p class="loading-text">Synchronizing with cloud...</p>
         </div>
     </section>
+</div>
+
+<!-- Modal: Hybrid Quota Settings -->
+<div id="hybrid-settings-modal" class="hybrid-gate-overlay" style="display:none;">
+    <div class="hybrid-gate-card" style="max-width:440px; text-align:left;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+            <div style="font-weight:700; font-size:1.1rem; color:var(--text); display:flex; align-items:center; gap:8px;">
+                <i data-lucide="sliders" size="18" style="color:var(--primary);"></i>
+                <span>Hybrid Policy Quota</span>
+            </div>
+            <button type="button" onclick="closeHybridSettingsModal()" aria-label="Close" style="background:none; border:none; color:var(--text-muted); cursor:pointer;"><i data-lucide="x" size="18"></i></button>
+        </div>
+        <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:16px;">
+            Set the required number of in-office and remote days per week for hybrid employees.
+        </p>
+        <div style="margin-bottom:16px;">
+            <label for="hybrid-office-days-select" style="display:block; font-size:0.8rem; font-weight:600; color:var(--text); margin-bottom:6px;">Office Days Required per Week:</label>
+            <select id="hybrid-office-days-select" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:0.92rem; font-weight:600;">
+                <option value="1">1 Day Office / 4 Days Remote</option>
+                <option value="2" selected>2 Days Office / 3 Days Remote (Standard)</option>
+                <option value="3">3 Days Office / 2 Days Remote</option>
+                <option value="4">4 Days Office / 1 Day Remote</option>
+            </select>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:8px;">
+            <button type="button" onclick="closeHybridSettingsModal()" style="padding:8px 14px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); cursor:pointer; font-weight:600;">Cancel</button>
+            <button type="button" onclick="saveHybridSettings()" class="btn-primary-gate" style="width:auto; margin-top:0;">Save & Apply</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Hybrid Admin Login for Schedule Editing -->
+<div id="hybrid-admin-login-modal" class="hybrid-gate-overlay" style="display:none;">
+    <div class="hybrid-gate-card" style="max-width:400px; text-align:left;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+            <div style="font-weight:700; font-size:1.1rem; color:var(--text); display:flex; align-items:center; gap:8px;">
+                <i data-lucide="shield-check" size="18" style="color:var(--primary);"></i>
+                <span>Admin Schedule Edit</span>
+            </div>
+            <button type="button" onclick="closeHybridAdminLoginModal()" aria-label="Close" style="background:none; border:none; color:var(--text-muted); cursor:pointer;"><i data-lucide="x" size="18"></i></button>
+        </div>
+        <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:16px;">
+            Enter tenant admin credentials to unlock full editing, quota adjustments, and schedule regeneration.
+        </p>
+        <form id="hybrid-admin-form" onsubmit="handleHybridAdminLogin(event)">
+            <div style="margin-bottom:12px;">
+                <label for="hybrid-admin-email" style="display:block; font-size:0.8rem; font-weight:600; margin-bottom:4px; color:var(--text);">Admin Email or Username</label>
+                <input type="text" id="hybrid-admin-email" class="hybrid-code-input" style="width:100%; text-transform:none; letter-spacing:normal; font-size:0.95rem; text-align:left; padding:8px 12px; box-sizing:border-box;" required autocomplete="username" />
+            </div>
+            <div style="margin-bottom:14px;">
+                <label for="hybrid-admin-password" style="display:block; font-size:0.8rem; font-weight:600; margin-bottom:4px; color:var(--text);">Password</label>
+                <input type="password" id="hybrid-admin-password" class="hybrid-code-input" style="width:100%; text-transform:none; letter-spacing:normal; font-size:0.95rem; text-align:left; padding:8px 12px; box-sizing:border-box;" required autocomplete="current-password" />
+            </div>
+            <div id="hybrid-admin-error" class="hybrid-gate-error" style="display:none; margin-bottom:12px;"></div>
+            <div style="display:flex; justify-content:flex-end; gap:8px;">
+                <button type="button" class="btn-cancel" onclick="closeHybridAdminLoginModal()" style="padding:8px 14px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); cursor:pointer; font-weight:600;">Cancel</button>
+                <button type="submit" id="hybrid-admin-submit-btn" class="btn-primary-gate" style="width:auto; margin-top:0;">Unlock Editing</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <script src="script.js"></script>

@@ -31,8 +31,23 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
-  // Bypass service worker completely for admin pages & requests
-  if (event.request.url.includes('/admin/')) return;
+  // Bypass service worker completely for admin, watch-tower, and super-admin portals
+  if (event.request.url.includes('/admin/') || event.request.url.includes('/watch-tower/') || event.request.url.includes('/super-admin/')) return;
+
+  // Network-First for HTML navigation so users never get trapped in stale app shells
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse.clone()));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request, { ignoreSearch: true }))
+    );
+    return;
+  }
 
   event.respondWith(
     caches.open(CACHE_NAME).then(async (cache) => {

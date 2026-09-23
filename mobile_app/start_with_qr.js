@@ -18,7 +18,7 @@ const localIp = getLocalIp();
 const expoUrl = `exp://${localIp}:8081`;
 
 console.log('\n======================================================');
-console.log('  LIFECARD MOBILE APP - EXPO SDK 54 DEV SERVER');
+console.log('  PERIMETRR GO MOBILE APP - EXPO SDK 54 DEV SERVER');
 console.log('======================================================\n');
 console.log(`Expo URL for Expo Go app: ${expoUrl}\n`);
 console.log('Scan the QR code below using Expo Go or Android Camera:\n');

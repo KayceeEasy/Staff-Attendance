@@ -20,7 +20,7 @@ let installPromptDismissed = false;
 
 /* ---------- Device identity ---------- */
 
-const IDB_NAME = 'lifecard_attendance';
+const IDB_NAME = 'perimetrr_attendance';
 const IDB_STORE = 'device';
 const IDB_KEY = 'identity';
 
@@ -51,7 +51,7 @@ function computeCanvasHardwareHash() {
         ctx.font = "14px 'Arial'";
         ctx.fillStyle = '#f60';
         ctx.fillRect(125, 1, 62, 20);
-        ctx.fillText('Lifecard-Security-v2', 2, 15);
+        ctx.fillText('Perimetrr-Security-v2', 2, 15);
         return btoa(canvas.toDataURL()).slice(-8);
     } catch (canvasError) {
         console.warn('Canvas fingerprinting unavailable:', canvasError.message);
@@ -649,7 +649,19 @@ function initStaffIdentityView() {
         // Recognized device: Show personal linked card
         linkedCard.style.display = 'flex';
         unlinkedBox.style.display = 'none';
-        if (nameDisplay) nameDisplay.textContent = savedName;
+        if (nameDisplay) {
+            nameDisplay.textContent = savedName;
+            const staffObj = staffDirectoryData.find(s => s.name && s.name.toLowerCase() === savedName.toLowerCase());
+            if (staffObj?.is_team_lead) {
+                const starSpan = document.createElement('span');
+                starSpan.textContent = ' ★';
+                starSpan.className = 'staff-lead-star';
+                starSpan.title = 'Team Lead';
+                starSpan.style.color = '#f59e0b';
+                starSpan.style.fontSize = '0.95rem';
+                nameDisplay.appendChild(starSpan);
+            }
+        }
         if (deptDisplay) deptDisplay.textContent = savedDept;
 
         const bioBadge = document.getElementById('linked-bio-badge');
@@ -663,6 +675,15 @@ function initStaffIdentityView() {
         }
 
         if (searchInput) searchInput.value = savedName;
+
+        const switchIdentityBtn = document.getElementById('switch-identity-btn');
+        if (switchIdentityBtn && !switchIdentityBtn.dataset.bound) {
+            switchIdentityBtn.dataset.bound = 'true';
+            switchIdentityBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                openDeviceTransferModal();
+            });
+        }
 
         updateSignInButtonsState();
         updateScheduleBanner(savedName);
@@ -744,6 +765,15 @@ function initSearchableStaffDropdown() {
 
             const nameSpan = document.createElement('span');
             nameSpan.textContent = name;
+            if (staffObj?.is_team_lead) {
+                const starSpan = document.createElement('span');
+                starSpan.textContent = ' ★';
+                starSpan.className = 'staff-lead-star';
+                starSpan.title = 'Team Lead';
+                starSpan.style.color = '#f59e0b';
+                starSpan.style.fontSize = '0.90rem';
+                nameSpan.appendChild(starSpan);
+            }
             leftBox.appendChild(nameSpan);
 
             li.appendChild(leftBox);
@@ -1025,7 +1055,7 @@ async function loadStaffDropdown() {
             const res = await callBackend({ mode: 'verify-staff-member', name: savedName });
             if (res && res.ok && res.name) {
                 // Check if administrator has remotely reset or unlinked this device
-                if (res.is_linked === false && getLocalDeviceLockHint()) {
+                if (res.was_unlinked_by_admin && getLocalDeviceLockHint()) {
                     safeStorage.removeItem('saved_name');
                     safeStorage.removeItem('saved_dept');
                     clearLocalDeviceLockHint();
@@ -1293,7 +1323,14 @@ function requestLocation() {
             coordsTimestamp = Date.now();
             const locStatus = document.getElementById('loc-status');
             const distLabel = document.getElementById('distance-label');
-            if (isCurrentStaffWfhToday()) {
+            const currentSelectedStaff = document.getElementById('staff-name')?.value || safeStorage.getItem('saved_name') || getLocalDeviceLockHint();
+            if (!currentSelectedStaff) {
+                if (locStatus) {
+                    locStatus.innerText = t('gpsReady', '📍 GPS Ready • Select Name');
+                    locStatus.className = 'status ready';
+                }
+                if (distLabel) distLabel.textContent = '';
+            } else if (isCurrentStaffWfhToday()) {
                 if (locStatus) {
                     locStatus.innerText = t('homeMode', '🏠 Virtual Mode');
                     locStatus.className = 'status ready';
@@ -1511,6 +1548,7 @@ function isRunningStandalone() {
     return window.matchMedia('(display-mode: standalone)').matches ||
            window.navigator.standalone === true ||
            window.isNativeMobileApp === true ||
+           navigator.userAgent.includes('PerimetrrGo') ||
            navigator.userAgent.includes('LifecardApp') ||
            navigator.userAgent.includes('Expo');
 }
@@ -1672,6 +1710,7 @@ setInterval(() => {
 
 function initFaqModal() {
     const faqBtn = document.getElementById('faq-btn');
+    const faqFooterLink = document.getElementById('faq-footer-link');
     const faqModal = document.getElementById('faq-modal');
     const faqCloseBtn = document.getElementById('faq-close-btn');
     const faqSearch = document.getElementById('faq-search');
@@ -1679,15 +1718,26 @@ function initFaqModal() {
     const categoryBtns = document.querySelectorAll('.faq-category-btn');
     const questionBtns = document.querySelectorAll('.faq-question');
     
-    if (!faqBtn || !faqModal) return;
+    if (!faqModal) return;
     
     let previousActiveElement = null;
     let isSearching = false;
     
-    faqBtn.addEventListener('click', () => {
-        previousActiveElement = document.activeElement;
-        openFaqModal();
-    });
+    if (faqBtn && !faqBtn.dataset.bound) {
+        faqBtn.dataset.bound = 'true';
+        faqBtn.addEventListener('click', () => {
+            previousActiveElement = document.activeElement;
+            openFaqModal();
+        });
+    }
+
+    if (faqFooterLink && !faqFooterLink.dataset.bound) {
+        faqFooterLink.dataset.bound = 'true';
+        faqFooterLink.addEventListener('click', () => {
+            previousActiveElement = document.activeElement;
+            openFaqModal();
+        });
+    }
     
     if (faqCloseBtn) {
         faqCloseBtn.addEventListener('click', closeFaqModal);
@@ -1915,19 +1965,27 @@ function openWorkspaceConnectModal() {
     const err = document.getElementById('workspace-connect-error');
     if (overlay) {
         overlay.style.display = 'flex';
+        overlay.classList.add('active');
         if (err) err.style.display = 'none';
         if (input) {
             input.value = '';
             setTimeout(() => input.focus(), 150);
         }
+        if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
     }
 }
 
 function closeWorkspaceConnectModal() {
     const overlay = document.getElementById('workspace-connect-overlay');
-    if (overlay) overlay.style.display = 'none';
+    if (overlay) {
+        overlay.style.display = 'none';
+        overlay.classList.remove('active');
+    }
     if (typeof stopWorkspaceQrScanner === 'function') stopWorkspaceQrScanner();
 }
+
+window.openWorkspaceConnectModal = openWorkspaceConnectModal;
+window.closeWorkspaceConnectModal = closeWorkspaceConnectModal;
 
 let activeWorkspaceQrStream = null;
 let activeWorkspaceQrInterval = null;
@@ -1992,7 +2050,18 @@ function initWorkspaceConnect() {
                 return;
             }
 
+            // If switching to a different workspace, wipe previous employee binding
+            const previousSlug = safeStorage.getItem('active_tenant_slug');
+            if (previousSlug && previousSlug.toLowerCase() !== matched.slug.toLowerCase()) {
+                safeStorage.removeItem('saved_name');
+                safeStorage.removeItem('saved_dept');
+                safeStorage.removeItem(STORAGE_KEYS.deviceLock);
+                safeStorage.removeItem(STORAGE_KEYS.lastAction);
+                if (typeof clearLocalDeviceLockHint === 'function') clearLocalDeviceLockHint();
+            }
+
             safeStorage.setItem('active_tenant_slug', matched.slug);
+            safeStorage.setItem('attendance_tenant_slug', matched.slug);
             stopWorkspaceQrScanner();
             closeWorkspaceConnectModal();
             showToast(`Connected to ${matched.name}!`, 'success');
@@ -2205,12 +2274,141 @@ async function initTenantBranding() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+function openDeviceTransferModal() {
+    const modal = document.getElementById('device-transfer-modal');
+    if (!modal) return;
+    const savedName = safeStorage.getItem('saved_name') || getLocalDeviceLockHint() || '';
+    const nameEl = document.getElementById('transfer-current-name');
+    if (nameEl) nameEl.textContent = savedName || 'Current Employee';
+    const pwdInput = document.getElementById('transfer-admin-pwd');
+    if (pwdInput) pwdInput.value = '';
+    const pwdMsg = document.getElementById('transfer-admin-pwd-msg');
+    if (pwdMsg) { pwdMsg.style.display = 'none'; pwdMsg.textContent = ''; }
+    const reqMsg = document.getElementById('transfer-request-msg');
+    if (reqMsg) { reqMsg.style.display = 'none'; reqMsg.textContent = ''; }
+    modal.style.display = 'flex';
+    if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+}
+
+function closeDeviceTransferModal() {
+    const modal = document.getElementById('device-transfer-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function initDeviceTransferModal() {
+    const closeBtn = document.getElementById('close-transfer-modal-btn');
+    if (closeBtn && !closeBtn.dataset.bound) {
+        closeBtn.dataset.bound = 'true';
+        closeBtn.addEventListener('click', closeDeviceTransferModal);
+    }
+
+    const modal = document.getElementById('device-transfer-modal');
+    if (modal && !modal.dataset.bound) {
+        modal.dataset.bound = 'true';
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeDeviceTransferModal();
+        });
+    }
+
+    const confirmAdminBtn = document.getElementById('confirm-admin-unlink-btn');
+    if (confirmAdminBtn && !confirmAdminBtn.dataset.bound) {
+        confirmAdminBtn.dataset.bound = 'true';
+        confirmAdminBtn.addEventListener('click', async () => {
+            const pwdInput = document.getElementById('transfer-admin-pwd');
+            const msgEl = document.getElementById('transfer-admin-pwd-msg');
+            const pwd = pwdInput ? pwdInput.value.trim() : '';
+            if (!pwd) {
+                if (msgEl) { msgEl.style.display = 'block'; msgEl.style.color = '#ef4444'; msgEl.textContent = 'Please enter admin password.'; }
+                return;
+            }
+
+            confirmAdminBtn.disabled = true;
+            confirmAdminBtn.textContent = 'Checking...';
+
+            try {
+                const activeTenant = await getActiveTenant();
+                let valid = false;
+                if (activeTenant && activeTenant.admin_password && activeTenant.admin_password === pwd) {
+                    valid = true;
+                } else if (activeTenant && activeTenant.admin_email) {
+                    const check = await callBackend({ mode: 'admin-login', email: activeTenant.admin_email, password: pwd });
+                    if (check && check.ok) valid = true;
+                } else {
+                    const check = await callBackend({ mode: 'admin-login', email: 'admin@perimetrr.com', password: pwd });
+                    if (check && check.ok) valid = true;
+                }
+
+                if (valid) {
+                    const savedName = safeStorage.getItem('saved_name') || getLocalDeviceLockHint();
+                    if (savedName) {
+                        try { await callBackend({ mode: 'unlink-staff-device', name: savedName }); } catch(e) {}
+                    }
+                    safeStorage.removeItem('saved_name');
+                    safeStorage.removeItem('saved_dept');
+                    clearLocalDeviceLockHint();
+                    if (savedName) clearBiometrics(savedName);
+
+                    closeDeviceTransferModal();
+                    initStaffIdentityView();
+                    showToast('Device unlocked and reset. You may now select a new employee.', 'success');
+                } else {
+                    if (msgEl) { msgEl.style.display = 'block'; msgEl.style.color = '#ef4444'; msgEl.textContent = 'Incorrect admin password.'; }
+                    showToast('Incorrect administrator password.', 'error');
+                }
+            } catch(e) {
+                if (msgEl) { msgEl.style.display = 'block'; msgEl.style.color = '#ef4444'; msgEl.textContent = 'Could not verify admin password.'; }
+            } finally {
+                confirmAdminBtn.disabled = false;
+                confirmAdminBtn.textContent = 'Unlock';
+            }
+        });
+    }
+
+    const requestTransferBtn = document.getElementById('request-transfer-btn');
+    if (requestTransferBtn && !requestTransferBtn.dataset.bound) {
+        requestTransferBtn.dataset.bound = 'true';
+        requestTransferBtn.addEventListener('click', async () => {
+            const reqMsg = document.getElementById('transfer-request-msg');
+            const savedName = safeStorage.getItem('saved_name') || getLocalDeviceLockHint();
+            requestTransferBtn.disabled = true;
+            requestTransferBtn.textContent = 'Sending request...';
+
+            try {
+                await recordAnalyticsEvent('device_transfer_requested', { name: savedName });
+                if (reqMsg) {
+                    reqMsg.style.display = 'block';
+                    reqMsg.style.color = '#10b981';
+                    reqMsg.textContent = '✓ Transfer request sent to administrator. They will reset your binding remotely.';
+                }
+                showToast('Device transfer request sent to workspace administrator.', 'success');
+            } catch(e) {
+                if (reqMsg) {
+                    reqMsg.style.display = 'block';
+                    reqMsg.style.color = '#ef4444';
+                    reqMsg.textContent = 'Could not send request. Please contact your manager directly.';
+                }
+            } finally {
+                requestTransferBtn.disabled = false;
+                requestTransferBtn.innerHTML = '<i data-lucide="send" size="14"></i> Send Transfer Request to Admin';
+                if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+            }
+        });
+    }
+}
+
+function initKioskModules() {
     initFaqModal();
     initPrivacyModal();
     initWorkspaceConnect();
+    initDeviceTransferModal();
     initTenantBranding();
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initKioskModules);
+} else {
+    initKioskModules();
+}
 
 async function refreshRecentLogsFromDb() {
     const nameSelect = document.getElementById('staff-name');
@@ -2363,11 +2561,12 @@ async function updateScheduleBanner(name) {
     const distLabel = document.getElementById('distance-label');
 
     if (!name) {
-        currentStaffTodayMode = 'office';
+        currentStaffTodayMode = null;
         if (locStatus) {
-            locStatus.innerText = coords ? t('officeMode', '📍 Office') : t('verifyingGps', 'Verifying GPS...');
+            locStatus.innerText = coords ? t('gpsReady', '📍 GPS Ready • Select Name') : t('verifyingGps', 'Verifying GPS...');
             locStatus.className = coords ? 'status ready' : 'status waiting';
         }
+        if (distLabel) distLabel.textContent = '';
         updateActionHeroState();
         return;
     }

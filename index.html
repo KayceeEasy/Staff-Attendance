@@ -54,7 +54,7 @@
                 <div>
                     <div style="display:flex; align-items:center; gap:6px;">
                         <span class="eyebrow" id="tenant-brand-name" data-i18n="appName">Staff Attendance</span>
-                        <button id="switch-workspace-btn" type="button" title="Switch Company Workspace" data-tooltip="Pair with a different company workspace" data-i18n="switchWorkspace" style="background:transparent; border:none; color:var(--text-muted); font-size:0.72rem; cursor:pointer; text-decoration:underline;">Switch</button>
+                        <button id="switch-workspace-btn" type="button" onclick="openWorkspaceConnectModal()" title="Switch Company Workspace" data-tooltip="Pair with a different company workspace" data-i18n="switchWorkspace" style="background:transparent; border:none; color:var(--text-muted); font-size:0.72rem; cursor:pointer; text-decoration:underline;">Switch</button>
                     </div>
                     <div id="live-clock" class="live-clock" aria-live="polite">--:-- --</div>
                 </div>
@@ -102,6 +102,9 @@
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:6px;">
+                    <button type="button" id="switch-identity-btn" class="btn-change-identity" title="Switch employee or transfer device" aria-label="Change employee identity" style="background:rgba(255,255,255,0.08); border:1px solid var(--border); color:var(--text-muted); font-size:0.75rem; padding:4px 8px; border-radius:6px; cursor:pointer; display:flex; align-items:center; gap:4px;">
+                        <i data-lucide="arrow-left-right" size="12"></i> Change
+                    </button>
                     <span class="device-locked-pill" title="Device linked to this employee." data-tooltip="Device securely linked to your profile. Contact your administrator to transfer or reset."><i data-lucide="lock" size="12"></i> <span data-i18n="deviceBound">Linked</span></span>
                 </div>
             </div>
@@ -170,8 +173,12 @@
         </button>
 
         <footer class="app-footer" style="text-align: center; padding: 16px 0 8px 0; margin-top: 20px; font-size: 0.76rem; color: var(--muted); border-top: 1px solid var(--border);">
-            <p style="margin: 0 0 4px 0;">Copyright &copy; 2026 Kaycee Tech. All Rights Reserved.</p>
-            <p style="margin: 0;"><button id="privacy-policy-link" type="button" style="background:none; border:none; color: var(--primary); text-decoration:underline; font-size:0.76rem; cursor:pointer; padding:0;">Privacy &amp; Location Policy</button></p>
+            <p style="margin: 0 0 4px 0;">Copyright &copy; 2026 Perimetrr. All Rights Reserved.</p>
+            <p style="margin: 0; display:flex; justify-content:center; gap:12px; align-items:center;">
+                <button id="faq-footer-link" type="button" style="background:none; border:none; color: var(--primary); text-decoration:underline; font-size:0.76rem; cursor:pointer; padding:0;">Help &amp; FAQ</button>
+                <span style="opacity:0.4;">&bull;</span>
+                <button id="privacy-policy-link" type="button" style="background:none; border:none; color: var(--primary); text-decoration:underline; font-size:0.76rem; cursor:pointer; padding:0;">Privacy &amp; Location Policy</button>
+            </p>
         </footer>
     </div>
     
@@ -769,8 +776,55 @@
         </div>
     </div>
 
-    <script src="common.js?v=3.0.3"></script>
-    <script src="script.js?v=3.0.3"></script>
+    <!-- Device Transfer / Unlink Modal -->
+    <div id="device-transfer-modal" class="faq-overlay" role="dialog" aria-modal="true" style="display:none; z-index: 9999; backdrop-filter: blur(8px); background: rgba(0,0,0,0.7);">
+        <div class="faq-modal-content" style="max-width: 440px; text-align: left; padding: 24px 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="color: var(--primary);"><i data-lucide="arrow-left-right" size="22"></i></div>
+                    <h2 style="font-size: 1.15rem; font-weight: 700; margin: 0; color: var(--text);">Switch Account / Device</h2>
+                </div>
+                <button type="button" id="close-transfer-modal-btn" class="faq-close-btn" aria-label="Close modal" style="position:static; margin:0;">&times;</button>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px; line-height: 1.45;">
+                This phone is securely bound to <strong id="transfer-current-name" style="color:var(--text);">--</strong>. To switch employees or unbind this device, select an option below:
+            </p>
+
+            <div style="display: flex; flex-direction: column; gap: 14px;">
+                <!-- Option 1: Instant Admin PIN / Password Unlock -->
+                <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 0.88rem; font-weight: 600; color: var(--text); margin-bottom: 4px; display:flex; align-items:center; gap:6px;">
+                        <i data-lucide="key" size="14" style="color:var(--primary);"></i> Admin Instant Unlock
+                    </div>
+                    <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;">
+                        An administrator can enter their workspace password or PIN to immediately unbind this phone.
+                    </p>
+                    <div style="display: flex; gap: 6px;">
+                        <input type="password" id="transfer-admin-pwd" placeholder="Enter Workspace Admin Password" aria-label="Admin password" style="flex: 1; padding: 8px 10px; font-size: 0.82rem; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+                        <button type="button" id="confirm-admin-unlink-btn" class="btn-primary small" style="white-space: nowrap; padding: 8px 14px; font-size: 0.82rem;">Unlock</button>
+                    </div>
+                    <div id="transfer-admin-pwd-msg" style="display:none; font-size: 0.75rem; margin-top: 6px;"></div>
+                </div>
+
+                <!-- Option 2: 1-Tap Request Transfer -->
+                <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 0.88rem; font-weight: 600; color: var(--text); margin-bottom: 4px; display:flex; align-items:center; gap:6px;">
+                        <i data-lucide="send" size="14" style="color:#10b981;"></i> Request Remote Transfer
+                    </div>
+                    <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;">
+                        Sends a transfer request notification to your workspace administrator to reset your device pairing remotely.
+                    </p>
+                    <button type="button" id="request-transfer-btn" style="width: 100%; padding: 9px; background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.82rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                        <i data-lucide="send" size="14"></i> Send Transfer Request to Admin
+                    </button>
+                    <div id="transfer-request-msg" style="display:none; font-size: 0.75rem; margin-top: 6px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="common.js?v=3.0.4"></script>
+    <script src="script.js?v=3.0.4"></script>
     <script>
         if ('serviceWorker' in navigator) {
             // Force browser to bypass HTTP cache when checking for Service Worker updates

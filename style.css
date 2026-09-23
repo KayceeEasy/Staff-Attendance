@@ -1,5 +1,5 @@
 /* ============================================================
-   LIFECARD STAFF ATTENDANCE — PREMIUM DESIGN SYSTEM
+   PERIMETRR PRESENCE SYSTEM — ENTERPRISE DESIGN SYSTEM
    ============================================================ */
 
 /* ─── TOKENS & SENIOR UX TYPOGRAPHY SYSTEM ─── */
@@ -1015,17 +1015,52 @@ button:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; transfor
 
 @media (max-width: 600px) {
     body { padding: 12px 10px; align-items: center; min-height: 100dvh; }
-    .card { width: 100%; max-width: 100%; border-radius: var(--radius-lg); padding: 1.1rem 0.85rem calc(1rem + env(safe-area-inset-bottom)); margin: 0 auto; min-width: 0; }
-    .admin-card { width: 100%; max-width: 100%; border-radius: var(--radius-lg); padding: 1rem; margin: 0 auto; min-width: 0; }
+    .card { width: 100%; max-width: 100%; border-radius: var(--radius-lg); padding: 1.15rem 0.9rem calc(1rem + env(safe-area-inset-bottom)); margin: 0 auto; min-width: 0; box-sizing: border-box; }
+    .admin-card { width: 100%; max-width: 100%; border-radius: var(--radius-lg); padding: 1rem 0.8rem; margin: 0 auto; min-width: 0; box-sizing: border-box; }
     .dialog-overlay { align-items: flex-end; padding: 0; }
     .dialog-box { border-radius: var(--radius-lg) var(--radius-lg) 0 0; width: 100%; max-width: 100%; margin: 0; }
 }
 
 @media (max-width: 480px) {
-    #tenant-brand-name { max-width: 135px; }
+    body { padding: 10px 8px; }
+    .card { padding: 1rem 0.75rem calc(0.9rem + env(safe-area-inset-bottom)); }
+    .topbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: nowrap; gap: 8px; }
+    .topbar-brand { max-width: calc(100% - 115px); min-width: 0; flex: 1; }
+    #tenant-brand-name { max-width: 130px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .current-lang-code { display: none; }
-    .lang-btn { padding: 0 7px; min-width: 34px; height: 34px; justify-content: center; }
-    .topbar-actions { gap: 5px; }
+    .lang-btn { padding: 0 6px; min-width: 32px; height: 32px; justify-content: center; }
+    .topbar-actions { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+    .topbar-icon-btn, .theme-toggle { width: 32px; height: 32px; min-width: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+    #faq-btn { display: none !important; }
+    .btn-in-hero { width: clamp(140px, 46vw, 175px); }
+    .hero-btn-icon { width: 30px; height: 30px; }
+    .admin-card { padding: 0.85rem 0.65rem; }
+    .admin-tabs { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; white-space: nowrap; gap: 3px; padding: 3px; }
+    .tab-btn { padding: 6px 10px; font-size: 0.76rem; }
+    .staff-row { padding: 10px 8px; gap: 8px; }
+}
+
+@media (max-width: 360px) {
+    body { padding: 6px 4px; }
+    .card { padding: 0.85rem 0.55rem; }
+    .topbar { gap: 4px; }
+    .topbar-brand { max-width: calc(100% - 105px); }
+    #tenant-brand-name { max-width: 100px; font-size: 0.85rem; }
+    .topbar-actions { gap: 4px; }
+    .topbar-icon-btn, .theme-toggle, .lang-btn { width: 28px; height: 28px; min-width: 28px; }
+    .btn-in-hero { width: 130px; }
+}
+
+.staff-lead-star {
+    color: #f59e0b;
+    font-size: 0.95rem;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    vertical-align: middle;
+    margin-left: 3px;
+    cursor: default;
+    user-select: none;
 }
 
 /* ─── FAQ TRIGGER & MODAL ─── */

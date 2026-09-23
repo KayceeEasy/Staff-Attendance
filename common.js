@@ -1,6 +1,6 @@
 /**
- * Shared utilities for Lifecard Staff Attendance.
- * Loaded by both index.html and admin/index.html.
+ * Shared utilities for Perimetrr Presence Verification.
+ * Loaded by index.html, admin/index.html, and related portal surfaces.
  */
 
 const STORAGE_KEYS = {
@@ -31,6 +31,7 @@ const I18N_DICTIONARY = {
     en: {
         appName: "Staff Attendance",
         verifyingGps: "Verifying GPS...",
+        gpsReady: "📍 GPS Ready • Select Name",
         withinPerimeter: "Within office premises",
         awayFromOffice: "Away from office",
         metersFromOffice: "meters from office",
@@ -79,6 +80,7 @@ const I18N_DICTIONARY = {
     es: {
         appName: "Asistencia de Personal",
         verifyingGps: "Verificando GPS...",
+        gpsReady: "📍 GPS Listo • Selecciona Nombre",
         withinPerimeter: "Dentro de la oficina",
         awayFromOffice: "Fuera de la oficina",
         metersFromOffice: "metros de la oficina",
@@ -127,6 +129,7 @@ const I18N_DICTIONARY = {
     fr: {
         appName: "Présence du Personnel",
         verifyingGps: "Vérification GPS...",
+        gpsReady: "📍 GPS Prêt • Sélectionnez Votre Nom",
         withinPerimeter: "Dans les locaux du bureau",
         awayFromOffice: "Hors du bureau",
         metersFromOffice: "mètres du bureau",
@@ -175,6 +178,7 @@ const I18N_DICTIONARY = {
     pt: {
         appName: "Presença de Funcionários",
         verifyingGps: "Verificando GPS...",
+        gpsReady: "📍 GPS Pronto • Selecione Seu Nome",
         withinPerimeter: "Dentro do escritório",
         awayFromOffice: "Fora do escritório",
         metersFromOffice: "metros do escritório",
@@ -223,6 +227,7 @@ const I18N_DICTIONARY = {
     ar: {
         appName: "حضور الموظفين",
         verifyingGps: "جاري التحقق من الموقع (GPS)...",
+        gpsReady: "📍 تم التحقق من الموقع • حدد اسمك",
         withinPerimeter: "داخل مقر العمل",
         awayFromOffice: "خارج مقر العمل",
         metersFromOffice: "متر من المكتب",
@@ -687,7 +692,12 @@ async function getActiveTenant(optionalSlug = null) {
                 slug = urlParams.get('tenant') || urlParams.get('company');
             }
 
-            // 4. Device memory fallback (paired device)
+            // 4. Admin session memory fallback
+            if (!slug && typeof safeSession !== 'undefined') {
+                slug = safeSession.getItem('admin_tenant_slug') || safeSession.getItem('masquerade_tenant');
+            }
+
+            // 5. Device memory fallback (paired device)
             if (!slug) {
                 slug = safeStorage.getItem('active_tenant_slug');
             }
@@ -871,7 +881,7 @@ function clearBiometrics(staffName) {
 /* ---------- Per-Tenant Staff & Config Scoping ---------- */
 
 async function getTenantStaffList(tenantSlug) {
-    const slug = String(tenantSlug || 'lifecard').trim().toLowerCase();
+    const slug = String(tenantSlug || (typeof activeTenantSlug !== 'undefined' ? activeTenantSlug : (typeof getActiveTenantSlug === 'function' ? getActiveTenantSlug() : 'default'))).trim().toLowerCase();
     try {
         // 1. Check scoped app_config key
         const configKey = `TENANT_STAFF_${slug}`;
@@ -911,7 +921,7 @@ async function getTenantStaffList(tenantSlug) {
 }
 
 async function saveTenantStaffList(tenantSlug, staffArray) {
-    const slug = String(tenantSlug || 'lifecard').trim().toLowerCase();
+    const slug = String(tenantSlug || (typeof activeTenantSlug !== 'undefined' ? activeTenantSlug : (typeof getActiveTenantSlug === 'function' ? getActiveTenantSlug() : 'default'))).trim().toLowerCase();
     const configKey = `TENANT_STAFF_${slug}`;
     try {
         await supabaseClient.from('app_config').upsert([{
@@ -923,13 +933,53 @@ async function saveTenantStaffList(tenantSlug, staffArray) {
     }
 }
 
+async function getTenantAdminList(tenantSlug) {
+    const slug = String(tenantSlug || (typeof activeTenantSlug !== 'undefined' ? activeTenantSlug : (typeof getActiveTenantSlug === 'function' ? getActiveTenantSlug() : 'default'))).trim().toLowerCase();
+    const configKey = `TENANT_ADMINS_${slug}`;
+    try {
+        const stored = safeStorage.getItem(configKey);
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length) return parsed;
+        }
+    } catch(e) {}
+    try {
+        const { data, error } = await supabaseClient.from('app_config').select('value').eq('key', configKey).single();
+        if (!error && data && data.value) {
+            const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+            if (Array.isArray(parsed)) {
+                try { safeStorage.setItem(configKey, JSON.stringify(parsed)); } catch(e) {}
+                return parsed;
+            }
+        }
+    } catch (e) {}
+    return [];
+}
+
+async function saveTenantAdminList(tenantSlug, adminArray) {
+    const slug = String(tenantSlug || (typeof activeTenantSlug !== 'undefined' ? activeTenantSlug : (typeof getActiveTenantSlug === 'function' ? getActiveTenantSlug() : 'default'))).trim().toLowerCase();
+    const configKey = `TENANT_ADMINS_${slug}`;
+    try { safeStorage.setItem(configKey, JSON.stringify(adminArray)); } catch(e) {}
+    try {
+        await supabaseClient.from('app_config').upsert([{
+            key: configKey,
+            value: JSON.stringify(adminArray)
+        }], { onConflict: 'key' });
+    } catch (e) {
+        console.warn(`Error saving tenant admins for ${slug}:`, e);
+    }
+}
+
 async function getTenantConfig(tenantSlug) {
-    const slug = String(tenantSlug || 'lifecard').trim().toLowerCase();
+    const slug = String(tenantSlug || (typeof activeTenantSlug !== 'undefined' ? activeTenantSlug : (typeof getActiveTenantSlug === 'function' ? getActiveTenantSlug() : 'default'))).trim().toLowerCase();
     const configKey = `TENANT_CONFIG_${slug}`;
     try {
         const { data, error } = await supabaseClient.from('app_config').select('value').eq('key', configKey).single();
         if (!error && data && data.value) {
-            return typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+            const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+            if (!parsed.hybrid_office_days) parsed.hybrid_office_days = 2;
+            if (!parsed.slug) parsed.slug = slug;
+            return parsed;
         }
     } catch (e) {}
 
@@ -937,25 +987,32 @@ async function getTenantConfig(tenantSlug) {
     const registry = await getTenantRegistry();
     const t = registry.find(item => item.slug.toLowerCase() === slug) || {};
     return {
+        slug: t.slug || slug,
+        name: t.name || (slug.charAt(0).toUpperCase() + slug.slice(1)),
         office_name: t.office_name || 'Main Office',
         latitude: Number(t.latitude) || 6.4357,
         longitude: Number(t.longitude) || 3.4738,
         radius: Number(t.radius) || 100,
-        grace_period_minutes: 15,
-        default_policy: 'weekly_hybrid',
+        grace_period_minutes: Number(t.grace_period_minutes) || 15,
+        default_policy: t.default_policy || 'weekly_hybrid',
+        hybrid_office_days: Number(t.hybrid_office_days) || 2,
         brand_color: t.brand_color || '#1a56db',
         logo_url: t.logo_url || '',
-        workday_start_time: '08:30',
-        workday_end_time: '17:00',
-        workday_end_minutes: 1020,
-        allow_remote_signout_post_closing: true,
-        count_wfh_in_attendance_quota: true,
-        timezone: 'Africa/Lagos'
+        workday_start_time: t.workday_start_time || '08:30',
+        late_cutoff_minutes: Number(t.late_cutoff_minutes) || 510,
+        workday_end_time: t.workday_end_time || '17:00',
+        workday_end_minutes: Number(t.workday_end_minutes) || 1020,
+        allow_remote_signout_post_closing: t.allow_remote_signout_post_closing !== undefined ? t.allow_remote_signout_post_closing : true,
+        count_wfh_in_attendance_quota: t.wfh_quota_enabled !== undefined ? t.wfh_quota_enabled : true,
+        wfh_quota_enabled: t.wfh_quota_enabled !== undefined ? t.wfh_quota_enabled : true,
+        workdays: t.workdays || '1_5',
+        team_lead_priority_sort: t.team_lead_priority_sort !== undefined ? t.team_lead_priority_sort : true,
+        timezone: t.timezone || 'Africa/Lagos'
     };
 }
 
 async function saveTenantConfig(tenantSlug, configObj) {
-    const slug = String(tenantSlug || 'lifecard').trim().toLowerCase();
+    const slug = String(tenantSlug || (typeof activeTenantSlug !== 'undefined' ? activeTenantSlug : (typeof getActiveTenantSlug === 'function' ? getActiveTenantSlug() : 'default'))).trim().toLowerCase();
     const configKey = `TENANT_CONFIG_${slug}`;
     try {
         await supabaseClient.from('app_config').upsert([{
@@ -967,6 +1024,17 @@ async function saveTenantConfig(tenantSlug, configObj) {
     }
 }
 
+async function resolveRequestedTenantSlug(payload) {
+    if (payload && payload.tenantSlug) return String(payload.tenantSlug).trim().toLowerCase();
+    const activeTenant = await getActiveTenant();
+    if (activeTenant && activeTenant.slug) return activeTenant.slug.toLowerCase();
+    const sessionSlug = (typeof safeSession !== 'undefined' && (safeSession.getItem('admin_tenant_slug') || safeSession.getItem('masquerade_tenant'))) || null;
+    if (sessionSlug) return sessionSlug.toLowerCase();
+    const storageSlug = (typeof safeStorage !== 'undefined' && safeStorage.getItem('active_tenant_slug')) || null;
+    if (storageSlug) return storageSlug.toLowerCase();
+    return null;
+}
+
 async function callBackend(payload, timeoutMs = 20000) {
     if (!supabaseClient) return { ok: false, message: 'Supabase client not loaded.' };
     const adminToken = payload.adminToken || safeSession.getItem('admin_token') || '';
@@ -975,23 +1043,83 @@ async function callBackend(payload, timeoutMs = 20000) {
     try {
         switch (mode) {
             case 'admin-login': {
-                // True Supabase Auth Login
-                const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
-                    email: payload.email,
-                    password: payload.password
-                });
-                if (authError) throw authError;
+                const emailClean = String(payload.email || '').trim().toLowerCase();
+                const password = String(payload.password || '').trim();
+                const passwordHash = await sha256Hex(password);
                 
-                // Fetch their role from admin_roles
-                const { data: roleData, error: roleError } = await supabaseClient.from('admin_roles').select('role').eq('id', authData.user.id).single();
-                if (roleError) throw roleError;
+                let authUser = null;
+                let userRole = 'admin';
+                let isSuperuser = false;
+
+                // 1. Try Supabase Auth Login
+                try {
+                    const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
+                        email: payload.email,
+                        password: password
+                    });
+                    if (!authError && authData && authData.user) {
+                        authUser = authData.user;
+                        const { data: roleData } = await supabaseClient.from('admin_roles').select('role').eq('id', authUser.id).single();
+                        if (roleData && roleData.role) {
+                            userRole = roleData.role;
+                            if (userRole === 'developer') isSuperuser = true;
+                        }
+                    }
+                } catch(e) {}
+
+                // 2. Match tenant from registry
+                const registry = await getTenantRegistry();
+                let matchedTenant = registry.find(t => 
+                    (t.admin_email && t.admin_email.toLowerCase() === emailClean) ||
+                    (t.email && t.email.toLowerCase() === emailClean) ||
+                    (t.contact_email && t.contact_email.toLowerCase() === emailClean) ||
+                    (t.slug && emailClean.includes(`@${t.slug.toLowerCase()}.internal`))
+                );
+
+                // Check tenant primary admin password fallback if not authenticated via Supabase
+                if (matchedTenant && !authUser) {
+                    if (matchedTenant.admin_password && matchedTenant.admin_password === password) {
+                        authUser = { id: 'primary_' + matchedTenant.slug, email: matchedTenant.admin_email };
+                    }
+                }
+
+                // 3. If not found in primary tenant registry, search delegated admins in TENANT_ADMINS_${slug}
+                if (!matchedTenant) {
+                    for (const t of registry) {
+                        const tenantAdmins = await getTenantAdminList(t.slug);
+                        const matchedAdmin = tenantAdmins.find(a => 
+                            (a.email && a.email.toLowerCase() === emailClean) ||
+                            (a.username && a.username.toLowerCase() === emailClean)
+                        );
+                        if (matchedAdmin) {
+                            if (authUser) {
+                                matchedTenant = t;
+                                userRole = matchedAdmin.role || userRole;
+                                break;
+                            } else if (matchedAdmin.password_hash && (matchedAdmin.password_hash === passwordHash || matchedAdmin.password_hash === password)) {
+                                matchedTenant = t;
+                                userRole = matchedAdmin.role || 'admin';
+                                authUser = { id: matchedAdmin.id, email: matchedAdmin.email };
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (!matchedTenant && !authUser) {
+                    return { ok: false, message: 'Invalid admin credentials.' };
+                }
+
+                const tenantSlug = matchedTenant ? matchedTenant.slug : (payload.tenantSlug || null);
 
                 return {
                     ok: true,
                     message: 'Admin access granted.',
-                    role: roleData.role,
-                    isSuperuser: roleData.role === 'developer',
-                    username: payload.email
+                    role: userRole,
+                    isSuperuser: isSuperuser,
+                    username: payload.email,
+                    tenantSlug: tenantSlug,
+                    tenant: matchedTenant || null
                 };
             }
             case 'admin-logout': {
@@ -1053,8 +1181,9 @@ async function callBackend(payload, timeoutMs = 20000) {
                 };
             }
             case 'list-logs': {
-                const activeTenant = await getActiveTenant(payload.tenantSlug);
-                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (!tenantSlug) return { ok: true, logs: [] };
+
                 let query = supabaseClient.from('attendance').select('*');
                 
                 // Strict multi-tenant isolation
@@ -1082,14 +1211,14 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, logs: data || [] };
             }
             case 'list-staff': {
-                const activeTenant = await getActiveTenant(payload.tenantSlug);
-                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (!tenantSlug) return { ok: true, allowed: true, staff: [] };
                 const staff = await getTenantStaffList(tenantSlug);
                 return { ok: true, allowed: true, staff };
             }
             case 'add-staff': {
-                const activeTenant = await getActiveTenant(payload.tenantSlug);
-                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (!tenantSlug) return { ok: false, message: 'No active workspace selected or authorized.' };
                 const name = String(payload.name || '').trim();
                 if (!name) return { ok: false, message: 'Staff name is required.' };
 
@@ -1125,8 +1254,8 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, message: 'Staff added successfully.', staffMember: newMember };
             }
             case 'batch-import-staff': {
-                const activeTenant = await getActiveTenant(payload.tenantSlug);
-                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (!tenantSlug) return { ok: false, message: 'No active workspace selected or authorized.' };
                 const list = Array.isArray(payload.staff) ? payload.staff : [];
                 if (!list.length) return { ok: false, message: 'No staff data provided.' };
 
@@ -1179,8 +1308,8 @@ async function callBackend(payload, timeoutMs = 20000) {
                 };
             }
             case 'update-staff': {
-                const activeTenant = await getActiveTenant(payload.tenantSlug);
-                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (!tenantSlug) return { ok: false, message: 'No active workspace selected or authorized.' };
                 const name = String(payload.name || '').trim();
                 const staff = await getTenantStaffList(tenantSlug);
                 const idx = staff.findIndex(s => s.name.toLowerCase() === name.toLowerCase());
@@ -1204,8 +1333,8 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, message: 'Staff updated successfully.', staffMember: staff[idx] };
             }
             case 'remove-staff': {
-                const activeTenant = await getActiveTenant(payload.tenantSlug);
-                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (!tenantSlug) return { ok: false, message: 'No active workspace selected or authorized.' };
                 const name = String(payload.name || '').trim();
                 let staff = await getTenantStaffList(tenantSlug);
                 staff = staff.filter(s => s.name.toLowerCase() !== name.toLowerCase());
@@ -1220,14 +1349,15 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, message: 'Staff removed successfully.' };
             }
             case 'reset-staff-lock': {
-                const activeTenant = await getActiveTenant(payload.tenantSlug);
-                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (!tenantSlug) return { ok: false, message: 'No active workspace selected or authorized.' };
                 const name = String(payload.name || '').trim();
                 const staff = await getTenantStaffList(tenantSlug);
                 const member = staff.find(s => s.name.toLowerCase() === name.toLowerCase());
                 if (member) {
                     member.device_id = null;
                     member.device_token = null;
+                    member.was_unlinked_by_admin = true;
                     await saveTenantStaffList(tenantSlug, staff);
                 }
                 if (tenantSlug === 'lifecard') {
@@ -1236,10 +1366,10 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, message: 'Device lock reset successfully.' };
             }
             case 'reset-all-locks': {
-                const activeTenant = await getActiveTenant(payload.tenantSlug);
-                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (!tenantSlug) return { ok: false, message: 'No active workspace selected or authorized.' };
                 const staff = await getTenantStaffList(tenantSlug);
-                staff.forEach(s => { s.device_id = null; s.device_token = null; });
+                staff.forEach(s => { s.device_id = null; s.device_token = null; s.was_unlinked_by_admin = true; });
                 await saveTenantStaffList(tenantSlug, staff);
                 if (tenantSlug === 'lifecard') {
                     try { await supabaseClient.from('staff').update({ device_id: null }).neq('name', 'dummy'); } catch(e) {}
@@ -1259,134 +1389,235 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, config: configObj };
             }
             case 'update-config': {
-                const { error } = await supabaseClient.from('app_config').upsert([{ key: payload.key, value: payload.value }], { onConflict: 'key' });
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (tenantSlug) {
+                    try {
+                        const registry = await getTenantRegistry();
+                        const tIdx = registry.findIndex(t => t.slug && t.slug.toLowerCase() === tenantSlug.toLowerCase());
+                        if (tIdx !== -1) {
+                            if (payload.key === 'TIMEZONE') registry[tIdx].timezone = payload.value;
+                            if (payload.key === 'OFFICE_LAT') registry[tIdx].latitude = Number(payload.value);
+                            if (payload.key === 'OFFICE_LON') registry[tIdx].longitude = Number(payload.value);
+                            if (payload.key === 'RADIUS_METERS') registry[tIdx].radius = Number(payload.value);
+                            if (payload.key === 'LATE_CUTOFF_MINUTES') registry[tIdx].late_cutoff_minutes = Number(payload.value);
+                            if (payload.key === 'WORKDAY_END_MINUTES') registry[tIdx].workday_end_minutes = Number(payload.value);
+                            if (payload.key === 'WORK_DAYS') registry[tIdx].workdays = payload.value;
+                            if (payload.key === 'TEAM_LEAD_PRIORITY_SORT') registry[tIdx].team_lead_priority_sort = (payload.value === 'true' || payload.value === true);
+                            if (payload.key === 'HYBRID_OFFICE_DAYS') registry[tIdx].hybrid_office_days = Number(payload.value);
+                            if (payload.key === 'COUNT_WFH_IN_ATTENDANCE_QUOTA') registry[tIdx].wfh_quota_enabled = (payload.value === 'true' || payload.value === true);
+                            await saveTenantRegistry(registry);
+                        }
+                    } catch(e) {
+                        console.warn('Could not sync update-config to tenant registry:', e);
+                    }
+                }
+
+                const configKey = tenantSlug && tenantSlug !== 'lifecard' ? `${tenantSlug}::${payload.key}` : payload.key;
+                const { error } = await supabaseClient.from('app_config').upsert([{ key: configKey, value: payload.value }], { onConflict: 'key' });
                 if (error) throw error;
+                if (tenantSlug === 'lifecard') {
+                    try { await supabaseClient.from('app_config').upsert([{ key: payload.key, value: payload.value }], { onConflict: 'key' }); } catch(e) {}
+                }
                 return { ok: true, message: 'Configuration updated.' };
             }
             case 'list-admin-users': {
-                const { data, error } = await supabaseClient.from('admin_roles').select('*');
-                if (error) throw error;
-                return { ok: true, users: data || [] };
-            }
-            case 'add-admin-user': {
-                const username = (payload.newUsername || payload.username || '').trim();
-                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'company')).toLowerCase();
-                const email = (payload.email || `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@${tenantSlug}.internal`).trim();
-                const password = (payload.password || payload.newPassword || '').trim();
-                if (!password || password.length < 8) {
-                    return { ok: false, message: 'Password is required and must be at least 8 characters.' };
-                }
-                const role = payload.role || payload.tier || 'admin';
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (!tenantSlug) return { ok: false, message: 'No active workspace selected or authorized.' };
 
-                // Save current admin session BEFORE signUp
-                const { data: currentSessionData } = await supabaseClient.auth.getSession();
-                const currentSession = currentSessionData?.session;
+                const registry = await getTenantRegistry();
+                const currentTenant = registry.find(t => t.slug && t.slug.toLowerCase() === tenantSlug.toLowerCase());
 
-                const { data: authData, error: authError } = await supabaseClient.auth.signUp({
-                    email: email,
-                    password: password
-                });
-                if (authError) throw authError;
+                const delegatedAdmins = await getTenantAdminList(tenantSlug);
+                const combined = [];
 
-                // Immediately restore current admin session
-                if (currentSession) {
-                    await supabaseClient.auth.setSession({
-                        access_token: currentSession.access_token,
-                        refresh_token: currentSession.refresh_token
+                if (currentTenant && currentTenant.admin_email) {
+                    combined.push({
+                        id: 'primary-admin-' + tenantSlug,
+                        username: currentTenant.admin_name || 'Primary Admin',
+                        email: currentTenant.admin_email,
+                        role: 'admin',
+                        is_primary: true
                     });
                 }
 
-                const newUserId = authData && authData.user ? authData.user.id : null;
-                if (!newUserId) throw new Error('User creation returned no valid ID.');
-
-                // Call SECURITY DEFINER RPC function to insert role cleanly
-                const { error: rpcError } = await supabaseClient.rpc('admin_upsert_role', {
-                    p_id: newUserId,
-                    p_username: username,
-                    p_email: email,
-                    p_role: role
+                delegatedAdmins.forEach(u => {
+                    if (!combined.some(c => c.email && u.email && c.email.toLowerCase() === u.email.toLowerCase())) {
+                        combined.push(u);
+                    }
                 });
 
-                if (rpcError) {
-                    console.error('admin_upsert_role RPC Error:', rpcError);
-                    // Try direct table upsert fallback
-                    const { error: roleError } = await supabaseClient.from('admin_roles').upsert([{
-                        id: newUserId,
-                        role: role,
-                        email: email,
-                        username: username
-                    }], { onConflict: 'id' });
-                    if (roleError) throw roleError;
+                return { ok: true, users: combined };
+            }
+            case 'add-admin-user': {
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (!tenantSlug) return { ok: false, message: 'No active workspace selected or authorized.' };
+
+                const username = (payload.newUsername || payload.username || '').trim();
+                const email = (payload.email || `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@${tenantSlug}.internal`).trim();
+                const password = (payload.password || payload.newPassword || '').trim();
+                if (!password || password.length < 6) {
+                    return { ok: false, message: 'Password is required and must be at least 6 characters.' };
+                }
+                const role = payload.role || payload.tier || 'admin';
+                const passwordHash = await sha256Hex(password);
+
+                const delegatedAdmins = await getTenantAdminList(tenantSlug);
+                const existing = delegatedAdmins.find(a => 
+                    (a.email && a.email.toLowerCase() === email.toLowerCase()) ||
+                    (a.username && a.username.toLowerCase() === username.toLowerCase())
+                );
+                if (existing) {
+                    return { ok: false, message: 'An admin user with this username or email already exists in this workspace.' };
                 }
 
-                return { ok: true, message: 'Admin user created successfully!' };
+                // Register with Supabase Auth for full backend compatibility if available
+                let authUserId = null;
+                try {
+                    const { data: currentSessionData } = await supabaseClient.auth.getSession();
+                    const currentSession = currentSessionData?.session;
+
+                    const { data: authData } = await supabaseClient.auth.signUp({
+                        email: email,
+                        password: password
+                    });
+
+                    if (authData && authData.user) {
+                        authUserId = authData.user.id;
+                        await supabaseClient.from('admin_roles').upsert([{
+                            id: authUserId,
+                            role: role,
+                            email: email,
+                            username: username
+                        }], { onConflict: 'id' }).catch(() => {});
+                    }
+
+                    if (currentSession) {
+                        await supabaseClient.auth.setSession({
+                            access_token: currentSession.access_token,
+                            refresh_token: currentSession.refresh_token
+                        }).catch(() => {});
+                    }
+                } catch (e) {
+                    console.warn('Supabase Auth signUp skipped or fallback utilized:', e);
+                }
+
+                const newAdmin = {
+                    id: authUserId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'adm_' + Math.random().toString(36).substring(2, 9)),
+                    username: username || email.split('@')[0],
+                    email: email,
+                    password_hash: passwordHash,
+                    role: role,
+                    created_at: new Date().toISOString()
+                };
+
+                delegatedAdmins.push(newAdmin);
+                await saveTenantAdminList(tenantSlug, delegatedAdmins);
+
+                return { ok: true, message: `Admin account "${newAdmin.username}" assigned successfully!` };
             }
             case 'remove-admin-user': {
-                const target = payload.targetUsername || payload.userId;
-                const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target);
-                let delQuery = supabaseClient.from('admin_roles').delete();
-                if (isUuid) {
-                    delQuery = delQuery.or(`id.eq."${target}",username.eq."${target}",email.eq."${target}"`);
-                } else {
-                    delQuery = delQuery.or(`username.eq."${target}",email.eq."${target}"`);
-                }
-                const { error } = await delQuery;
-                if (error) throw error;
-                return { ok: true, message: 'Admin user removed.' };
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (!tenantSlug) return { ok: false, message: 'No active workspace selected or authorized.' };
+                const target = String(payload.targetUsername || payload.userId || '').trim().toLowerCase();
+
+                let delegatedAdmins = await getTenantAdminList(tenantSlug);
+                delegatedAdmins = delegatedAdmins.filter(a => 
+                    (a.username && a.username.toLowerCase() !== target) &&
+                    (a.email && a.email.toLowerCase() !== target) &&
+                    (a.id && a.id !== target)
+                );
+                await saveTenantAdminList(tenantSlug, delegatedAdmins);
+
+                try {
+                    await supabaseClient.from('admin_roles').delete().or(`username.eq."${target}",email.eq."${target}"`);
+                } catch(e) {}
+
+                return { ok: true, message: 'Admin account removed.' };
             }
             case 'update-admin-role': {
-                const target = payload.targetUsername;
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (!tenantSlug) return { ok: false, message: 'No active workspace selected or authorized.' };
+                const target = String(payload.targetUsername || '').trim().toLowerCase();
                 const role = payload.newRole || payload.role;
-                const { error } = await supabaseClient.from('admin_roles').update({ role }).or(`username.eq."${target}",email.eq."${target}"`);
-                if (error) throw error;
+
+                const delegatedAdmins = await getTenantAdminList(tenantSlug);
+                const member = delegatedAdmins.find(a => 
+                    (a.username && a.username.toLowerCase() === target) ||
+                    (a.email && a.email.toLowerCase() === target)
+                );
+                if (member) {
+                    member.role = role;
+                    await saveTenantAdminList(tenantSlug, delegatedAdmins);
+                }
+
+                try {
+                    await supabaseClient.from('admin_roles').update({ role }).or(`username.eq."${target}",email.eq."${target}"`);
+                } catch(e) {}
+
                 return { ok: true, message: 'Admin role updated successfully.' };
             }
             case 'update-admin-user': {
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
                 const target = payload.targetUsername;
                 const updates = {};
                 if (payload.newUsername && payload.newUsername.trim()) updates.username = payload.newUsername.trim();
                 if (payload.email && payload.email.trim()) updates.email = payload.email.trim();
                 if (payload.tier) updates.role = payload.tier;
-                if (Object.keys(updates).length > 0) {
-                    const { error: updateErr } = await supabaseClient
-                        .from('admin_roles')
-                        .update(updates)
-                        .or(`username.eq."${target}",email.eq."${target}"`);
-                    if (updateErr) throw updateErr;
-                }
-                if (payload.password && payload.password.trim()) {
-                    const newPass = payload.password.trim();
-                    const { data: roleRow } = await supabaseClient
-                        .from('admin_roles')
-                        .select('id')
-                        .or(`username.eq."${payload.newUsername || target}",email.eq."${payload.email || target}"`)
-                        .single();
-                    if (roleRow) {
-                        const { error: authErr } = await supabaseClient.auth.updateUser({ password: newPass });
-                        if (authErr) throw authErr;
+
+                if (tenantSlug) {
+                    const delegatedAdmins = await getTenantAdminList(tenantSlug);
+                    const member = delegatedAdmins.find(a => 
+                        (a.username && a.username.toLowerCase() === target.toLowerCase()) ||
+                        (a.email && a.email.toLowerCase() === target.toLowerCase())
+                    );
+                    if (member) {
+                        if (updates.username) member.username = updates.username;
+                        if (updates.email) member.email = updates.email;
+                        if (updates.role) member.role = updates.role;
+                        await saveTenantAdminList(tenantSlug, delegatedAdmins);
                     }
                 }
+
+                try {
+                    if (Object.keys(updates).length > 0) {
+                        await supabaseClient
+                            .from('admin_roles')
+                            .update(updates)
+                            .or(`username.eq."${target}",email.eq."${target}"`);
+                    }
+                } catch(e) {}
                 return { ok: true, message: 'Admin user updated successfully.' };
             }
             case 'admin-reset-user-password':
             case 'reset-admin-password': {
-                const targetUser = payload.targetUsername;
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                const targetUser = String(payload.targetUsername || '').trim().toLowerCase();
                 const newPass = payload.newPassword || payload.newPasswordHash;
                 if (!newPass) return { ok: false, message: 'No new password provided.' };
-                // Look up the user\'s auth ID from admin_roles
-                const { data: roleRow } = await supabaseClient
-                    .from('admin_roles')
-                    .select('id, email')
-                    .or(`username.eq."${targetUser}",email.eq."${targetUser}"`)
-                    .single();
-                if (!roleRow) return { ok: false, message: 'Admin user not found.' };
-                // Use admin client with service_role if available, else fall back to updateUser
-                // Since we only have the anon key here, we update via auth.updateUser on behalf
-                // of the currently-signed-in superuser (admin action)
-                const { error: pwErr } = await supabaseClient.auth.admin
-                    ? await supabaseClient.auth.admin.updateUserById(roleRow.id, { password: newPass })
-                    : await supabaseClient.auth.updateUser({ password: newPass });
-                if (pwErr) throw pwErr;
+
+                if (tenantSlug) {
+                    const delegatedAdmins = await getTenantAdminList(tenantSlug);
+                    const member = delegatedAdmins.find(a => 
+                        (a.username && a.username.toLowerCase() === targetUser) ||
+                        (a.email && a.email.toLowerCase() === targetUser)
+                    );
+                    if (member) {
+                        member.password_hash = await sha256Hex(newPass);
+                        await saveTenantAdminList(tenantSlug, delegatedAdmins);
+                    }
+                }
+
+                try {
+                    const { data: roleRow } = await supabaseClient
+                        .from('admin_roles')
+                        .select('id, email')
+                        .or(`username.eq."${targetUser}",email.eq."${targetUser}"`)
+                        .single();
+                    if (roleRow) {
+                        await supabaseClient.auth.updateUser({ password: newPass });
+                    }
+                } catch(e) {}
+
                 return { ok: true, message: 'Password reset successfully.' };
             }
             case 'admin-change-password': {
@@ -1457,8 +1688,9 @@ async function callBackend(payload, timeoutMs = 20000) {
                 return { ok: true, message: 'Password reset successful.' };
             }
             case 'get-hybrid-schedule': {
-                const activeTenant = await getActiveTenant(payload.tenantSlug);
-                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (!tenantSlug) return { ok: true, allowed: true, schedule: {} };
+
                 const rawKey = payload.weekStart;
                 const formattedKey = formatWeekKeyFromDmy(rawKey);
                 // Build candidate formats
@@ -1523,8 +1755,8 @@ async function callBackend(payload, timeoutMs = 20000) {
             }
             case 'save-hybrid-schedule':
             case 'update-hybrid-schedule': {
-                const activeTenant = await getActiveTenant(payload.tenantSlug);
-                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const tenantSlug = await resolveRequestedTenantSlug(payload);
+                if (!tenantSlug) return { ok: false, message: 'No active workspace selected or authorized.' };
                 const scopedKey = `${tenantSlug}::${payload.weekStart}`;
                 const { error } = await supabaseClient
                     .from('hybrid_schedules')
@@ -1562,32 +1794,58 @@ async function callBackend(payload, timeoutMs = 20000) {
             }
             case 'verify-owner':
             case 'verify-user': {
-                const { data, error } = await supabaseClient.from('staff').select('device_id').eq('name', payload.name).single();
-                if (error) return { ok: false, allowed: false, message: 'Staff member not found.' };
-                if (!data.device_id) return { ok: true, allowed: true, message: 'No device locked yet.' };
-                if (data.device_id === payload.deviceId) return { ok: true, allowed: true, message: 'Device verified.' };
-                
-                // If it doesn't match, we need to return the conflictOwner name so the UI can display it
-                // We don't store owner name on the device, we store device on the owner. 
-                // So let's find who owns this device.
-                const { data: conflictData } = await supabaseClient.from('staff').select('name').eq('device_id', payload.deviceId).single();
-                const conflictOwner = conflictData ? conflictData.name : 'another user';
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'default')).toLowerCase();
+                const staff = await getTenantStaffList(tenantSlug);
+                const queryName = String(payload.name || '').trim().toLowerCase();
+                const member = staff.find(s => String(s.name || '').trim().toLowerCase() === queryName);
+
+                if (!member) {
+                    const { data, error } = await supabaseClient.from('staff').select('device_id').eq('name', payload.name).single();
+                    if (error || !data) return { ok: false, allowed: false, message: 'Staff member not found.' };
+                    if (!data.device_id) return { ok: true, allowed: true, message: 'No device locked yet.' };
+                    if (data.device_id === payload.deviceId) return { ok: true, allowed: true, message: 'Device verified.' };
+                    const { data: conflictData } = await supabaseClient.from('staff').select('name').eq('device_id', payload.deviceId).single();
+                    const conflictOwner = conflictData ? conflictData.name : 'another user';
+                    return { ok: false, allowed: false, message: `This device is already registered to ${conflictOwner}. Device sharing is not allowed.` };
+                }
+
+                if (!member.device_id) return { ok: true, allowed: true, message: 'No device locked yet.' };
+                if (member.device_id === payload.deviceId) return { ok: true, allowed: true, message: 'Device verified.' };
+
+                const conflictMember = staff.find(s => s.device_id === payload.deviceId);
+                const conflictOwner = conflictMember ? conflictMember.name : 'another user';
                 return { ok: false, allowed: false, message: `This device is already registered to ${conflictOwner}. Device sharing is not allowed.` };
             }
             case 'register-owner': {
-                // Read current device_id
-                const { data, error } = await supabaseClient.from('staff').select('device_id').eq('name', payload.name).single();
-                if (error) return { ok: false, allowed: false, message: 'Staff member not found.' };
-                
-                // If already registered to this device, success
-                if (data.device_id === payload.deviceId) return { ok: true, allowed: true };
-                
-                // If registered to a DIFFERENT device, fail
-                if (data.device_id) return { ok: false, allowed: false, message: 'Already registered to another device.' };
-                
-                // Otherwise, register it
-                const { error: updateError } = await supabaseClient.from('staff').update({ device_id: payload.deviceId }).eq('name', payload.name);
-                if (updateError) throw updateError;
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'default')).toLowerCase();
+                const staff = await getTenantStaffList(tenantSlug);
+                const queryName = String(payload.name || '').trim().toLowerCase();
+                const member = staff.find(s => String(s.name || '').trim().toLowerCase() === queryName);
+
+                if (member) {
+                    if (member.device_id === payload.deviceId) return { ok: true, allowed: true };
+                    if (member.device_id) return { ok: false, allowed: false, message: 'Already registered to another device.' };
+
+                    const conflictMember = staff.find(s => s.device_id === payload.deviceId && String(s.name || '').trim().toLowerCase() !== queryName);
+                    if (conflictMember) {
+                        return { ok: false, allowed: false, message: `This device is already registered to ${conflictMember.name}. Device sharing is not allowed.` };
+                    }
+
+                    member.device_id = payload.deviceId;
+                    member.device_token = payload.deviceToken || null;
+                    delete member.was_unlinked_by_admin;
+                    await saveTenantStaffList(tenantSlug, staff);
+                }
+
+                try {
+                    const { data } = await supabaseClient.from('staff').select('device_id').eq('name', payload.name).single();
+                    if (data && !data.device_id) {
+                        await supabaseClient.from('staff').update({ device_id: payload.deviceId }).eq('name', payload.name);
+                    }
+                } catch(e) {}
+
                 return { ok: true, allowed: true, message: 'Device registered successfully.' };
             }
             case 'reassign-owner': {
@@ -1768,7 +2026,7 @@ async function callBackend(payload, timeoutMs = 20000) {
             }
             case 'verify-staff-member': {
                 const activeTenant = await getActiveTenant(payload.tenantSlug);
-                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'default')).toLowerCase();
                 const queryName = String(payload.name || '').trim().toLowerCase();
                 if (!queryName) return { ok: false, message: 'Please enter your registered staff name.' };
 
@@ -1779,30 +2037,44 @@ async function callBackend(payload, timeoutMs = 20000) {
                     return { ok: false, message: `No registered staff found matching "${payload.name}" for ${activeTenant ? activeTenant.name : 'this company'}. Please verify your spelling or contact HR.` };
                 }
 
+                const wasUnlinked = Boolean(member.was_unlinked_by_admin);
+                if (wasUnlinked) {
+                    delete member.was_unlinked_by_admin;
+                    await saveTenantStaffList(tenantSlug, staff);
+                }
+
                 return {
                     ok: true,
                     name: member.name,
                     dept: member.dept || 'General',
                     schedule_policy: member.schedule_policy || 'weekly_hybrid',
                     is_team_lead: Boolean(member.is_team_lead),
-                    is_linked: Boolean(member.device_id)
+                    is_linked: Boolean(member.device_id),
+                    was_unlinked_by_admin: wasUnlinked
                 };
             }
             case 'unlink-staff-device': {
                 const activeTenant = await getActiveTenant(payload.tenantSlug);
-                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'lifecard')).toLowerCase();
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'default')).toLowerCase();
                 const staff = await getTenantStaffList(tenantSlug);
                 const targetName = String(payload.name || '').trim().toLowerCase();
                 const member = staff.find(s => String(s.name || '').trim().toLowerCase() === targetName);
                 if (member) {
                     member.device_id = null;
                     member.device_token = null;
+                    member.was_unlinked_by_admin = true;
                     await saveTenantStaffList(tenantSlug, staff);
                 }
-                if (tenantSlug === 'lifecard') {
-                    try { await supabaseClient.from('staff').update({ device_id: null }).eq('name', payload.name); } catch(e) {}
-                }
+                try { await supabaseClient.from('staff').update({ device_id: null }).eq('name', payload.name); } catch(e) {}
                 return { ok: true, message: `Device unlinked for ${payload.name}.` };
+            }
+            case 'update-tenant-config': {
+                const activeTenant = await getActiveTenant(payload.tenantSlug);
+                const slug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'default')).toLowerCase();
+                const currentConfig = await getTenantConfig(slug);
+                const updated = { ...currentConfig, ...(payload.config || {}) };
+                await saveTenantConfig(slug, updated);
+                return { ok: true, message: 'Tenant configuration updated successfully.', config: updated };
             }
             case 'super-admin-update-tenant-full': {
                 const { slug, updates, config } = payload;

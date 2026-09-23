@@ -392,3 +392,115 @@ td {
         justify-content: center;
     }
 }
+
+/* ─── WORKSPACE AUTHENTICATION GATE & MODALS ─── */
+.hybrid-gate-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 9999;
+}
+
+.hybrid-gate-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    max-width: 420px;
+    width: 100%;
+    padding: 32px 24px;
+    text-align: center;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.25);
+    box-sizing: border-box;
+}
+
+.hybrid-gate-icon {
+    margin-bottom: 12px;
+}
+
+.hybrid-gate-card h2 {
+    margin: 0 0 8px;
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.hybrid-gate-card p {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin: 0 0 18px;
+    line-height: 1.5;
+}
+
+.hybrid-code-input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: 1.25rem;
+    font-weight: 800;
+    letter-spacing: 0.15em;
+    text-align: center;
+    text-transform: uppercase;
+    outline: none;
+    box-sizing: border-box;
+    margin-bottom: 12px;
+}
+
+.hybrid-code-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.hybrid-gate-error {
+    background: rgba(220, 38, 38, 0.1);
+    color: #dc2626;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.btn-primary-gate {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: none;
+    background: var(--primary);
+    color: #ffffff;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    box-sizing: border-box;
+}
+
+.btn-primary-gate:hover {
+    background: var(--primary-hover);
+}
+
+.btn-settings {
+    background-color: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+.btn-settings:hover {
+    background-color: var(--surface-3);
+}
+
+.staff-lead-star {
+    color: #f59e0b;
+    font-size: 0.92rem;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    vertical-align: middle;
+    margin-left: 3px;
+}

@@ -346,7 +346,7 @@ export default function App() {
           ref={webViewRef}
           source={{ uri: PWA_URL }}
           style={styles.webview}
-          userAgent="LifecardApp/1.0 (MobileNative)"
+          userAgent="PerimetrrGo/1.0 (MobileNative)"
           injectedJavaScript="window.isNativeMobileApp = true; true;"
           javaScriptEnabled={true}
           domStorageEnabled={true}

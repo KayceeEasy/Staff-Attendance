@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Lifecard Attendance",
-    "slug": "lifecard-attendance",
+    "name": "Perimetrr Go",
+    "slug": "perimetrr-go",
     "owner": "kaycee.tech",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -17,11 +17,11 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.lifecard.attendance",
+      "bundleIdentifier": "com.perimetrr.go",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Lifecard Attendance requires your location to verify office check-ins.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Lifecard Attendance requires background location to detect when you enter the office and remind you to sign in.",
-        "NSLocationAlwaysUsageDescription": "Lifecard Attendance uses background location to remind you to sign in when arriving at the office.",
+        "NSLocationWhenInUseUsageDescription": "Perimetrr Go requires your location to verify perimeter check-ins.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Perimetrr Go requires background location to detect perimeter crossing and remind you to sign in.",
+        "NSLocationAlwaysUsageDescription": "Perimetrr Go uses background location to remind you to sign in when arriving at the workplace perimeter.",
         "UIBackgroundModes": [
           "location",
           "fetch",
@@ -31,12 +31,11 @@
     },
     "android": {
       "versionCode": 1,
-      "package": "com.lifecard.attendance",
+      "package": "com.perimetrr.go",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0f172a"
       },
-      "package": "com.lifecard.attendance",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",

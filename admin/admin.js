@@ -54,34 +54,57 @@ async function confirmPasswordReset(username, code, newPassword) {
     return callBackend({ mode: 'admin-forgot-password-confirm', username, code, newPasswordHash });
 }
 
+function getActiveAdminTenantSlug() {
+    if (typeof currentTenantConfig !== 'undefined' && currentTenantConfig && currentTenantConfig.slug) {
+        return currentTenantConfig.slug;
+    }
+    const sessionTenant = (typeof safeSession !== 'undefined' && (safeSession.getItem('admin_tenant_slug') || safeSession.getItem('masquerade_tenant'))) || null;
+    if (sessionTenant) return sessionTenant;
+    const localTenant = (typeof safeStorage !== 'undefined' && safeStorage.getItem('active_tenant_slug')) || null;
+    if (localTenant) return localTenant;
+    if (typeof window !== 'undefined' && window.location) {
+        const p = new URLSearchParams(window.location.search);
+        const q = p.get('tenant') || p.get('company');
+        if (q) return q;
+    }
+    return null;
+}
+
 /* ---------- API ---------- */
 
 async function listStaff() {
-    return callBackend({ mode: 'list-staff' });
+    const slug = getActiveAdminTenantSlug();
+    return callBackend({ mode: 'list-staff', tenantSlug: slug });
 }
 
 async function addStaff(name, dept = 'General', schedule_policy = 'weekly_hybrid', is_team_lead = false, include_in_reports = true) {
-    return callBackend({ mode: 'add-staff', name, dept, schedule_policy, is_team_lead, include_in_reports });
+    const slug = getActiveAdminTenantSlug();
+    return callBackend({ mode: 'add-staff', name, dept, schedule_policy, is_team_lead, include_in_reports, tenantSlug: slug });
 }
 
 async function updateStaff(name, updates = {}) {
-    return callBackend({ mode: 'update-staff', name, ...updates });
+    const slug = getActiveAdminTenantSlug();
+    return callBackend({ mode: 'update-staff', name, ...updates, tenantSlug: slug });
 }
 
 async function removeStaffRecord(name) {
-    return callBackend({ mode: 'remove-staff', name });
+    const slug = getActiveAdminTenantSlug();
+    return callBackend({ mode: 'remove-staff', name, tenantSlug: slug });
 }
 
 async function resetStaffLock(name) {
-    return callBackend({ mode: 'reset-staff-lock', name });
+    const slug = getActiveAdminTenantSlug();
+    return callBackend({ mode: 'reset-staff-lock', name, tenantSlug: slug });
 }
 
 async function resetAllLocks() {
-    return callBackend({ mode: 'reset-all-locks' });
+    const slug = getActiveAdminTenantSlug();
+    return callBackend({ mode: 'reset-all-locks', tenantSlug: slug });
 }
 
 async function fetchLogs(filters = {}) {
-    return callBackend({ mode: 'list-logs', ...filters });
+    const slug = getActiveAdminTenantSlug();
+    return callBackend({ mode: 'list-logs', ...filters, tenantSlug: slug });
 }
 
 async function fetchHybridSchedule(weekStart, forceRefresh = false) {
@@ -90,7 +113,8 @@ async function fetchHybridSchedule(weekStart, forceRefresh = false) {
     }
 
     try {
-        const response = await callBackend({ mode: 'get-hybrid-schedule', weekStart });
+        const slug = getActiveAdminTenantSlug();
+        const response = await callBackend({ mode: 'get-hybrid-schedule', weekStart, tenantSlug: slug });
         let schedule = null;
         
         if (response && response.ok && response.schedule && Object.keys(response.schedule).length) {
@@ -237,6 +261,9 @@ function handleLogout(isTimeout = false) {
     safeSession.removeItem('admin_csrf_token');
     safeSession.removeItem('admin_token');
     safeSession.removeItem('admin_username');
+    safeSession.removeItem('admin_tenant_slug');
+    safeSession.removeItem('masquerade_tenant');
+    safeSession.removeItem('is_masquerading');
     isAdminLoggedIn = false;
     currentAdminUsername = '';
     cachedWeekData = {};
@@ -431,7 +458,7 @@ function openTimezoneModal() {
         saveBtn.disabled = true;
         saveBtn.textContent = 'Saving...';
         try {
-            const res = await callBackend({ mode: 'update-config', key: 'TIMEZONE', value: selectedTz });
+            const res = await callBackend({ mode: 'update-config', key: 'TIMEZONE', value: selectedTz, tenantSlug: getActiveAdminTenantSlug() });
             if (res && res.ok) {
                 tenantTimezone = selectedTz;
                 const tzEl = document.getElementById('config-timezone-current');
@@ -778,6 +805,13 @@ async function loadConfigValues() {
                 leadPriorityEl.textContent = isEnabled ? 'Enabled' : 'Disabled';
             }
 
+            const hybridDays = cfg.HYBRID_OFFICE_DAYS !== undefined ? Number(cfg.HYBRID_OFFICE_DAYS) : (currentTenantConfig?.hybrid_office_days || 2);
+            tenantHybridOfficeDays = hybridDays;
+            const hybridQuotaEl = document.getElementById('config-hybrid-quota-current');
+            if (hybridQuotaEl) {
+                hybridQuotaEl.textContent = `${hybridDays} Day${hybridDays > 1 ? 's' : ''} Office / ${5 - hybridDays} Day${(5 - hybridDays) > 1 ? 's' : ''} Home`;
+            }
+
             const closingEl = document.getElementById('config-closing-time-current');
             const closingTimeMinutes = cfg.WORKDAY_END_MINUTES !== undefined ? Number(cfg.WORKDAY_END_MINUTES) : (cfg.CLOSING_TIME_MINUTES !== undefined ? Number(cfg.CLOSING_TIME_MINUTES) : 1020);
             tenantLateCutoffMinutes = lateCutoffMinutes !== undefined ? Number(lateCutoffMinutes) : 510;
@@ -841,7 +875,8 @@ async function loadAdminUsersList() {
     }
 
     try {
-        const res = await callBackend({ mode: 'list-admin-users' });
+        const slug = getActiveAdminTenantSlug();
+        const res = await callBackend({ mode: 'list-admin-users', tenantSlug: slug });
         let users = (res && res.ok && Array.isArray(res.users)) ? res.users : [];
 
         if (!users.length) {
@@ -906,7 +941,7 @@ async function loadAdminUsersList() {
                 const target = btn.getAttribute('data-remove-admin');
                 const confirmed = await confirmDialog(`Remove admin privileges for "${target}"? This cannot be undone.`, { danger: true, confirmLabel: 'Remove' });
                 if (confirmed) {
-                    const res = await callBackend({ mode: 'remove-admin-user', targetUsername: target });
+                    const res = await callBackend({ mode: 'remove-admin-user', targetUsername: target, tenantSlug: getActiveAdminTenantSlug() });
                     showToast(res.message || 'Admin user removed.', res.ok ? 'success' : 'error');
                     if (res.ok) loadAdminUsersList();
                 }
@@ -946,7 +981,8 @@ async function loadAdminUsersList() {
                     newUsername: newUsername || target,
                     email,
                     password: password || '',
-                    tier: newRole
+                    tier: newRole,
+                    tenantSlug: getActiveAdminTenantSlug()
                 });
                 showToast(res.message, res.ok ? 'success' : 'error');
                 if (res.ok) loadAdminUsersList();
@@ -972,7 +1008,7 @@ async function loadAdminUsersList() {
                     return;
                 }
                 // Send plain-text password — Auth hashes it internally
-                const res = await callBackend({ mode: 'admin-reset-user-password', targetUsername: target, newPassword: result[0] });
+                const res = await callBackend({ mode: 'admin-reset-user-password', targetUsername: target, newPassword: result[0], tenantSlug: getActiveAdminTenantSlug() });
                 showToast(res.message || 'Password reset successfully.', res.ok ? 'success' : 'error');
             });
         });
@@ -1023,7 +1059,8 @@ async function handleAddAdminUser() {
         newUsername,
         email,
         password: newPass,
-        role: selectedRole
+        role: selectedRole,
+        tenantSlug: getActiveAdminTenantSlug()
     });
 
     showToast(res.message || 'Admin user created successfully!', res.ok ? 'success' : 'error');
@@ -1100,15 +1137,11 @@ function exportFilteredLogsCSV() {
 async function exportFullTenantArchive() {
     try {
         const tenant = currentTenantConfig || await getActiveTenant();
-        const tenantSlug = tenant ? tenant.slug : 'lifecard';
+        const tenantSlug = tenant ? tenant.slug : (typeof getActiveTenantSlug === 'function' ? getActiveTenantSlug() : 'default');
         const config = await getTenantConfig(tenantSlug);
         let logQuery = supabaseClient ? supabaseClient.from('attendance').select('*') : null;
         if (logQuery) {
-            if (tenantSlug === 'lifecard') {
-                logQuery = logQuery.or('tenant_slug.eq.lifecard,tenant_slug.is.null');
-            } else {
-                logQuery = logQuery.eq('tenant_slug', tenantSlug);
-            }
+            logQuery = logQuery.eq('tenant_slug', tenantSlug);
         }
         const { data: logs } = logQuery ? await logQuery.limit(500) : { data: [] };
 
@@ -1844,8 +1877,9 @@ function renderAttendanceMatrix(logs, schedule, weekDays) {
                 <tbody>
                     ${sortedStaff.map(name => {
                         const row = matrix[name];
+                        const isLead = (latestStaffList || []).some(s => s.name === name && s.is_team_lead);
                         return `<tr>
-                            <td class="matrix-name">${escapeHtml(name)}</td>
+                            <td class="matrix-name">${escapeHtml(name)}${isLead ? ' <span class="staff-lead-star" title="Team Lead" data-tooltip="Team Lead">★</span>' : ''}</td>
                             ${weekDays.map((_, i) => {
                                 const cell = row[i];
                                 const inLog = cell.logs.find(l => String(l.action || '').trim().toUpperCase() === 'IN');
@@ -1956,7 +1990,7 @@ function renderStaffList(staff) {
             <div class="staff-name-cell">
                 <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                     <span style="font-weight:600; font-size:0.92rem; color:var(--text);">${escapeHtml(entry.name)}</span>
-                    ${entry.is_team_lead ? '<span class="staff-lead-badge" data-tooltip="Team Lead: Has hybrid schedule priority"><i data-lucide="award"></i>Lead</span>' : ''}
+                    ${entry.is_team_lead ? '<span class="staff-lead-star" data-tooltip="Team Lead: Has hybrid schedule priority" title="Team Lead" aria-label="Team Lead">★</span>' : ''}
                 </div>
                 <div style="font-size:0.76rem; color:var(--text-muted); font-weight:400; margin-top:2px;">
                     ${escapeHtml(entry.dept || 'General')}
@@ -2267,7 +2301,7 @@ async function handleImportStaffCsv() {
 
     try {
         showToast(`Importing ${confirmed.length} staff members...`, 'info');
-        const response = await callBackend({ mode: 'batch-import-staff', staff: confirmed });
+        const response = await callBackend({ mode: 'batch-import-staff', staff: confirmed, tenantSlug: getActiveAdminTenantSlug() });
         showToast(response.message || 'Staff import complete.', response.ok ? 'success' : 'error');
         if (response.ok) await loadStaffList();
     } catch(e) {
@@ -2956,7 +2990,9 @@ function renderAdminPanel() {
     const tenantNameEl = document.getElementById('admin-header-tenant-name');
     if (currentTenantConfig && titleWrap) {
         titleWrap.style.display = 'flex';
-        if (tenantNameEl) tenantNameEl.textContent = currentTenantConfig.name || 'Company Workspace';
+        if (tenantNameEl) {
+            tenantNameEl.innerHTML = `${escapeHtml(currentTenantConfig.name || 'Company Workspace')} <button type="button" onclick="handleLogout(false)" title="Switch company workspace" style="background:none; border:none; color:var(--text-muted); font-size:0.72rem; cursor:pointer; text-decoration:underline; margin-left:4px;">(Switch)</button>`;
+        }
     }
 
     const masqueradeBanner = isMasquerading ? `
@@ -3004,7 +3040,7 @@ function renderAdminPanel() {
                 <button id="dashboard-print-btn" class="admin-btn secondary small" type="button" onclick="printWeeklyAttendanceReport()" data-tooltip="Generate clean printable weekly roster summary">
                     <i data-lucide="printer" size="13"></i> Printable Report (HTML)
                 </button>
-                <a class="admin-btn secondary small" href="../hybrid/?key=admin" target="_blank" rel="noopener" style="text-decoration:none;" data-tooltip="Open full-screen interactive hybrid schedule matrix">
+                <a class="admin-btn secondary small" href="../hybrid/?tenant=${encodeURIComponent(getActiveAdminTenantSlug())}" target="_blank" rel="noopener" style="text-decoration:none;" data-tooltip="Open full-screen interactive hybrid schedule matrix">
                     <i data-lucide="calendar" size="13"></i> Hybrid Scheduler
                 </a>
                 <button class="admin-btn secondary small" type="button" onclick="openTenantTourModal(0)" data-tooltip="Launch step-by-step onboarding walkthrough">
@@ -3164,6 +3200,11 @@ function renderAdminPanel() {
                         <span class="config-icon"><i data-lucide="award" size="18"></i></span>
                         <div class="config-info"><strong>Team Lead Hybrid Priority</strong><span class="config-value" id="config-lead-priority-current">Enabled</span></div>
                         <button id="config-lead-priority-btn" class="admin-btn secondary small" type="button" data-tooltip="Toggle team lead hybrid priority">Toggle</button>
+                    </div>
+                    <div class="config-card" data-tooltip="Configurable weekly quota of in-office vs remote days for hybrid employees">
+                        <span class="config-icon"><i data-lucide="calendar-range" size="18"></i></span>
+                        <div class="config-info"><strong>Hybrid Office Quota</strong><span class="config-value" id="config-hybrid-quota-current">2 Days Office / 3 Days Home</span></div>
+                        <button id="config-hybrid-quota-btn" class="admin-btn secondary small" type="button" data-tooltip="Configure required in-office days per week">Edit</button>
                     </div>
                 </div>
             </div>
@@ -3408,7 +3449,7 @@ function renderAdminPanel() {
         const displayLabel = `${dayNames[+startIdx]} – ${dayNames[+endIdx]}`;
         const val = `${startIdx}_${endIdx}`;
         try {
-            const res = await callBackend({ mode: 'update-config', key: 'WORK_DAYS', value: val });
+            const res = await callBackend({ mode: 'update-config', key: 'WORK_DAYS', value: val, tenantSlug: getActiveAdminTenantSlug() });
             showToast(res.message || 'Workdays schedule updated.', res.ok ? 'success' : 'error');
             if (res.ok) document.getElementById('config-workdays-current').textContent = displayLabel;
         } catch (e) { showToast('Server error.', 'error'); }
@@ -3425,17 +3466,17 @@ function renderAdminPanel() {
     document.getElementById('config-office-lat-btn').addEventListener('click', async () => {
         const r = await showInlineDialog({ title: 'Office Latitude', fields: [{ placeholder: 'Latitude' }], confirmLabel: 'Update' });
         if (!r) return;
-        try { const res = await callBackend({ mode: 'update-config', key: 'OFFICE_LAT', value: r[0] }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-lat-current').textContent = r[0]; } catch (e) { showToast('Server error.', 'error'); }
+        try { const res = await callBackend({ mode: 'update-config', key: 'OFFICE_LAT', value: r[0], tenantSlug: getActiveAdminTenantSlug() }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-lat-current').textContent = r[0]; } catch (e) { showToast('Server error.', 'error'); }
     });
     document.getElementById('config-office-lon-btn').addEventListener('click', async () => {
         const r = await showInlineDialog({ title: 'Office Longitude', fields: [{ placeholder: 'Longitude' }], confirmLabel: 'Update' });
         if (!r) return;
-        try { const res = await callBackend({ mode: 'update-config', key: 'OFFICE_LON', value: r[0] }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-lon-current').textContent = r[0]; } catch (e) { showToast('Server error.', 'error'); }
+        try { const res = await callBackend({ mode: 'update-config', key: 'OFFICE_LON', value: r[0], tenantSlug: getActiveAdminTenantSlug() }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-lon-current').textContent = r[0]; } catch (e) { showToast('Server error.', 'error'); }
     });
     document.getElementById('config-radius-btn').addEventListener('click', async () => {
         const r = await showInlineDialog({ title: 'Geofence Radius (10-5000 meters)', fields: [{ placeholder: 'Meters' }], confirmLabel: 'Update' });
         if (!r) return;
-        try { const res = await callBackend({ mode: 'update-config', key: 'RADIUS_METERS', value: r[0] }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-radius-current').textContent = r[0] + ' meters'; } catch (e) { showToast('Server error.', 'error'); }
+        try { const res = await callBackend({ mode: 'update-config', key: 'RADIUS_METERS', value: r[0], tenantSlug: getActiveAdminTenantSlug() }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-radius-current').textContent = r[0] + ' meters'; } catch (e) { showToast('Server error.', 'error'); }
     });
     document.getElementById('config-timezone-btn')?.addEventListener('click', () => {
         openTimezoneModal();
@@ -3449,7 +3490,7 @@ function renderAdminPanel() {
             mode: 'start',
             onSave: async (totalMinutes) => {
                 try {
-                    const res = await callBackend({ mode: 'update-config', key: 'LATE_CUTOFF_MINUTES', value: totalMinutes });
+                    const res = await callBackend({ mode: 'update-config', key: 'LATE_CUTOFF_MINUTES', value: totalMinutes, tenantSlug: getActiveAdminTenantSlug() });
                     showToast(res.message || 'Late cutoff time updated.', res.ok ? 'success' : 'error');
                     if (res.ok) {
                         tenantLateCutoffMinutes = totalMinutes;
@@ -3468,12 +3509,40 @@ function renderAdminPanel() {
         const isCurrentlyEnabled = currentEl?.textContent.trim() === 'Enabled';
         const nextVal = isCurrentlyEnabled ? 'false' : 'true';
         try {
-            const res = await callBackend({ mode: 'update-config', key: 'TEAM_LEAD_PRIORITY_SORT', value: nextVal });
+            const res = await callBackend({ mode: 'update-config', key: 'TEAM_LEAD_PRIORITY_SORT', value: nextVal, tenantSlug: getActiveAdminTenantSlug() });
             showToast(`Team Lead Priority ${nextVal === 'true' ? 'Enabled' : 'Disabled'}.`, res.ok ? 'success' : 'error');
             if (res.ok && currentEl) {
                 currentEl.textContent = nextVal === 'true' ? 'Enabled' : 'Disabled';
             }
         } catch (e) {
+            showToast('Server error.', 'error');
+        }
+    });
+
+    document.getElementById('config-hybrid-quota-btn')?.addEventListener('click', async () => {
+        const r = await showInlineDialog({
+            title: 'Hybrid Office Quota (1 - 4 days)',
+            fields: [{ placeholder: 'Required in-office days (1 to 4)', value: String(tenantHybridOfficeDays || 2) }],
+            confirmLabel: 'Update Quota'
+        });
+        if (!r) return;
+        const days = parseInt(r[0], 10);
+        if (isNaN(days) || days < 1 || days > 4) {
+            showToast('Please enter a number between 1 and 4.', 'error');
+            return;
+        }
+        try {
+            const slug = getActiveAdminTenantSlug() || currentTenantConfig?.slug || 'default';
+            const res = await callBackend({ mode: 'update-config', key: 'HYBRID_OFFICE_DAYS', value: days, tenantSlug: slug });
+            if (res.ok) {
+                tenantHybridOfficeDays = days;
+                const currentEl = document.getElementById('config-hybrid-quota-current');
+                if (currentEl) currentEl.textContent = `${days} Day${days > 1 ? 's' : ''} Office / ${5 - days} Day${(5 - days) > 1 ? 's' : ''} Home`;
+                showToast(`Hybrid quota updated: ${days} Office / ${5 - days} Home days.`, 'success');
+            } else {
+                showToast(res.message || 'Could not update quota.', 'error');
+            }
+        } catch(e) {
             showToast('Server error.', 'error');
         }
     });
@@ -3486,7 +3555,7 @@ function renderAdminPanel() {
             mode: 'close',
             onSave: async (totalMinutes) => {
                 try {
-                    const res = await callBackend({ mode: 'update-config', key: 'WORKDAY_END_MINUTES', value: totalMinutes });
+                    const res = await callBackend({ mode: 'update-config', key: 'WORKDAY_END_MINUTES', value: totalMinutes, tenantSlug: getActiveAdminTenantSlug() });
                     showToast(res.message || 'Closing time updated.', res.ok ? 'success' : 'error');
                     if (res.ok) {
                         tenantClosingMinutes = totalMinutes;
@@ -3505,7 +3574,7 @@ function renderAdminPanel() {
         const isCurrentlyCounted = currentEl?.textContent.trim().includes('Counted');
         const nextVal = isCurrentlyCounted ? 'false' : 'true';
         try {
-            const res = await callBackend({ mode: 'update-config', key: 'COUNT_WFH_IN_ATTENDANCE_QUOTA', value: nextVal });
+            const res = await callBackend({ mode: 'update-config', key: 'COUNT_WFH_IN_ATTENDANCE_QUOTA', value: nextVal, tenantSlug: getActiveAdminTenantSlug() });
             tenantWfhQuotaEnabled = (nextVal === 'true');
             showToast(`Home Quota Contribution ${nextVal === 'true' ? 'Enabled' : 'Disabled'}.`, res.ok ? 'success' : 'error');
             if (res.ok && currentEl) {
@@ -3530,8 +3599,9 @@ function renderAdminPanel() {
                 );
                 if (!confirmed) return;
                 try {
-                    const resLat = await callBackend({ mode: 'update-config', key: 'OFFICE_LAT', value: lat });
-                    const resLon = await callBackend({ mode: 'update-config', key: 'OFFICE_LON', value: lon });
+                    const slug = getActiveAdminTenantSlug();
+                    const resLat = await callBackend({ mode: 'update-config', key: 'OFFICE_LAT', value: lat, tenantSlug: slug });
+                    const resLon = await callBackend({ mode: 'update-config', key: 'OFFICE_LON', value: lon, tenantSlug: slug });
                     if (resLat.ok && resLon.ok) {
                         showToast('Office coordinates updated successfully!', 'success');
                         document.getElementById('config-lat-current').textContent = lat;
@@ -3822,6 +3892,16 @@ async function handleAdminLogin(event) {
                 safeSession.setItem('admin_role_tier', 'admin');
             }
             safeSession.setItem('admin_username', username);
+            if (response.tenantSlug) {
+                safeSession.setItem('admin_tenant_slug', response.tenantSlug);
+                safeStorage.setItem('active_tenant_slug', response.tenantSlug);
+                try {
+                    currentTenantConfig = await getTenantConfig(response.tenantSlug);
+                    if (currentTenantConfig && currentTenantConfig.name) {
+                        document.title = `${currentTenantConfig.name} - Admin Console`;
+                    }
+                } catch(e) {}
+            }
             
             document.getElementById('admin-login-form').style.display = 'none';
             document.getElementById('forgot-password-link').style.display = 'none';
@@ -3853,7 +3933,8 @@ let currentTenantConfig = null;
 
 async function initAdminTenantBranding() {
     try {
-        currentTenantConfig = await getActiveTenant();
+        const slug = getActiveAdminTenantSlug();
+        currentTenantConfig = slug ? await getTenantConfig(slug) : await getActiveTenant();
         if (currentTenantConfig) {
             document.title = `${currentTenantConfig.name} - Admin Console`;
             const heroSubtitle = document.querySelector('.admin-hero .admin-intro');
@@ -3929,6 +4010,15 @@ async function handleMasqueradeLogin(tokenStr) {
         safeSession.setItem('admin_username', currentAdminUsername);
         safeSession.setItem('is_masquerading', 'true');
         safeSession.setItem('masquerade_tenant', slug);
+        safeSession.setItem('admin_tenant_slug', slug);
+        safeStorage.setItem('active_tenant_slug', slug);
+
+        try {
+            currentTenantConfig = await getTenantConfig(slug);
+            if (currentTenantConfig && currentTenantConfig.name) {
+                document.title = `${currentTenantConfig.name} - Admin Console`;
+            }
+        } catch(e) {}
 
         // Ensure active tenant is set to slug
         safeStorage.setItem('active_tenant_slug', slug);
@@ -4112,7 +4202,7 @@ async function handleApplyCoupon() {
 
     if (btn) { btn.disabled = true; btn.textContent = 'Applying...'; }
     try {
-        const slug = currentTenantConfig?.slug || (typeof getActiveTenantSlug === 'function' ? getActiveTenantSlug() : 'lifecard');
+        const slug = currentTenantConfig?.slug || (typeof getActiveTenantSlug === 'function' ? getActiveTenantSlug() : 'default');
         const res = await callBackend({ mode: 'apply-coupon', tenantSlug: slug, couponCode: code });
         if (res && res.ok) {
             if (msg) {

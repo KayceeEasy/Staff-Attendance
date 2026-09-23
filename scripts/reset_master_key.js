@@ -40,4 +40,4 @@ console.log(`ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;\n`);
 console.log('Or using standard UPDATE:');
 console.log(`UPDATE app_config SET value = '${hash}' WHERE key = 'SUPER_ADMIN_MASTER_KEY_HASH';`);
 console.log('------------------------------------------------------\n');
-console.log('Once executed, log in to /super-admin/ using your new key.\n');
+console.log('Once executed, log in to /watch-tower/ using your new key.\n');

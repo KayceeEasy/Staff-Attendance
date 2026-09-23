@@ -117,6 +117,6 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`  - Admin Console:       http://localhost:${PORT}/admin/`);
     console.log(`  - Super Admin Fleet:   http://localhost:${PORT}/super-admin/`);
     console.log(`  - Tenant Onboarding:   http://localhost:${PORT}/onboard/`);
-    console.log(`  - Hybrid Scheduler:    http://localhost:${PORT}/hybrid/?key=admin`);
+    console.log(`  - Hybrid Scheduler:    http://localhost:${PORT}/hybrid/`);
     console.log(`======================================================\n`);
 });

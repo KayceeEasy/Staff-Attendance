@@ -179,7 +179,7 @@ function renderTenantsTable(tenants) {
         return;
     }
 
-    const basePath = window.location.pathname.substring(0, window.location.pathname.indexOf('/super-admin'));
+    const basePath = window.location.pathname.replace(/\/(watch-tower|super-admin)(\/.*)?$/, '');
     const origin = window.location.origin;
 
     tbody.innerHTML = tenants.map(t => {
@@ -716,7 +716,7 @@ async function handleMasqueradeAdmin(slug) {
     const targetSlug = slug || activeMasterTenantSlug;
     if (!targetSlug) return;
     const token = await generateMasqueradeToken(targetSlug);
-    const basePath = window.location.pathname.substring(0, window.location.pathname.indexOf('/super-admin'));
+    const basePath = window.location.pathname.replace(/\/(watch-tower|super-admin)(\/.*)?$/, '');
     const origin = window.location.origin;
     const url = `${origin}${basePath}/tenant/${encodeURIComponent(targetSlug)}/admin/?masquerade=${encodeURIComponent(token)}`;
     window.open(url, '_blank');
@@ -724,13 +724,13 @@ async function handleMasqueradeAdmin(slug) {
 
 function handleMasqueradePortal() {
     if (!activeMasterTenantSlug) return;
-    const basePath = window.location.pathname.substring(0, window.location.pathname.indexOf('/super-admin'));
+    const basePath = window.location.pathname.replace(/\/(watch-tower|super-admin)(\/.*)?$/, '');
     window.open(`${window.location.origin}${basePath}/tenant/${activeMasterTenantSlug}/`, '_blank');
 }
 
 function handleMasqueradeHybrid() {
     if (!activeMasterTenantSlug) return;
-    const basePath = window.location.pathname.substring(0, window.location.pathname.indexOf('/super-admin'));
+    const basePath = window.location.pathname.replace(/\/(watch-tower|super-admin)(\/.*)?$/, '');
     window.open(`${window.location.origin}${basePath}/tenant/${activeMasterTenantSlug}/hybrid/`, '_blank');
 }
 

@@ -616,7 +616,7 @@ function showSuccessScreen(tenant) {
     const code = tenant.workspace_code || 'LIFE-26';
     const staffJoinUrl = `${origin}${basePath}/?join=${encodeURIComponent(code)}`;
     const adminUrl = `${origin}${basePath}/tenant/${tenant.slug}/admin/`;
-    const hybridUrl = `${origin}${basePath}/tenant/${tenant.slug}/hybrid/?key=admin`;
+    const hybridUrl = `${origin}${basePath}/tenant/${tenant.slug}/hybrid/`;
 
     currentStaffJoinUrl = staffJoinUrl;
     currentWorkspaceCode = code;
