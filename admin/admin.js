@@ -1262,7 +1262,7 @@ function requestWorkspaceDeletion() {
     overlay.querySelector('#retention-deal-cancel-btn').addEventListener('click', () => {
         overlay.remove();
         const subject = encodeURIComponent(`Workspace Deletion & Data Purge Request: ${name} (${slug})`);
-        const body = encodeURIComponent(`Hello Platform Operations Team,\n\nI am requesting complete account decommissioning, tenant deletion, and database purging for:\n\nCompany: ${name}\nWorkspace Slug: ${slug}\nRequested By: ${currentAdminUsername}\nDate: ${new Date().toISOString()}\n\nPlease confirm when deletion is scheduled.\n\nThank you.`);
+        const body = encodeURIComponent(`Hello Platform Operations Team,\n\nI am requesting complete account decommissioning, tenant deletion, and database purging for:\n\nCompany: ${name}\nWorkspace Identifier: ${slug}\nRequested By: ${currentAdminUsername}\nDate: ${new Date().toISOString()}\n\nPlease confirm when deletion is scheduled.\n\nThank you.`);
         window.location.href = `mailto:support@lifecard.local?subject=${subject}&body=${body}`;
     });
 }

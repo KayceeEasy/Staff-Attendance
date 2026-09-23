@@ -219,7 +219,7 @@ function checkSlugAvailabilityRealtime(slug) {
 
     if (clean.length < 2) {
         msgEl.className = 'slug-status unavailable';
-        msgEl.textContent = 'Workspace link must be at least 2 characters.';
+        msgEl.textContent = 'Workspace identifier must be at least 2 characters.';
         msgEl.style.display = 'block';
         if (hintEl) hintEl.style.display = 'none';
         isSlugAvailable = false;
@@ -237,7 +237,7 @@ function checkSlugAvailabilityRealtime(slug) {
 
     if (RESERVED_SLUGS.has(clean)) {
         msgEl.className = 'slug-status unavailable';
-        msgEl.textContent = `"${clean}" is a reserved system keyword. Please choose another link.`;
+        msgEl.textContent = `"${clean}" is a reserved system keyword. Please choose another identifier.`;
         msgEl.style.display = 'block';
         if (hintEl) hintEl.style.display = 'none';
         isSlugAvailable = false;
@@ -329,12 +329,12 @@ function updatePasswordStrength(pass) {
 
 function validateTenantSlug(slug, companyName = '') {
     const clean = String(slug || '').trim().toLowerCase();
-    if (!clean) return { valid: false, message: 'Workspace slug is required.' };
-    if (clean.length < 2) return { valid: false, message: 'Workspace slug must be at least 2 characters.' };
-    if (!/^[a-z0-9-]+$/.test(clean)) return { valid: false, message: 'Workspace slug may only contain lowercase letters, numbers, and hyphens.' };
+    if (!clean) return { valid: false, message: 'Workspace identifier is required.' };
+    if (clean.length < 2) return { valid: false, message: 'Workspace identifier must be at least 2 characters.' };
+    if (!/^[a-z0-9-]+$/.test(clean)) return { valid: false, message: 'Workspace identifier may only contain lowercase letters, numbers, and hyphens.' };
 
     if (RESERVED_SLUGS.has(clean)) {
-        return { valid: false, message: `The workspace slug "${clean}" is a reserved system keyword. Please choose a custom name.` };
+        return { valid: false, message: `The workspace identifier "${clean}" is a reserved system keyword. Please choose a custom name.` };
     }
 
     const lowerCombined = `${clean} ${companyName.toLowerCase()}`;
@@ -362,7 +362,7 @@ function goToStep(step) {
             const name = document.getElementById('company-name').value.trim();
             const slug = document.getElementById('company-slug').value.trim();
             if (!name) { alert('Please enter the Company Legal Name.'); return; }
-            if (!slug) { alert('Please enter a Workspace Slug.'); return; }
+            if (!slug) { alert('Please enter a Workspace Identifier.'); return; }
 
             const val = validateTenantSlug(slug, name);
             if (!val.valid) {
@@ -370,7 +370,7 @@ function goToStep(step) {
                 return;
             }
             if (!isSlugAvailable) {
-                alert(`The workspace link "${slug}" is already in use or reserved. Please choose another link.`);
+                alert(`The workspace identifier "${slug}" is already in use or reserved. Please choose another identifier.`);
                 return;
             }
         } else if (currentStep === 2) {

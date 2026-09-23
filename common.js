@@ -1613,7 +1613,7 @@ async function callBackend(payload, timeoutMs = 20000) {
             }
             case 'check-tenant-slug': {
                 const slug = String(payload.slug || '').trim().toLowerCase();
-                if (!slug) return { ok: false, available: false, message: 'Slug is empty.' };
+                if (!slug) return { ok: false, available: false, message: 'Workspace identifier is empty.' };
                 const registry = await getTenantRegistry();
                 const exists = registry.some(t => t.slug && t.slug.toLowerCase() === slug);
                 return { ok: true, available: !exists, slug };
@@ -1626,7 +1626,7 @@ async function callBackend(payload, timeoutMs = 20000) {
                 const slug = String(tenantData.slug || tenantData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')).replace(/^-|-$/g, '');
                 const registry = await getTenantRegistry();
                 if (registry.find(t => t.slug.toLowerCase() === slug)) {
-                    return { ok: false, message: `Workspace slug '${slug}' is already registered. Please choose another one.` };
+                    return { ok: false, message: `Workspace identifier '${slug}' is already registered. Please choose another one.` };
                 }
                 const newTenant = {
                     id: slug,
@@ -1657,7 +1657,7 @@ async function callBackend(payload, timeoutMs = 20000) {
                 const slug = String(payload.slug || '').trim().toLowerCase();
                 const discount = Number(payload.discount_percent) || 50;
                 const months = Number(payload.duration_months) || 3;
-                if (!slug) return { ok: false, message: 'Tenant slug required.' };
+                if (!slug) return { ok: false, message: 'Workspace identifier is required.' };
                 const registry = await getTenantRegistry();
                 const idx = registry.findIndex(t => t.slug && t.slug.toLowerCase() === slug);
                 if (idx >= 0) {
@@ -1676,7 +1676,7 @@ async function callBackend(payload, timeoutMs = 20000) {
             case 'apply-coupon': {
                 const slug = String(payload.tenantSlug || payload.slug || '').trim().toLowerCase();
                 const code = String(payload.couponCode || '').trim().toUpperCase();
-                if (!slug) return { ok: false, message: 'Tenant slug required.' };
+                if (!slug) return { ok: false, message: 'Workspace identifier is required.' };
                 if (!code) return { ok: false, message: 'Coupon code required.' };
 
                 let daysToAdd = 0;
@@ -1742,7 +1742,7 @@ async function callBackend(payload, timeoutMs = 20000) {
             case 'extend-tenant-trial': {
                 const slug = String(payload.tenantSlug || payload.slug || '').trim().toLowerCase();
                 const days = parseInt(payload.days, 10) || 14;
-                if (!slug) return { ok: false, message: 'Tenant slug required.' };
+                if (!slug) return { ok: false, message: 'Workspace identifier is required.' };
 
                 const registry = await getTenantRegistry();
                 const idx = registry.findIndex(t => t.slug && t.slug.toLowerCase() === slug);
@@ -1772,7 +1772,7 @@ async function callBackend(payload, timeoutMs = 20000) {
             }
             case 'update-tenant': {
                 const { slug, updates } = payload;
-                if (!slug) return { ok: false, message: 'Tenant slug is required.' };
+                if (!slug) return { ok: false, message: 'Workspace identifier is required.' };
                 const registry = await getTenantRegistry();
                 const idx = registry.findIndex(t => (t.slug && t.slug.toLowerCase() === slug.toLowerCase()) || (t.id && t.id.toLowerCase() === slug.toLowerCase()));
                 if (idx === -1) return { ok: false, message: 'Tenant not found.' };
@@ -1820,7 +1820,7 @@ async function callBackend(payload, timeoutMs = 20000) {
             }
             case 'super-admin-update-tenant-full': {
                 const { slug, updates, config } = payload;
-                if (!slug) return { ok: false, message: 'Tenant slug is required.' };
+                if (!slug) return { ok: false, message: 'Workspace identifier is required.' };
                 const registry = await getTenantRegistry();
                 const idx = registry.findIndex(t => (t.slug && t.slug.toLowerCase() === slug.toLowerCase()) || (t.id && t.id.toLowerCase() === slug.toLowerCase()));
                 if (idx === -1) return { ok: false, message: 'Tenant not found in registry.' };
@@ -1828,7 +1828,7 @@ async function callBackend(payload, timeoutMs = 20000) {
                 // Handle slug rename if requested
                 const newSlug = updates && updates.slug ? String(updates.slug).trim().toLowerCase().replace(/[^a-z0-9-]+/g, '') : slug;
                 if (newSlug !== slug.toLowerCase() && registry.some(t => t.slug.toLowerCase() === newSlug)) {
-                    return { ok: false, message: `Workspace slug '${newSlug}' is already registered.` };
+                    return { ok: false, message: `Workspace identifier '${newSlug}' is already registered.` };
                 }
 
                 // If slug changed, migrate staff and config keys
@@ -1853,7 +1853,7 @@ async function callBackend(payload, timeoutMs = 20000) {
             }
             case 'super-admin-delete-tenant': {
                 const { slug } = payload;
-                if (!slug) return { ok: false, message: 'Tenant slug is required.' };
+                if (!slug) return { ok: false, message: 'Workspace identifier is required.' };
                 const cleanSlug = slug.trim().toLowerCase();
                 let registry = await getTenantRegistry();
                 registry = registry.filter(t => t.slug.toLowerCase() !== cleanSlug && t.id.toLowerCase() !== cleanSlug);
@@ -1868,7 +1868,7 @@ async function callBackend(payload, timeoutMs = 20000) {
             }
             case 'super-admin-reset-tenant-password': {
                 const { slug, newPassword } = payload;
-                if (!slug || !newPassword) return { ok: false, message: 'Tenant slug and new password are required.' };
+                if (!slug || !newPassword) return { ok: false, message: 'Workspace identifier and new password are required.' };
                 const registry = await getTenantRegistry();
                 const tenant = registry.find(t => t.slug.toLowerCase() === slug.toLowerCase() || t.id.toLowerCase() === slug.toLowerCase());
                 if (!tenant) return { ok: false, message: 'Tenant not found.' };
@@ -1879,7 +1879,7 @@ async function callBackend(payload, timeoutMs = 20000) {
             }
             case 'super-admin-purge-tenant-logs': {
                 const { slug } = payload;
-                if (!slug) return { ok: false, message: 'Tenant slug is required.' };
+                if (!slug) return { ok: false, message: 'Workspace identifier is required.' };
                 try {
                     await supabaseClient.from('attendance').delete().eq('tenant_slug', slug.toLowerCase());
                 } catch(e) {}

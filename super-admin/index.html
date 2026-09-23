@@ -134,7 +134,7 @@
                     <p>Manage workspaces, view plan tiers, and jump into client admin consoles.</p>
                 </div>
                 <div class="panel-controls">
-                    <input type="text" id="tenant-search-input" placeholder="Filter companies by name or slug..." oninput="filterTenantTable()" />
+                    <input type="text" id="tenant-search-input" placeholder="Filter companies by name or identifier..." oninput="filterTenantTable()" />
                     <button class="btn-icon" onclick="loadFleetData()" title="Refresh fleet">
                         <i data-lucide="refresh-cw" size="15"></i>
                     </button>
@@ -194,7 +194,7 @@
                     <div id="modal-company-logo-wrap" class="modal-logo-wrap"></div>
                     <div>
                         <h2 id="modal-company-name">Company Master Control</h2>
-                        <span id="modal-company-slug-badge" class="badge-slug">slug</span>
+                        <span id="modal-company-slug-badge" class="badge-slug">identifier</span>
                     </div>
                 </div>
                 <button class="modal-close-btn" onclick="closeTenantMasterModal()" title="Close">&times;</button>
@@ -227,7 +227,7 @@
                                 <input type="text" id="master-company-name" required />
                             </div>
                             <div class="form-group">
-                                <label>Workspace Slug (URL)</label>
+                                <label>Workspace Identifier (URL)</label>
                                 <input type="text" id="master-company-slug" required pattern="[a-z0-9-]+" />
                             </div>
                         </div>
