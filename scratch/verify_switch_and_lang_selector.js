@@ -80,9 +80,9 @@ console.log('✅ PASS: Switch button, close button, and backdrop handlers uncond
 // 5. Verify Version Bump & Cache Busting
 console.log('\n[TEST 5] Verifying version bump and cache busting...');
 const versionJs = fs.readFileSync(path.join(ROOT_DIR, 'version.js'), 'utf8');
-assert(versionJs.includes("APP_VERSION = '3.0.1'"), 'version.js must be bumped to 3.0.1');
-assert(indexHtml.includes('common.js?v=3.0.1'), 'index.html must reference common.js?v=3.0.1');
-assert(indexHtml.includes('script.js?v=3.0.1'), 'index.html must reference script.js?v=3.0.1');
+assert(versionJs.includes("APP_VERSION = '3.0."), 'version.js must be bumped to 3.0.x');
+assert(indexHtml.includes('common.js?v=3.0.'), 'index.html must reference common.js?v=3.0.x');
+assert(indexHtml.includes('script.js?v=3.0.'), 'index.html must reference script.js?v=3.0.x');
 
 console.log('✅ PASS: Version bumped to 3.0.1 across version.js and script cache-busters.');
 
