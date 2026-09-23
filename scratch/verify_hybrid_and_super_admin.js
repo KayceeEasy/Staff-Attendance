@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const crypto = require('crypto');
 
 async function testHybridAndSuperAdmin() {
     console.log('[TEST] Starting empirical verification using Node.js built-in vm sandbox...');
@@ -43,12 +44,21 @@ async function testHybridAndSuperAdmin() {
             return { get: () => null };
         },
         location: { search: '' },
-        console: { log: () => {}, warn: () => {}, error: () => {} },
+        console: console,
         setTimeout: setTimeout,
         clearTimeout: clearTimeout,
-        Date: Date
+        Date: Date,
+        crypto: crypto.webcrypto,
+        TextEncoder: TextEncoder,
+        Uint8Array: Uint8Array,
+        Array: Array,
+        Buffer: Buffer
     };
     sandbox.window = sandbox;
+    sandbox.window.crypto = crypto.webcrypto;
+    sandbox.window.TextEncoder = TextEncoder;
+    sandbox.window.Uint8Array = Uint8Array;
+    sandbox.window.Array = Array;
 
     const context = vm.createContext(sandbox);
 
@@ -90,19 +100,33 @@ async function testHybridAndSuperAdmin() {
         process.exit(1);
     }
 
-    // Verify Master Key Verification logic
-    const validPerimetrr = await sandbox.verifyMasterKey('PerimetrrMaster2026!');
-    const validChckpoint = await sandbox.verifyMasterKey('ChckpointMaster2026!');
-    const validLegacy = await sandbox.verifyMasterKey('LifecardMaster2026!');
+    // Mock active database hash in Supabase for PerimetrrMaster2026!
+    sandbox.supabaseClient = {
+        from: () => ({
+            select: () => ({
+                eq: () => ({
+                    single: async () => ({
+                        data: { value: '6df170f4213ddf130c666c8912f36574d1f0c982a9979bd04bcb750e11c2fd23' },
+                        error: null
+                    })
+                })
+            })
+        })
+    };
+
+    // Verify Master Key Verification logic (Strict single-hash: only the active key succeeds)
+    const validActive = await sandbox.verifyMasterKey('PerimetrrMaster2026!');
+    const oldChckpoint = await sandbox.verifyMasterKey('ChckpointMaster2026!');
+    const oldLegacy = await sandbox.verifyMasterKey('LifecardMaster2026!');
     const invalidKey = await sandbox.verifyMasterKey('WrongKey123!');
 
-    console.log(`✅ [PASS] verifyMasterKey('PerimetrrMaster2026!') => ${validPerimetrr} (expected: true)`);
-    console.log(`✅ [PASS] verifyMasterKey('ChckpointMaster2026!') => ${validChckpoint} (expected: true)`);
-    console.log(`✅ [PASS] verifyMasterKey('LifecardMaster2026!') => ${validLegacy} (expected: true)`);
+    console.log(`✅ [PASS] verifyMasterKey('PerimetrrMaster2026!') => ${validActive} (expected: true)`);
+    console.log(`✅ [PASS] verifyMasterKey('ChckpointMaster2026!') => ${oldChckpoint} (expected: false - old key rejected)`);
+    console.log(`✅ [PASS] verifyMasterKey('LifecardMaster2026!') => ${oldLegacy} (expected: false - old key rejected)`);
     console.log(`✅ [PASS] verifyMasterKey('WrongKey123!') => ${invalidKey} (expected: false)`);
 
-    if (validPerimetrr && validChckpoint && validLegacy && !invalidKey && hasFilter && hasInitBranding) {
-        console.log('\n🎉 ALL EMPIRICAL RUNTIME CHECKS PASSED WITH ZERO ERRORS!');
+    if (validActive && !oldChckpoint && !oldLegacy && !invalidKey && hasFilter && hasInitBranding) {
+        console.log('\n🎉 ALL EMPIRICAL RUNTIME CHECKS PASSED WITH ZERO ERRORS (ZERO BACKWARD-KEY COMPATIBILITY CONFIRMED)!');
     } else {
         console.error('❌ One or more runtime assertions failed.');
         process.exit(1);

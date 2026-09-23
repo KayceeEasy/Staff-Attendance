@@ -25,8 +25,6 @@ function initSuperAdminModalDismissals() {
     });
 }
 
-const MASTER_PLATFORM_KEY = 'PerimetrrMaster2026!';
-const LEGACY_MASTER_PLATFORM_KEYS = ['ChckpointMaster2026!', 'LifecardMaster2026!'];
 const SESSION_KEY = 'attendance_super_admin_unlocked';
 
 let tenantsCache = [];
@@ -39,8 +37,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function getMasterKeyHash() {
     try {
-        if (!supabaseClient) return null;
-        const { data, error } = await supabaseClient.from('app_config').select('value').eq('key', 'SUPER_ADMIN_MASTER_KEY_HASH').single();
+        const client = (typeof window !== 'undefined' && window.supabaseClient) ? window.supabaseClient : (typeof supabaseClient !== 'undefined' ? supabaseClient : null);
+        if (!client) return null;
+        const { data, error } = await client.from('app_config').select('value').eq('key', 'SUPER_ADMIN_MASTER_KEY_HASH').single();
         if (!error && data && data.value) {
             return String(data.value).trim();
         }
@@ -51,17 +50,18 @@ async function getMasterKeyHash() {
 async function verifyMasterKey(inputKey) {
     if (!inputKey) return false;
     const clean = inputKey.trim();
-    if (clean === MASTER_PLATFORM_KEY || LEGACY_MASTER_PLATFORM_KEYS.includes(clean)) return true;
     const storedHash = await getMasterKeyHash();
-    if (storedHash) {
-        try {
-            const inputHash = await sha256Hex(clean);
-            return inputHash === storedHash;
-        } catch(e) {
-            return false;
-        }
+    if (!storedHash) {
+        console.error('Super Admin Master Key hash not provisioned in database.');
+        return false;
     }
-    return false;
+    try {
+        const inputHash = await sha256Hex(clean);
+        return inputHash === storedHash;
+    } catch(e) {
+        console.error('Error in verifyMasterKey:', e);
+        return false;
+    }
 }
 
 function checkMasterAuth() {
@@ -95,7 +95,8 @@ async function handleMasterLogin(e) {
 
     if (isValid) {
         sessionStorage.setItem(SESSION_KEY, 'true');
-        sessionStorage.setItem('active_master_key_secret', val);
+        const hash = await sha256Hex(val);
+        sessionStorage.setItem('active_master_key_hash', hash);
         checkMasterAuth();
     } else {
         errorEl.textContent = 'Invalid Master Platform Key. Access Denied.';
@@ -652,8 +653,8 @@ async function handleSuperAdminToggleRetention() {
 
 async function generateMasqueradeToken(slug) {
     const ts = Date.now();
-    const activeSecret = sessionStorage.getItem('active_master_key_secret') || MASTER_PLATFORM_KEY;
-    const masterKeyHash = await sha256Hex(activeSecret);
+    const masterKeyHash = sessionStorage.getItem('active_master_key_hash') || (await getMasterKeyHash());
+    if (!masterKeyHash) throw new Error('Cannot sign operator token without active master key hash');
     const hash = await sha256Hex(`${slug}:${ts}:${masterKeyHash}`);
     const tokenPayload = { slug, ts, hash, op: 'SuperAdmin' };
     return btoa(JSON.stringify(tokenPayload));

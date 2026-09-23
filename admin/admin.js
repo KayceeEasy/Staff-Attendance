@@ -1057,10 +1057,6 @@ function isStaffIncludedInReports(name) {
         if (staffMember.schedule_policy === 'field_flexible' || staffMember.schedule_policy === 'executive') return false;
         return true;
     }
-    // Backward compatibility fallback strictly for legacy lifecard client unlisted names
-    if (currentTenantConfig?.slug === 'lifecard' && (lower.includes('kenneth') || lower.includes('valentine') || lower === 'uche')) {
-        return false;
-    }
     return true;
 }
 
@@ -3900,23 +3896,13 @@ async function handleMasqueradeLogin(tokenStr) {
             }
 
             if (activeMasterHash) {
-                // If a stored hash is configured in app_config, token MUST match that active hash
+                // Token MUST match the active database hash
                 const expectedHash = await sha256Hex(`${slug}:${ts}:${activeMasterHash}`);
                 if (hash === expectedHash) {
                     valid = true;
                 }
             } else {
-                // Only if no custom hash exists in database, fall back to default platform key
-                const secrets = ['PerimetrrMaster2026!', 'ChckpointMaster2026!', 'LifecardMaster2026!'];
-                for (const s of secrets) {
-                    const defaultHash = await sha256Hex(s);
-                    const expectedDefaultHash = await sha256Hex(`${slug}:${ts}:${defaultHash}`);
-                    const expectedDefaultRaw = await sha256Hex(`${slug}:${ts}:${s}`);
-                    if (hash === expectedDefaultHash || hash === expectedDefaultRaw) {
-                        valid = true;
-                        break;
-                    }
-                }
+                console.error('Cannot validate masquerade token: No master key hash configured in database.');
             }
         } catch(e) {
             console.error('Masquerade validation error:', e);

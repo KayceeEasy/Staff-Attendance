@@ -513,11 +513,13 @@ function writeStoredJson(key, value) {
 /* ---------- Crypto: SHA-256 hashing ---------- */
 
 async function sha256Hex(text) {
-    if (!window.crypto || !window.crypto.subtle) {
+    const cryptoObj = (typeof window !== 'undefined' && window.crypto) ? window.crypto : (typeof crypto !== 'undefined' ? crypto : null);
+    if (!cryptoObj || !cryptoObj.subtle) {
         throw new Error('Web Crypto API is unavailable in this browser context (requires HTTPS or localhost).');
     }
-    const data = new TextEncoder().encode(text);
-    const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+    const encoder = new TextEncoder();
+    const data = encoder.encode(text);
+    const hashBuffer = await cryptoObj.subtle.digest('SHA-256', data);
     return Array.from(new Uint8Array(hashBuffer))
         .map((b) => b.toString(16).padStart(2, '0'))
         .join('');
@@ -580,22 +582,6 @@ async function saveStaffMetadataMap(metadata) {
 }
 
 /* ---------- Multi-Tenant Registry & Data Scoping (Commercial v3.0) ---------- */
-const SEED_TENANT_LIFECARD = {
-    id: 'lifecard',
-    slug: 'lifecard',
-    workspace_code: 'LIFE-26',
-    name: 'Lifecard International',
-    tagline: 'Staff Attendance & Workplace Portal',
-    logo_url: '',
-    brand_color: '#1a56db',
-    office_name: 'Lekki HQ',
-    latitude: 6.4357,
-    longitude: 3.4738,
-    radius: 100,
-    plan_tier: 'Enterprise',
-    status: 'active',
-    created_at: '2026-07-01T00:00:00.000Z'
-};
 
 function generateWorkspaceCode(slug) {
     const prefix = String(slug || 'WKS').replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase() || 'WKS';
@@ -604,7 +590,7 @@ function generateWorkspaceCode(slug) {
 }
 
 async function getTenantRegistry() {
-    let tenants = [{ ...SEED_TENANT_LIFECARD }];
+    let tenants = [];
     try {
         const stored = safeStorage.getItem('TENANTS_REGISTRY');
         if (stored) {
@@ -637,10 +623,6 @@ async function getTenantRegistry() {
         saveTenantRegistry(tenants).catch(() => {});
     }
 
-    // Ensure seed tenant exists if registry is empty
-    if (!tenants.length) {
-        tenants = [{ ...SEED_TENANT_LIFECARD }];
-    }
     return tenants;
 }
 
@@ -899,31 +881,26 @@ async function getTenantStaffList(tenantSlug) {
             if (Array.isArray(parsed) && parsed.length) return parsed;
         }
 
-        // 2. If lifecard and not yet in TENANT_STAFF_lifecard, seed from staff table + metadata
-        if (slug === 'lifecard') {
-            const { data: dbStaff } = await supabaseClient.from('staff').select('*').order('name');
-            const metaMap = await getStaffMetadataMap();
-            const seeded = (dbStaff || []).map(s => {
-                const nameKey = String(s.name || '').trim();
-                const lower = nameKey.toLowerCase();
-                const meta = metaMap[nameKey] || metaMap[lower] || {};
-                const isMedia = lower.includes('kenneth') || lower.includes('valentine');
-                const isExec = lower.includes('uche');
-                return {
-                    id: s.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'staff_' + Math.random().toString(36).substring(2, 9)),
-                    name: s.name,
-                    dept: s.dept || meta.dept || (isMedia ? 'Media' : isExec ? 'Leadership' : 'General'),
-                    schedule_policy: s.schedule_policy || meta.schedule_policy || (isMedia ? 'field_flexible' : isExec ? 'executive' : 'weekly_hybrid'),
-                    is_team_lead: s.is_team_lead !== undefined ? Boolean(s.is_team_lead) : (meta.is_team_lead !== undefined ? Boolean(meta.is_team_lead) : isExec),
-                    include_in_reports: s.include_in_reports !== undefined ? (s.include_in_reports !== false) : (meta.include_in_reports !== undefined ? Boolean(meta.include_in_reports) : !(isMedia || isExec)),
-                    device_id: s.device_id || null,
-                    device_token: s.device_token || null
-                };
-            });
-            if (seeded.length) {
-                await saveTenantStaffList('lifecard', seeded);
-            }
-            return seeded;
+        // 2. Query staff table scoped to this tenant
+        const { data: dbStaff } = await supabaseClient
+            .from('staff')
+            .select('*')
+            .eq('tenant_slug', slug)
+            .order('name');
+
+        if (dbStaff && dbStaff.length) {
+            const list = dbStaff.map(s => ({
+                id: s.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'staff_' + Math.random().toString(36).substring(2, 9)),
+                name: s.name,
+                dept: s.dept || 'General',
+                schedule_policy: s.schedule_policy || 'weekly_hybrid',
+                is_team_lead: Boolean(s.is_team_lead),
+                include_in_reports: s.include_in_reports !== false,
+                device_id: s.device_id || null,
+                device_token: s.device_token || null
+            }));
+            await saveTenantStaffList(slug, list);
+            return list;
         }
 
         return [];
@@ -1293,8 +1270,12 @@ async function callBackend(payload, timeoutMs = 20000) {
             }
             case 'add-admin-user': {
                 const username = (payload.newUsername || payload.username || '').trim();
-                const email = (payload.email || `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@lifecard.local`).trim();
-                const password = payload.password || payload.newPassword || 'AdminPass123!';
+                const tenantSlug = (payload.tenantSlug || (activeTenant ? activeTenant.slug : 'company')).toLowerCase();
+                const email = (payload.email || `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@${tenantSlug}.internal`).trim();
+                const password = (payload.password || payload.newPassword || '').trim();
+                if (!password || password.length < 8) {
+                    return { ok: false, message: 'Password is required and must be at least 8 characters.' };
+                }
                 const role = payload.role || payload.tier || 'admin';
 
                 // Save current admin session BEFORE signUp
