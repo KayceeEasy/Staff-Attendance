@@ -899,65 +899,6 @@ async function loadAdminUsersList() {
 
         container.innerHTML = rowsHtml || '<div class="staff-list-state">No delegated admin users.</div>';
         if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
-        // Inject card styles if not already present
-        if (!document.getElementById('admin-user-card-styles')) {
-            const styleEl = document.createElement('style');
-            styleEl.id = 'admin-user-card-styles';
-            styleEl.textContent = `
-                .admin-user-card {
-                    background: var(--surface-2, #1e2130);
-                    border: 1px solid var(--border, rgba(255,255,255,0.08));
-                    border-radius: 12px;
-                    padding: 14px 16px;
-                    margin-bottom: 10px;
-                    transition: box-shadow 0.18s, border-color 0.18s;
-                }
-                .admin-user-card:hover {
-                    box-shadow: 0 4px 18px rgba(0,0,0,0.18);
-                    border-color: var(--primary, #818cf8)44;
-                }
-                .admin-user-card-info {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    gap: 10px;
-                    flex-wrap: wrap;
-                }
-                .admin-user-card-name {
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-                }
-                .admin-user-avatar {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: 50%;
-                    background: linear-gradient(135deg, var(--primary, #818cf8), #6366f1);
-                    color: #fff;
-                    font-weight: 700;
-                    font-size: 1rem;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    flex-shrink: 0;
-                }
-                .admin-role-badge {
-                    font-size: 0.72rem;
-                    font-weight: 700;
-                    padding: 3px 10px;
-                    border-radius: 20px;
-                    white-space: nowrap;
-                    letter-spacing: 0.03em;
-                }
-                .admin-user-card-actions {
-                    display: flex;
-                    gap: 6px;
-                    margin-top: 12px;
-                    flex-wrap: wrap;
-                }
-            `;
-            document.head.appendChild(styleEl);
-        }
 
         // Bind remove buttons
         container.querySelectorAll('[data-remove-admin]').forEach(btn => {
@@ -1116,8 +1057,8 @@ function isStaffIncludedInReports(name) {
         if (staffMember.schedule_policy === 'field_flexible' || staffMember.schedule_policy === 'executive') return false;
         return true;
     }
-    // Backward compatibility fallback for legacy or unlisted names
-    if (lower.includes('kenneth') || lower.includes('valentine') || lower === 'uche') {
+    // Backward compatibility fallback strictly for legacy lifecard client unlisted names
+    if (currentTenantConfig?.slug === 'lifecard' && (lower.includes('kenneth') || lower.includes('valentine') || lower === 'uche')) {
         return false;
     }
     return true;
@@ -1263,7 +1204,8 @@ function requestWorkspaceDeletion() {
         overlay.remove();
         const subject = encodeURIComponent(`Workspace Deletion & Data Purge Request: ${name} (${slug})`);
         const body = encodeURIComponent(`Hello Platform Operations Team,\n\nI am requesting complete account decommissioning, tenant deletion, and database purging for:\n\nCompany: ${name}\nWorkspace Identifier: ${slug}\nRequested By: ${currentAdminUsername}\nDate: ${new Date().toISOString()}\n\nPlease confirm when deletion is scheduled.\n\nThank you.`);
-        window.location.href = `mailto:support@lifecard.local?subject=${subject}&body=${body}`;
+        const supportTarget = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG?.SUPPORT_EMAIL) || 'support@chckpoint.com';
+        window.location.href = `mailto:${supportTarget}?subject=${subject}&body=${body}`;
     });
 }
 
@@ -1574,7 +1516,7 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 20px; color: #1e293b; max-width: 1000px; margin: 0 auto;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; margin-bottom: 20px;">
                 <div>
-                    <h1 style="margin: 0; font-size: 22px; color: #0f172a;">Lifecard Staff Attendance Report</h1>
+                    <h1 style="margin: 0; font-size: 22px; color: #0f172a;">${escapeHtml(currentTenantConfig?.name || 'Company')} Staff Attendance Report</h1>
                     <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">Weekly Matrix & Metrics Summary</p>
                 </div>
                 <div style="text-align: right;">
@@ -1623,7 +1565,7 @@ function exportWeekMatrixToPDF(logs, schedule, weekStartStr) {
             </div>
             
             <div style="margin-top: 30px; font-size: 9px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 10px;">
-                Report generated on ${new Date().toLocaleString()} • Lifecard Attendance Systems
+                Report generated on ${new Date().toLocaleString()} • ${escapeHtml(currentTenantConfig?.name || 'Chckpoint')} Attendance Systems
             </div>
         </div>
     `;
@@ -1800,20 +1742,35 @@ function renderWeekOverview(logs, schedule, weekDays) {
     const safeLogs = Array.isArray(logs) ? logs : [];
     const signedIn = safeLogs.filter(s => String(s.action || '').trim().toUpperCase() === 'IN').length;
     const lateCount = safeLogs.filter(s => normalizeAttendanceStatus(s.status) === 'late' && String(s.action || '').trim().toUpperCase() === 'IN').length;
+    const signOutCount = safeLogs.filter(s => String(s.action || '').trim().toUpperCase() === 'OUT').length;
+    const onTimeCount = Math.max(0, signedIn - lateCount);
+    const totalRoster = allStaffList && allStaffList.length ? allStaffList.length : (new Set(safeLogs.map(l => l.name))).size || signedIn;
+    const checkInRate = totalRoster > 0 ? Math.round((signedIn / totalRoster) * 100) : 0;
     
     setHtmlIfChanged(host, `
         <div class="today-attendance-summary">
+            <div class="summary-stat-card hero">
+                <span class="stat-period">Attendance Presence</span>
+                <div class="stat-number">
+                    <span>${signedIn}</span>
+                    <span class="stat-denom">/ ${totalRoster} staff</span>
+                </div>
+                <div class="stat-sub">${checkInRate}% roster checked in this week</div>
+            </div>
             <div class="summary-stat-card">
-                <span class="stat-number">${safeLogs.length}</span>
-                <span class="stat-label">Total Actions</span>
+                <span class="stat-period">Status</span>
+                <span class="stat-number">${onTimeCount}</span>
+                <span class="stat-label">On-Time</span>
             </div>
-            <div class="summary-stat-card signed-in-bg">
-                <span class="stat-number">${signedIn}</span>
-                <span class="stat-label">Sign Ins</span>
+            <div class="summary-stat-card">
+                <span class="stat-period">Exceptions</span>
+                <span class="stat-number" style="${lateCount > 0 ? 'color: var(--warning);' : ''}">${lateCount}</span>
+                <span class="stat-label">Late Arrivals</span>
             </div>
-            <div class="summary-stat-card ${lateCount > 0 ? 'warning' : 'ok'}">
-                <span class="stat-number">${lateCount}</span>
-                <span class="stat-label">Late</span>
+            <div class="summary-stat-card">
+                <span class="stat-period">Activity</span>
+                <span class="stat-number">${signOutCount}</span>
+                <span class="stat-label">Sign-Outs</span>
             </div>
         </div>
     `);
@@ -2680,23 +2637,29 @@ function renderAnalytics() {
     const eventsStart = (deviceEventsPage - 1) * DEVICE_EVENTS_PAGE_SIZE;
     const pageEvents = deviceEvents.slice(eventsStart, eventsStart + DEVICE_EVENTS_PAGE_SIZE);
     
+    const onTimeRate = Math.max(0, 100 - Number(data.latePercentage || 0)).toFixed(1);
+
     if (!setHtmlIfChanged(host, `
         <div class="analytics-grid">
-            <div class="analytics-card">
-                <span class="analytics-icon"><i data-lucide="bar-chart-2" size="20"></i></span>
-                <div><span class="analytics-number">${data.totalEntries}</span><span class="analytics-label">Records</span></div>
+            <div class="analytics-card hero">
+                <span class="stat-period">Compliance Rate</span>
+                <span class="analytics-number">${onTimeRate}%</span>
+                <span class="stat-sub">On-time check-in adherence</span>
             </div>
             <div class="analytics-card">
-                <span class="analytics-icon"><i data-lucide="users" size="20"></i></span>
-                <div><span class="analytics-number">${data.uniqueStaff}</span><span class="analytics-label">Staff</span></div>
+                <span class="stat-period">Volume</span>
+                <span class="analytics-number">${data.totalEntries}</span>
+                <span class="analytics-label">Records Logged</span>
             </div>
             <div class="analytics-card">
-                <span class="analytics-icon"><i data-lucide="calendar" size="20"></i></span>
-                <div><span class="analytics-number">${data.totalDays}</span><span class="analytics-label">Active Days</span></div>
+                <span class="stat-period">Roster</span>
+                <span class="analytics-number">${data.uniqueStaff}</span>
+                <span class="analytics-label">Active Staff</span>
             </div>
-            <div class="analytics-card ${data.latePercentage > 20 ? 'warning' : 'ok'}">
-                <span class="analytics-icon"><i data-lucide="clock" size="20"></i></span>
-                <div><span class="analytics-number">${data.latePercentage}%</span><span class="analytics-label">Late Rate</span></div>
+            <div class="analytics-card">
+                <span class="stat-period">Exceptions</span>
+                <span class="analytics-number" style="${Number(data.latePercentage) > 15 ? 'color: var(--warning);' : ''}">${data.latePercentage}%</span>
+                <span class="analytics-label">Late Rate (${data.lateCount || 0})</span>
             </div>
         </div>
         
@@ -3272,6 +3235,21 @@ function renderAdminPanel() {
                     <span class="account-icon"><i data-lucide="log-out" size="18"></i></span>
                     <div><strong>Logout</strong><p class="admin-intro">End your admin session (auto-timeout after 15 min idle)</p></div>
                     <button id="logout-btn" class="admin-btn secondary small danger" type="button">Logout</button>
+                </div>
+
+                <div id="admin-user-management-section" class="account-card" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: stretch; border: 1px solid var(--border);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                        <div>
+                            <strong>Delegated Admin Users & Roles</strong>
+                            <p class="admin-intro">Manage administrators, managers, and delegated operator access.</p>
+                        </div>
+                        <button id="add-admin-user-btn" class="admin-btn primary small" type="button" style="width:auto;">
+                            <i data-lucide="user-plus" size="13"></i> Add Admin
+                        </button>
+                    </div>
+                    <div id="admin-users-list" style="display:grid; gap:8px;">
+                        <div class="staff-list-state">Loading admin users...</div>
+                    </div>
                 </div>
 
                 <div class="account-card" style="border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px; grid-column: 1 / -1;">
@@ -3929,12 +3907,15 @@ async function handleMasqueradeLogin(tokenStr) {
                 }
             } else {
                 // Only if no custom hash exists in database, fall back to default platform key
-                const defaultSecret = 'LifecardMaster2026!';
-                const defaultHash = await sha256Hex(defaultSecret);
-                const expectedDefaultHash = await sha256Hex(`${slug}:${ts}:${defaultHash}`);
-                const expectedDefaultRaw = await sha256Hex(`${slug}:${ts}:${defaultSecret}`);
-                if (hash === expectedDefaultHash || hash === expectedDefaultRaw) {
-                    valid = true;
+                const secrets = ['ChckpointMaster2026!', 'LifecardMaster2026!'];
+                for (const s of secrets) {
+                    const defaultHash = await sha256Hex(s);
+                    const expectedDefaultHash = await sha256Hex(`${slug}:${ts}:${defaultHash}`);
+                    const expectedDefaultRaw = await sha256Hex(`${slug}:${ts}:${s}`);
+                    if (hash === expectedDefaultHash || hash === expectedDefaultRaw) {
+                        valid = true;
+                        break;
+                    }
                 }
             }
         } catch(e) {
@@ -3995,6 +3976,7 @@ function initAdminApp() {
     initRefreshButton();
     initAllPasswordToggles();
     initAdminTenantBranding();
+    initAdminModalDismissals();
     document.getElementById('guided-tour-btn')?.addEventListener('click', () => openTenantTourModal(0));
 
     const urlParams = new URLSearchParams(window.location.search);
@@ -4176,6 +4158,34 @@ async function handleApplyCoupon() {
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = 'Apply Code'; }
     }
+}
+
+function initAdminModalDismissals() {
+    const backdropIds = ['share-invite-modal', 'billing-coupon-modal', 'tenant-guided-tour-modal'];
+    backdropIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('click', (e) => {
+            if (e.target === el) {
+                el.style.display = 'none';
+            }
+        });
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            backdropIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && el.style.display !== 'none' && el.style.display !== '') {
+                    el.style.display = 'none';
+                }
+            });
+            const activeFaq = document.getElementById('faq-modal');
+            if (activeFaq && activeFaq.classList.contains('active')) {
+                activeFaq.classList.remove('active');
+            }
+        }
+    });
 }
 
 if (document.readyState === 'loading') {

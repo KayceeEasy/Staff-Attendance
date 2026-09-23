@@ -1,3 +1,30 @@
+
+function initOnboardModalDismissals() {
+    const modals = [
+        { id: 'email-verify-modal', closeFn: closeEmailVerifyModal },
+        { id: 'qr-modal', closeFn: closeQrModal }
+    ];
+
+    modals.forEach(({ id, closeFn }) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('click', (e) => {
+            if (e.target === el) closeFn();
+        });
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            modals.forEach(({ id, closeFn }) => {
+                const el = document.getElementById(id);
+                if (el && el.style.display !== 'none' && el.style.display !== '') {
+                    closeFn();
+                }
+            });
+        }
+    });
+}
+
 let currentStep = 1;
 let uploadedLogoBase64 = "";
 
@@ -131,11 +158,11 @@ function setupLogoDropzone() {
 
     function handleLogoFile(file) {
         if (!file.type.startsWith('image/')) {
-            alert('Please select a valid image file (PNG, JPG, or SVG).');
+            showToast('Please select a valid image file (PNG, JPG, or SVG).', 'warning');
             return;
         }
         if (file.size > 2 * 1024 * 1024) {
-            alert('File size exceeds 2MB limit. Please choose a smaller logo.');
+            showToast('File size exceeds 2MB limit. Please choose a smaller logo.', 'warning');
             return;
         }
 
@@ -361,34 +388,34 @@ function goToStep(step) {
         if (currentStep === 1) {
             const name = document.getElementById('company-name').value.trim();
             const slug = document.getElementById('company-slug').value.trim();
-            if (!name) { alert('Please enter the Company Legal Name.'); return; }
-            if (!slug) { alert('Please enter a Workspace Identifier.'); return; }
+            if (!name) { showToast('Please enter the Company Legal Name.', 'warning'); return; }
+            if (!slug) { showToast('Please enter a Workspace Identifier.', 'warning'); return; }
 
             const val = validateTenantSlug(slug, name);
             if (!val.valid) {
-                alert(val.message);
+                showToast(val.message, 'warning');
                 return;
             }
             if (!isSlugAvailable) {
-                alert(`The workspace identifier "${slug}" is already in use or reserved. Please choose another identifier.`);
+                showToast(`The workspace identifier "${slug}" is already in use or reserved. Please choose another identifier.`, 'warning');
                 return;
             }
         } else if (currentStep === 2) {
             const office = document.getElementById('office-name').value.trim();
             const lat = document.getElementById('office-lat').value;
             const lon = document.getElementById('office-lon').value;
-            if (!office) { alert('Please enter the Office / Branch Name.'); return; }
-            if (!lat || isNaN(lat)) { alert('Please provide a valid Latitude coordinate.'); return; }
-            if (!lon || isNaN(lon)) { alert('Please provide a valid Longitude coordinate.'); return; }
+            if (!office) { showToast('Please enter the Office / Branch Name.', 'warning'); return; }
+            if (!lat || isNaN(lat)) { showToast('Please provide a valid Latitude coordinate.', 'warning'); return; }
+            if (!lon || isNaN(lon)) { showToast('Please provide a valid Longitude coordinate.', 'warning'); return; }
         } else if (currentStep === 3) {
             const adminEmail = document.getElementById('admin-email').value.trim();
             const adminPass = document.getElementById('admin-pass').value.trim();
             if (!EMAIL_REGEX.test(adminEmail)) {
-                alert('Please enter a valid work email address before continuing.');
+                showToast('Please enter a valid work email address before continuing.', 'warning');
                 return;
             }
             if (!adminPass || adminPass.length < 6) {
-                alert('Password must be at least 6 characters.');
+                showToast('Password must be at least 6 characters.', 'warning');
                 return;
             }
         }
@@ -429,13 +456,13 @@ async function submitTenantOnboarding() {
     const companyName = document.getElementById('company-name').value.trim();
     const companySlug = document.getElementById('company-slug').value.trim();
 
-    if (!adminName) { alert('Please provide your full name.'); return; }
-    if (!adminEmail || !EMAIL_REGEX.test(adminEmail)) { alert('Please provide a valid work email address.'); return; }
-    if (!adminPass || adminPass.length < 6) { alert('Please enter a secure password (at least 6 characters).'); return; }
+    if (!adminName) { showToast('Please provide your full name.', 'warning'); return; }
+    if (!adminEmail || !EMAIL_REGEX.test(adminEmail)) { showToast('Please provide a valid work email address.', 'warning'); return; }
+    if (!adminPass || adminPass.length < 6) { showToast('Please enter a secure password (at least 6 characters).', 'warning'); return; }
 
     const validation = validateTenantSlug(companySlug, companyName);
     if (!validation.valid) {
-        alert(validation.message);
+        showToast(validation.message, 'warning');
         return;
     }
 
@@ -496,7 +523,7 @@ function openEmailVerifyModal(email) {
 function closeEmailVerifyModal() {
     const modal = document.getElementById('email-verify-modal');
     if (modal) modal.style.display = 'none';
-    const submitBtn = document.getElementById('btn-submit-onboard');
+    const submitBtn = document.getElementById('submit-onboard-btn');
     if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.innerHTML = '<i data-lucide="rocket" size="16"></i> Complete Setup & Launch Workspace';
@@ -531,7 +558,7 @@ async function confirmEmailOtp() {
 }
 
 async function executeFinalOnboarding(tenantPayload) {
-    const submitBtn = document.getElementById('btn-submit-onboard');
+    const submitBtn = document.getElementById('submit-onboard-btn');
     if (submitBtn) {
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i data-lucide="loader" size="16" class="spin"></i> Creating Workspace...';
@@ -547,7 +574,7 @@ async function executeFinalOnboarding(tenantPayload) {
         if (res.ok) {
             showSuccessScreen(tenantPayload);
         } else {
-            alert(res.message || 'Failed to create workspace.');
+            showToast(res.message || 'Failed to create workspace.', 'error');
             if (submitBtn) {
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i data-lucide="rocket" size="16"></i> Complete Setup & Launch Workspace';
@@ -556,7 +583,7 @@ async function executeFinalOnboarding(tenantPayload) {
         }
     } catch (e) {
         console.error('Onboard error:', e);
-        alert('An unexpected error occurred while saving your workspace.');
+        showToast('An unexpected error occurred while saving your workspace.', 'error');
         if (submitBtn) {
             submitBtn.disabled = false;
             submitBtn.innerHTML = '<i data-lucide="rocket" size="16"></i> Complete Setup & Launch Workspace';
@@ -641,7 +668,7 @@ function closeQrModal() {
 function copyLink(elementId) {
     const text = document.getElementById(elementId).textContent;
     navigator.clipboard.writeText(text).then(() => {
-        alert('Copied to clipboard!');
+        showToast('Copied to clipboard!', 'success');
     }).catch(() => {
         prompt('Copy code/link:', text);
     });

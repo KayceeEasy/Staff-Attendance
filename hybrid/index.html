@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Lifecard Hybrid Schedule</title>
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <title>Staff Hybrid Schedule | Chckpoint</title>
+    <link rel="icon" type="image/x-icon" href="../favicon.ico">
     <link rel="stylesheet" href="style.css">
     <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="../config.js"></script>
+    <script src="../common.js?v=3.0.3"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
@@ -17,16 +17,27 @@
 <div class="container">
     <header>
         <div class="brand">
-            <h1>Staff Hybrid Schedule</h1>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <a href="../" style="color:var(--text-muted); text-decoration:none; display:inline-flex; align-items:center;" title="Back to attendance" aria-label="Back to attendance"><i data-lucide="arrow-left" size="16"></i></a>
+                <h1 id="page-brand-title">Staff Hybrid Schedule</h1>
+            </div>
             <small id="display-date-range"></small>
             <div id="sync-status"></div>
         </div>
         
-        <div id="admin-controls">
-            <button class="btn-gen" onclick="generateNew()"><i data-lucide="refresh-cw"></i> Regenerate</button>
-            <button class="btn-dl" onclick="downloadImage()"><i data-lucide="download"></i> Download JPG</button>
-            <button class="btn-wa" onclick="shareWhatsApp()"><i data-lucide="image"></i> WhatsApp</button>
-            <button class="btn-mail" onclick="shareGmail()"><i data-lucide="mail"></i> Gmail</button>
+        <div class="header-right">
+            <select id="dept-filter-select" class="dept-filter-select" onchange="filterByDepartment(this.value)" aria-label="Filter by department">
+                <option value="all">All Departments</option>
+            </select>
+            <button id="theme-toggle" class="icon-btn theme-toggle" type="button" aria-label="Switch theme" title="Toggle Theme">
+                <i data-lucide="moon" size="14"></i>
+            </button>
+            <div id="admin-controls">
+                <button class="btn-gen" onclick="generateNew()"><i data-lucide="refresh-cw" size="14"></i> Regenerate</button>
+                <button class="btn-dl" onclick="downloadImage()"><i data-lucide="download" size="14"></i> JPG</button>
+                <button class="btn-wa" onclick="shareWhatsApp()"><i data-lucide="image" size="14"></i> WhatsApp</button>
+                <button class="btn-mail" onclick="shareGmail()"><i data-lucide="mail" size="14"></i> Gmail</button>
+            </div>
         </div>
     </header>
 

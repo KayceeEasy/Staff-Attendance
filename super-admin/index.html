@@ -37,7 +37,7 @@
         <p>Restricted to authorized platform operators and engineering administrators only. Enter your Master Platform Key to continue.</p>
         <form id="master-auth-form" onsubmit="handleMasterLogin(event)">
             <div class="form-group">
-                <input type="password" id="master-key-input" placeholder="Enter Master Platform Key" autocomplete="current-password" required autofocus />
+                <input type="password" id="master-key-input" placeholder="Enter Master Platform Key" aria-label="Master Platform Key" autocomplete="current-password" required autofocus />
             </div>
             <div id="auth-error-msg" class="auth-error" style="display:none;"></div>
             <button type="submit" id="auth-submit-btn" class="btn-primary full-width">Unlock Command Console</button>
@@ -78,6 +78,9 @@
             <a href="../onboard/" class="btn-primary small">
                 <i data-lucide="plus" size="14"></i> Onboard Company
             </a>
+            <button id="theme-toggle" class="btn-secondary small theme-toggle" type="button" aria-label="Switch theme" title="Toggle Theme">
+                <i data-lucide="moon" size="14"></i>
+            </button>
             <button class="btn-secondary small" onclick="handleLockConsole()" title="Lock console">
                 <i data-lucide="lock" size="14"></i> Lock
             </button>
@@ -134,7 +137,7 @@
                     <p>Manage workspaces, view plan tiers, and jump into client admin consoles.</p>
                 </div>
                 <div class="panel-controls">
-                    <input type="text" id="tenant-search-input" placeholder="Filter companies by name or identifier..." oninput="filterTenantTable()" />
+                    <input type="text" id="tenant-search-input" aria-label="Search workspaces by name or slug" placeholder="Filter companies by name or identifier..." oninput="filterTenantTable()" />
                     <button class="btn-icon" onclick="loadFleetData()" title="Refresh fleet">
                         <i data-lucide="refresh-cw" size="15"></i>
                     </button>
@@ -223,12 +226,12 @@
                     <form id="master-profile-form" onsubmit="handleSaveMasterProfile(event)">
                         <div class="form-row-2">
                             <div class="form-group">
-                                <label>Company Name</label>
-                                <input type="text" id="master-company-name" required />
+                                <label for="master-company-name">Company Name</label>
+                                <input type="text" id="master-company-name" aria-label="Company Name" required />
                             </div>
                             <div class="form-group">
-                                <label>Workspace Identifier (URL)</label>
-                                <input type="text" id="master-company-slug" required pattern="[a-z0-9-]+" />
+                                <label for="master-company-slug">Workspace Identifier (URL)</label>
+                                <input type="text" id="master-company-slug" aria-label="Workspace Identifier" required pattern="[a-z0-9-]+" />
                             </div>
                         </div>
 
@@ -254,12 +257,12 @@
 
                         <div class="form-row-2">
                             <div class="form-group">
-                                <label>Primary Admin Contact Name</label>
-                                <input type="text" id="master-admin-name" />
+                                <label for="master-admin-name">Primary Admin Contact Name</label>
+                                <input type="text" id="master-admin-name" aria-label="Primary Admin Contact Name" />
                             </div>
                             <div class="form-group">
-                                <label>Primary Admin Email</label>
-                                <input type="email" id="master-admin-email" />
+                                <label for="master-admin-email">Primary Admin Email</label>
+                                <input type="email" id="master-admin-email" aria-label="Primary Admin Email" />
                             </div>
                         </div>
 
@@ -267,14 +270,14 @@
                             <div class="form-group">
                                 <label>Brand Primary Color</label>
                                 <div style="display:flex; align-items:center; gap:8px;">
-                                    <input type="color" id="master-brand-color" style="width:44px; height:38px; padding:2px; cursor:pointer;" />
-                                    <input type="text" id="master-brand-color-text" placeholder="#1a56db" />
+                                    <input type="color" id="master-brand-color" aria-label="Pick brand color" style="width:44px; height:38px; padding:2px; cursor:pointer;" />
+                                    <input type="text" id="master-brand-color-text" aria-label="Brand color hex value" placeholder="#1a56db" />
                                 </div>
                             </div>
                             <div class="form-group">
                                 <label>Company Logo (File Upload or URL)</label>
                                 <div style="display:flex; gap:8px; align-items:center;">
-                                    <input type="text" id="master-logo-url" placeholder="https://... or data:image/..." style="flex:1;" />
+                                    <input type="text" id="master-logo-url" aria-label="Company logo image URL" placeholder="https://... or data:image/..." style="flex:1;" />
                                     <label for="master-logo-file" class="action-btn" style="cursor:pointer; flex-shrink:0; display:inline-flex; align-items:center; gap:6px;">
                                         <i data-lucide="upload" size="14"></i> Choose File
                                     </label>
@@ -299,29 +302,29 @@
                 <div id="tab-geofence" class="tab-pane">
                     <form id="master-geofence-form" onsubmit="handleSaveMasterPolicies(event)">
                         <div class="form-group">
-                            <label>Branch / HQ Office Name</label>
-                            <input type="text" id="master-office-name" required />
+                            <label for="master-office-name">Branch / HQ Office Name</label>
+                            <input type="text" id="master-office-name" aria-label="Branch or HQ Office Name" required />
                         </div>
 
                         <div class="form-row-2">
                             <div class="form-group">
-                                <label>Latitude Coordinate</label>
-                                <input type="number" step="any" id="master-latitude" required />
+                                <label for="master-latitude">Latitude Coordinate</label>
+                                <input type="number" step="any" id="master-latitude" aria-label="Office Latitude Coordinate" required />
                             </div>
                             <div class="form-group">
-                                <label>Longitude Coordinate</label>
-                                <input type="number" step="any" id="master-longitude" required />
+                                <label for="master-longitude">Longitude Coordinate</label>
+                                <input type="number" step="any" id="master-longitude" aria-label="Office Longitude Coordinate" required />
                             </div>
                         </div>
 
                         <div class="form-row-2">
                             <div class="form-group">
-                                <label>Geofence Radius (meters)</label>
-                                <input type="number" id="master-radius" min="10" max="5000" required />
+                                <label for="master-radius">Geofence Radius (meters)</label>
+                                <input type="number" id="master-radius" aria-label="Geofence Radius in meters" min="10" max="5000" required />
                             </div>
                             <div class="form-group">
-                                <label>Morning Late Grace Period (minutes)</label>
-                                <input type="number" id="master-grace-period" min="0" max="120" value="15" required />
+                                <label for="master-grace-period">Morning Late Grace Period (minutes)</label>
+                                <input type="number" id="master-grace-period" aria-label="Morning Late Grace Period in minutes" min="0" max="120" value="15" required />
                             </div>
                         </div>
 
@@ -359,8 +362,8 @@
                     <div id="inline-add-staff-box" style="display:none; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px; margin-bottom:14px;">
                         <h4 style="font-size:0.9rem; margin-bottom:8px;">Add New Employee to this Tenant</h4>
                         <div class="form-row-2">
-                            <input type="text" id="new-staff-name" placeholder="Employee Full Name" />
-                            <input type="text" id="new-staff-dept" placeholder="Department (e.g. Sales, IT)" />
+                            <input type="text" id="new-staff-name" placeholder="Employee Full Name" aria-label="Employee Full Name" />
+                            <input type="text" id="new-staff-dept" placeholder="Department (e.g. Sales, IT)" aria-label="Department (e.g. Sales, IT)" />
                         </div>
                         <div class="form-row-2" style="margin-top:8px;">
                             <select id="new-staff-policy" class="form-select">
@@ -370,7 +373,7 @@
                                 <option value="office_only">Office Only</option>
                             </select>
                             <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; cursor:pointer;">
-                                <input type="checkbox" id="new-staff-is-lead" /> Team Lead (Manager)
+                                <input type="checkbox" id="new-staff-is-lead" aria-label="Team Lead flag" /> Team Lead (Manager)
                             </label>
                         </div>
                         <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:10px;">
@@ -428,7 +431,7 @@
                             If the customer admin has forgotten their password or is locked out, set a new password for them here.
                         </p>
                         <div style="display:flex; gap:8px;">
-                            <input type="text" id="master-new-admin-pass" placeholder="Enter new temporary password" style="max-width:320px;" />
+                            <input type="text" id="master-new-admin-pass" placeholder="Enter new temporary password" aria-label="Enter new temporary password" style="max-width:320px;" />
                             <button type="button" class="btn-secondary" onclick="handleResetAdminPassword()">Reset Password</button>
                         </div>
                     </div>
@@ -476,7 +479,7 @@
                             Upload and restore a previous JSON backup for this workspace or import data migrated from another environment.
                         </p>
                         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                            <input type="file" id="master-import-file" accept=".json,application/json" style="font-size:0.84rem;" />
+                            <input type="file" id="master-import-file" accept=".json,application/json" aria-label="Upload JSON workspace backup file" style="font-size:0.84rem;" />
                             <button type="button" class="btn-secondary small" onclick="handleImportTenantData(event)">
                                 <i data-lucide="upload" size="14"></i> Restore From File
                             </button>
@@ -527,15 +530,15 @@
                 <form id="master-key-change-form" onsubmit="handleSaveMasterKey(event)">
                     <div class="form-group" style="margin-bottom:12px;">
                         <label style="font-size:0.82rem; font-weight:600;">Current Master Key</label>
-                        <input type="password" id="current-master-key-input" required placeholder="Enter current master key" style="width:100%;" />
+                        <input type="password" id="current-master-key-input" aria-label="Current Master Key" required placeholder="Enter current master key" style="width:100%;" />
                     </div>
                     <div class="form-group" style="margin-bottom:12px;">
                         <label style="font-size:0.82rem; font-weight:600;">New Master Key</label>
-                        <input type="password" id="new-master-key-input" required minlength="8" placeholder="At least 8 characters" style="width:100%;" />
+                        <input type="password" id="new-master-key-input" aria-label="New Master Key" required minlength="8" placeholder="At least 8 characters" style="width:100%;" />
                     </div>
                     <div class="form-group" style="margin-bottom:14px;">
                         <label style="font-size:0.82rem; font-weight:600;">Confirm New Master Key</label>
-                        <input type="password" id="confirm-master-key-input" required minlength="8" placeholder="Re-enter new key" style="width:100%;" />
+                        <input type="password" id="confirm-master-key-input" aria-label="Confirm New Master Key" required minlength="8" placeholder="Re-enter new key" style="width:100%;" />
                     </div>
                     <div id="master-key-change-msg" style="display:none; font-size:0.82rem; margin-bottom:12px;"></div>
                     <div style="display:flex; justify-content:flex-end; gap:8px;">
@@ -549,8 +552,7 @@
 
 </div>
 
-<script src="../config.js"></script>
-<script src="../common.js"></script>
-<script src="super_admin.js"></script>
+<script src="../common.js?v=3.0.3"></script>
+<script src="super_admin.js?v=3.0.3"></script>
 </body>
 </html>

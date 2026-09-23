@@ -12,6 +12,14 @@
 <body>
 
 <div class="onboard-wrapper">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding: 4px 0;">
+        <a href="../" style="display:inline-flex; align-items:center; gap:6px; font-size:0.82rem; color:var(--text-muted); text-decoration:none; font-weight:500;">
+            <i data-lucide="arrow-left" size="14"></i> Back
+        </a>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch theme" title="Toggle Theme" style="padding:6px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; display:inline-flex; align-items:center; justify-content:center;">
+            <i data-lucide="moon" size="14"></i>
+        </button>
+    </div>
     <header class="onboard-header">
         <div class="brand-pill">
             <span class="brand-badge"><i data-lucide="sparkles" size="14" style="vertical-align:middle;"></i></span>
@@ -90,7 +98,7 @@
                 <div class="form-group full-width">
                     <label>Company Logo</label>
                     <div class="logo-dropzone" id="logo-dropzone">
-                        <input type="file" id="logo-file-input" accept="image/png, image/jpeg, image/svg+xml" style="display:none;" />
+                        <input type="file" id="logo-file-input" aria-label="Upload company logo" accept="image/png, image/jpeg, image/svg+xml" style="display:none;" />
                         <div class="dropzone-content" id="dropzone-empty">
                             <i data-lucide="image-up" class="dropzone-icon"></i>
                             <p><strong>Click to upload your logo</strong> or drag & drop</p>
@@ -320,7 +328,7 @@
             We sent a 6-digit confirmation code to <strong id="verify-email-target" style="color:var(--text);">admin@company.com</strong>.
         </p>
         <div style="margin-bottom:16px;">
-            <input id="email-otp-input" type="text" maxlength="6" placeholder="123456" style="font-size:1.8rem; font-weight:800; letter-spacing:0.25em; text-align:center; font-family:monospace; width:100%; max-width:240px; padding:10px; border:2px solid var(--border); border-radius:10px; background:var(--surface-2); color:var(--text);" />
+            <input id="email-otp-input" type="text" maxlength="6" placeholder="123456" aria-label="Enter 6-digit confirmation code" style="font-size:1.8rem; font-weight:800; letter-spacing:0.25em; text-align:center; font-family:monospace; width:100%; max-width:240px; padding:10px; border:2px solid var(--border); border-radius:10px; background:var(--surface-2); color:var(--text);" />
             <div id="otp-error-msg" style="color:#ef4444; font-size:0.8rem; margin-top:6px; display:none;"></div>
             <div id="otp-hint-msg" style="color:var(--text-muted); font-size:0.75rem; margin-top:6px;"></div>
         </div>
@@ -334,8 +342,7 @@
     </main>
 </div>
 
-<script src="../config.js"></script>
-<script src="../common.js"></script>
-<script src="onboard.js"></script>
+<script src="../common.js?v=3.0.3"></script>
+<script src="onboard.js?v=3.0.3"></script>
 </body>
 </html>

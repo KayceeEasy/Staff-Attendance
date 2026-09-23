@@ -17,7 +17,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=3.0.0" />
+    <link rel="stylesheet" href="style.css?v=3.0.3" />
     <link rel="manifest" href="manifest.json" />
     <link rel="icon" type="image/png" sizes="192x192" href="image/png/icon-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="image/png/icon-512.png" />
@@ -73,6 +73,9 @@
                         <button type="button" class="lang-option-btn" data-lang="ar">🇸🇦 العربية</button>
                     </div>
                 </div>
+                <button id="faq-btn" class="topbar-icon-btn" type="button" aria-label="Open FAQ" title="Quick FAQ" data-tooltip="Frequently Asked Questions" data-tooltip-pos="bottom">
+                    <i data-lucide="help-circle" size="16"></i>
+                </button>
                 <button id="refresh-btn" class="topbar-icon-btn" type="button" aria-label="Refresh app" title="Refresh" data-tooltip="Refresh GPS & connection" data-tooltip-pos="bottom">
                     <i data-lucide="rotate-cw" size="16"></i>
                 </button>
@@ -171,11 +174,6 @@
             <p style="margin: 0;"><button id="privacy-policy-link" type="button" style="background:none; border:none; color: var(--primary); text-decoration:underline; font-size:0.76rem; cursor:pointer; padding:0;">Privacy &amp; Location Policy</button></p>
         </footer>
     </div>
-    
-    <button id="faq-btn" class="faq-trigger-btn" aria-label="Open FAQ" title="Frequently Asked Questions" data-tooltip="Frequently Asked Questions" data-tooltip-pos="left">
-        <i data-lucide="help-circle" size="20"></i>
-        <span>FAQ</span>
-    </button>
     
     <!-- FAQ Modal -->
     <div id="faq-modal" class="faq-overlay" role="dialog" aria-modal="true" aria-labelledby="faq-title" aria-hidden="true">
@@ -682,6 +680,7 @@
                     type="text" 
                     id="workspace-code-input" 
                     placeholder="e.g. LIFE-26 or ACME-89" 
+                    aria-label="Enter Workspace Code"
                     maxlength="12"
                     autocomplete="off"
                     style="width: 100%; text-align: center; text-transform: uppercase; font-weight: 700; font-size: 1.25rem; letter-spacing: 2px; padding: 12px 14px; border: 2px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); outline: none; box-sizing: border-box;"
@@ -770,8 +769,8 @@
         </div>
     </div>
 
-    <script src="common.js?v=3.0.1"></script>
-    <script src="script.js?v=3.0.1"></script>
+    <script src="common.js?v=3.0.3"></script>
+    <script src="script.js?v=3.0.3"></script>
     <script>
         if ('serviceWorker' in navigator) {
             // Force browser to bypass HTTP cache when checking for Service Worker updates

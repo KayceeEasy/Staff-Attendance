@@ -589,7 +589,7 @@ function updateActionHeroState() {
         setIcon('log-out');
         if (outBtn) outBtn.disabled = !canSignOut;
 
-        const locStatus = document.getElementById('location-status');
+        const locStatus = document.getElementById('loc-status');
         if (locStatus && isRemoteSignoutEligible && !coords && !isWfh) {
             locStatus.innerText = t('remoteActive', '🏠 Remote Sign-Out Active');
             locStatus.className = 'status ready';
@@ -2359,8 +2359,6 @@ let currentScheduleCache = {};
 let currentScheduleWeekStart = '';
 
 async function updateScheduleBanner(name) {
-    const banner = document.getElementById('schedule-mode-banner');
-    if (banner) banner.style.display = 'none'; // Sub-banner removed per user preference; topbar pill is primary
     const locStatus = document.getElementById('loc-status');
     const distLabel = document.getElementById('distance-label');
 

@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
-    <link rel="stylesheet" href="../style.css?v=3.0.0" />
+    <link rel="stylesheet" href="../style.css?v=3.0.3" />
 </head>
 <body>
 <div class="card admin-card">
@@ -53,9 +53,9 @@
         </div>
     </div>
     <form id="admin-login-form" class="admin-form">
-        <input id="admin-email" type="email" placeholder="Admin Email" data-i18n-placeholder="adminEmail" autocomplete="username" required />
+        <input id="admin-email" type="email" placeholder="Admin Email" data-i18n-placeholder="adminEmail" autocomplete="username" aria-label="Admin Email" required />
         <div class="password-field-wrap">
-            <input id="admin-password" type="password" placeholder="Password" data-i18n-placeholder="password" autocomplete="current-password" required />
+            <input id="admin-password" type="password" placeholder="Password" data-i18n-placeholder="password" autocomplete="current-password" aria-label="Admin Password" required />
             <button type="button" class="password-toggle" data-toggle-target="admin-password" aria-label="Show password"><i data-lucide="eye" size="16"></i></button>
         </div>
         <div class="admin-actions">
@@ -76,7 +76,7 @@
                 <i data-lucide="qr-code" size="18" style="color:var(--primary);"></i>
                 <span>Invite Employees</span>
             </div>
-            <button type="button" onclick="closeShareInviteModal()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:4px;"><i data-lucide="x" size="18"></i></button>
+            <button type="button" onclick="closeShareInviteModal()" aria-label="Close dialog" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:4px;"><i data-lucide="x" size="18"></i></button>
         </div>
         
         <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px; line-height:1.4;">
@@ -112,11 +112,11 @@
                 <i data-lucide="ticket" size="18" style="color:var(--primary);"></i>
                 <span>Redeem Coupon or Extension</span>
             </div>
-            <button type="button" onclick="closeCouponModal()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:4px;"><i data-lucide="x" size="18"></i></button>
+            <button type="button" onclick="closeCouponModal()" aria-label="Close dialog" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:4px;"><i data-lucide="x" size="18"></i></button>
         </div>
         <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">Enter your promotional coupon or trial extension code below.</p>
         <div style="display:grid; gap:12px;">
-            <input id="coupon-code-input" type="text" placeholder="e.g. EXTEND14 or WELCOME50" style="text-transform:uppercase; font-weight:700; letter-spacing:0.08em; padding:11px 14px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text);" />
+            <input id="coupon-code-input" type="text" placeholder="e.g. EXTEND14 or WELCOME50" aria-label="Promotional coupon or extension code" style="text-transform:uppercase; font-weight:700; letter-spacing:0.08em; padding:11px 14px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text);" />
             <div id="coupon-status-msg" style="font-size:0.8rem; display:none;"></div>
             <div style="display:flex; gap:8px; margin-top:4px;">
                 <button id="apply-coupon-btn" class="admin-btn primary" type="button" onclick="handleApplyCoupon()" style="flex:1;">Apply Code</button>

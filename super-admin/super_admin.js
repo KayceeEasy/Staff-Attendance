@@ -1,9 +1,39 @@
-const MASTER_PLATFORM_KEY = 'LifecardMaster2026!';
+
+function initSuperAdminModalDismissals() {
+    const modals = [
+        { id: 'tenant-master-modal', closeFn: closeTenantMasterModal },
+        { id: 'master-key-modal', closeFn: closeMasterKeyModal }
+    ];
+
+    modals.forEach(({ id, closeFn }) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('click', (e) => {
+            if (e.target === el) closeFn();
+        });
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            modals.forEach(({ id, closeFn }) => {
+                const el = document.getElementById(id);
+                if (el && el.style.display !== 'none' && el.style.display !== '') {
+                    closeFn();
+                }
+            });
+        }
+    });
+}
+
+const MASTER_PLATFORM_KEY = 'ChckpointMaster2026!';
+const LEGACY_MASTER_PLATFORM_KEY = 'LifecardMaster2026!';
 const SESSION_KEY = 'attendance_super_admin_unlocked';
 
 let tenantsCache = [];
 
 document.addEventListener('DOMContentLoaded', () => {
+    if (typeof initTheme === 'function') initTheme();
+    initSuperAdminModalDismissals();
     checkMasterAuth();
 });
 
@@ -30,7 +60,7 @@ async function verifyMasterKey(inputKey) {
             return false;
         }
     }
-    return clean === MASTER_PLATFORM_KEY;
+    return clean === MASTER_PLATFORM_KEY || clean === LEGACY_MASTER_PLATFORM_KEY;
 }
 
 function checkMasterAuth() {
@@ -238,7 +268,7 @@ async function toggleTenantStatus(slug) {
     if (res.ok) {
         await loadFleetData();
     } else {
-        alert(res.message || 'Failed to update status.');
+        showToast(res.message || 'Failed to update status.', 'error');
     }
 }
 
@@ -301,7 +331,7 @@ async function openTenantMasterModal(slug) {
             const file = logoFileInput.files && logoFileInput.files[0];
             if (file) {
                 if (!file.type.startsWith('image/')) {
-                    alert('Please select an image file (PNG, JPG, or SVG).');
+                    showToast('Please select an image file (PNG, JPG, or SVG).', 'warning');
                     return;
                 }
                 const reader = new FileReader();
@@ -415,11 +445,11 @@ async function handleSaveMasterProfile(e) {
 
     if (res.ok) {
         activeMasterTenantSlug = updates.slug;
-        alert('Company profile updated successfully!');
+        showToast('Company profile updated successfully!', 'success');
         await loadFleetData();
         openTenantMasterModal(activeMasterTenantSlug);
     } else {
-        alert(res.message || 'Failed to update profile.');
+        showToast(res.message || 'Failed to update profile.', 'error');
     }
 }
 
@@ -449,10 +479,10 @@ async function handleSaveMasterPolicies(e) {
     if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
 
     if (res.ok) {
-        alert('Office policies and geofence saved successfully!');
+        showToast('Office policies and geofence saved successfully!', 'success');
         await loadFleetData();
     } else {
-        alert(res.message || 'Failed to save policies.');
+        showToast(res.message || 'Failed to save policies.', 'error');
     }
 }
 
@@ -518,7 +548,7 @@ async function handleCreateTenantStaff() {
     const policy = document.getElementById('new-staff-policy').value;
     const isLead = document.getElementById('new-staff-is-lead').checked;
 
-    if (!name) { alert('Please enter employee name.'); return; }
+    if (!name) { showToast('Please enter employee name.', 'warning'); return; }
 
     const res = await callBackend({
         mode: 'add-staff',
@@ -535,7 +565,7 @@ async function handleCreateTenantStaff() {
         toggleAddStaffForm();
         loadTenantMasterStaff(activeMasterTenantSlug);
     } else {
-        alert(res.message || 'Failed to add staff member.');
+        showToast(res.message || 'Failed to add staff member.', 'error');
     }
 }
 
@@ -549,7 +579,7 @@ async function handleUnlinkStaffDevice(staffName) {
     if (res.ok) {
         loadTenantMasterStaff(activeMasterTenantSlug);
     } else {
-        alert(res.message || 'Failed to unlink device.');
+        showToast(res.message || 'Failed to unlink device.', 'error');
     }
 }
 
@@ -563,7 +593,7 @@ async function handleRemoveStaffMember(staffName) {
     if (res.ok) {
         loadTenantMasterStaff(activeMasterTenantSlug);
     } else {
-        alert(res.message || 'Failed to remove staff member.');
+        showToast(res.message || 'Failed to remove staff member.', 'error');
     }
 }
 
@@ -572,7 +602,7 @@ async function handleRemoveStaffMember(staffName) {
 async function handleResetAdminPassword() {
     if (!activeMasterTenantSlug) return;
     const newPass = document.getElementById('master-new-admin-pass').value.trim();
-    if (!newPass) { alert('Please enter a new password.'); return; }
+    if (!newPass) { showToast('Please enter a new password.', 'warning'); return; }
 
     const res = await callBackend({
         mode: 'super-admin-reset-tenant-password',
@@ -581,10 +611,10 @@ async function handleResetAdminPassword() {
     });
 
     if (res.ok) {
-        alert(res.message);
+        showToast(res.message || 'Operation successful', 'success');
         document.getElementById('master-new-admin-pass').value = '';
     } else {
-        alert(res.message || 'Failed to reset password.');
+        showToast(res.message || 'Failed to reset password.', 'error');
     }
 }
 
@@ -596,10 +626,10 @@ async function handleSuperAdminExtendTrial(days = 14) {
         days: days
     });
     if (res.ok) {
-        alert(res.message);
+        showToast(res.message || 'Operation successful', 'success');
         loadFleetTenants();
     } else {
-        alert(res.message || 'Failed to extend trial.');
+        showToast(res.message || 'Failed to extend trial.', 'error');
     }
 }
 
@@ -612,10 +642,10 @@ async function handleSuperAdminToggleRetention() {
         duration_months: 3
     });
     if (res.ok) {
-        alert('50% Retention Deal applied to this workspace.');
+        showToast('50% Retention Deal applied to this workspace.', 'success');
         loadFleetTenants();
     } else {
-        alert(res.message || 'Failed to apply retention deal.');
+        showToast(res.message || 'Failed to apply retention deal.', 'error');
     }
 }
 
@@ -676,7 +706,7 @@ async function handleImportTenantData(e) {
     const fileInput = document.getElementById('master-import-file');
     const statusEl = document.getElementById('master-import-status');
     if (!fileInput || !fileInput.files || !fileInput.files[0]) {
-        alert('Please select a valid .json archive file to restore.');
+        showToast('Please select a valid .json archive file to restore.', 'warning');
         return;
     }
 
@@ -731,7 +761,7 @@ async function handleImportTenantData(e) {
                 statusEl.textContent = 'Workspace archive restored successfully!';
                 statusEl.style.color = 'var(--success)';
             }
-            alert(`Workspace archive successfully restored for ${targetSlug}!`);
+            showToast(`Workspace archive successfully restored for ${targetSlug}!`, 'success');
             await openTenantMasterModal(targetSlug);
             await loadFleetData();
         } catch (err) {
@@ -740,7 +770,7 @@ async function handleImportTenantData(e) {
                 statusEl.textContent = `Restore failed: ${err.message}`;
                 statusEl.style.color = 'var(--danger)';
             }
-            alert(`Restore failed: ${err.message}`);
+            showToast(`Restore failed: ${err.message}`, 'error');
         }
     };
 
@@ -844,14 +874,14 @@ async function handlePurgeTenantLogs() {
         mode: 'super-admin-purge-tenant-logs',
         slug: activeMasterTenantSlug
     });
-    alert(res.message || 'Attendance history purged.');
+    showToast(res.message || 'Attendance history purged.', 'success');
 }
 
 async function handleDeleteTenantWorkspace() {
     if (!activeMasterTenantSlug) return;
     const promptVal = prompt(`CRITICAL: This permanently deletes workspace "${activeMasterTenantSlug}", including all staff and configuration.\nType "${activeMasterTenantSlug}" to confirm deletion:`);
     if (promptVal !== activeMasterTenantSlug) {
-        alert('Confirmation did not match. Workspace was NOT deleted.');
+        showToast('Confirmation did not match. Workspace was NOT deleted.', 'warning');
         return;
     }
 
@@ -861,11 +891,11 @@ async function handleDeleteTenantWorkspace() {
     });
 
     if (res.ok) {
-        alert(res.message);
+        showToast(res.message || 'Operation successful', 'success');
         closeTenantMasterModal();
         await loadFleetData();
     } else {
-        alert(res.message || 'Failed to delete tenant.');
+        showToast(res.message || 'Failed to delete tenant.', 'error');
     }
 }
 
