@@ -38,9 +38,10 @@ test('index.html properly closes #privacy-modal before #workspace-connect-overla
     assert.strictEqual(openDivs, closeDivs, `Div tags must be balanced! open=${openDivs}, close=${closeDivs}`);
 });
 
-test('index.html #workspace-connect-overlay contains quick workspace selector', () => {
-    assert(indexHtml.includes('id="workspace-quick-select-wrap"'), 'must include quick select wrap');
-    assert(indexHtml.includes('id="workspace-quick-select"'), 'must include quick select element');
+test('index.html #workspace-connect-overlay has zero registered tenant dropdown or list exposure', () => {
+    assert(!indexHtml.includes('id="workspace-quick-select-wrap"'), 'must NOT include quick select wrap');
+    assert(!indexHtml.includes('id="workspace-quick-select"'), 'must NOT include quick select element');
+    assert(!indexHtml.includes('LIFE-26 or ACME-89'), 'must NOT mention registered tenant codes in placeholders');
 });
 
 test('index.html switch-workspace-btn has onclick="openWorkspaceConnectModal()"', () => {
@@ -48,13 +49,13 @@ test('index.html switch-workspace-btn has onclick="openWorkspaceConnectModal()"'
         'switch workspace button must have onclick handler');
 });
 
-// 2. Script Switch Logic
-console.log('\n--- 2. Workspace Switching & Reload Mechanics ---');
+// 2. Script Switch Logic & Zero Tenant Exposure
+console.log('\n--- 2. Workspace Switching & Zero Fleet Exposure ---');
 const scriptJs = fs.readFileSync(path.join(ROOT, 'script.js'), 'utf8');
 
-test('script.js defines populateWorkspaceQuickSelect and calls it in openWorkspaceConnectModal', () => {
-    assert(scriptJs.includes('function populateWorkspaceQuickSelect()'), 'must define populateWorkspaceQuickSelect');
-    assert(scriptJs.includes('populateWorkspaceQuickSelect();'), 'must call populateWorkspaceQuickSelect in openWorkspaceConnectModal');
+test('script.js ensures pairing is blind with zero dropdown population of tenant fleet', () => {
+    assert(!scriptJs.includes('function populateWorkspaceQuickSelect()'), 'must NOT define populateWorkspaceQuickSelect');
+    assert(!scriptJs.includes('populateWorkspaceQuickSelect();'), 'must NOT call populateWorkspaceQuickSelect');
 });
 
 test('script.js handleConnect sets tenant slug and smoothly reloads workspace', () => {
@@ -140,6 +141,30 @@ test('README.md uses perimeter verification across all sections', () => {
     assert(readmeMd.includes('### 📍 True On-Site Verification (GPS Perimeter)'), 'README header must say GPS Perimeter');
     assert(readmeMd.includes("within your office's perimeter"), 'README arrival notification must say perimeter');
     assert(!readmeMd.includes('geofenc'), 'README must not have geofence');
+});
+
+// 4. FAQ Modal Layout & Overflow Spacing Tests
+console.log('\n--- 4. FAQ Modal Layout & Overflow Spacing ---');
+const styleCss = fs.readFileSync(path.join(ROOT, 'style.css'), 'utf8').replace(/\r\n/g, '\n');
+
+test('style.css .faq-content has min-height: 0 to prevent flex blowout', () => {
+    assert(styleCss.includes('.faq-content {\n    overflow-y: auto;\n    flex: 1 1 auto;\n    min-height: 0;'),
+        'faq-content must have min-height: 0');
+});
+
+test('style.css defines .faq-section flex layout to space accordion cards properly', () => {
+    assert(styleCss.includes('.faq-section {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}'),
+        'faq-section must have flex layout and 8px gap');
+});
+
+test('style.css .faq-footer has flex-shrink: 0', () => {
+    assert(styleCss.includes('.faq-footer {\n    flex-shrink: 0;'), 'faq-footer must not shrink');
+});
+
+test('script.js openFaqModal resets active category to location and does not dump all sections on close', () => {
+    assert(scriptJs.includes("filterByCategory(category);") || scriptJs.includes("filterByCategory('location');"),
+        'openFaqModal must filter by initial category');
+    assert(!scriptJs.includes('showAllSections();'), 'showAllSections must not dump all sections on close');
 });
 
 console.log('\n======================================================');

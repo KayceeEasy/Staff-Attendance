@@ -682,27 +682,13 @@
             <div style="margin-bottom: 8px; color: var(--primary); display: flex; justify-content: center;"><i data-lucide="building" size="38"></i></div>
             <h2 style="font-size: 1.3rem; font-weight: 700; margin-bottom: 6px; color: var(--text);" data-i18n="connectWorkspaceTitle">Connect to Your Workspace</h2>
             <p style="font-size: 0.86rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;" data-i18n="connectWorkspaceDesc">
-                Select your organization below or enter your 6-character Workspace Code to switch.
+                Enter your organization's 6-character Workspace Code or open your company's setup link to pair this phone.
             </p>
-            <!-- Quick Workspace Selector for Multi-Tenant Fleets -->
-            <div id="workspace-quick-select-wrap" style="display:none; margin-bottom: 16px; text-align: left;">
-                <label for="workspace-quick-select" style="display:block; font-size:0.75rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Select Company Workspace</label>
-                <div style="position:relative;">
-                    <select id="workspace-quick-select" aria-label="Select registered workspace" style="width: 100%; padding: 11px 12px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 0.92rem; font-weight: 600; cursor:pointer;">
-                        <option value="">-- Choose a Workspace --</option>
-                    </select>
-                </div>
-                <div style="display: flex; align-items: center; margin: 14px 0 10px; color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;">
-                    <div style="flex: 1; height: 1px; background: var(--border);"></div>
-                    <span style="padding: 0 8px; font-weight: 600;">or enter code manually</span>
-                    <div style="flex: 1; height: 1px; background: var(--border);"></div>
-                </div>
-            </div>
             <div style="margin-bottom: 14px;">
                 <input 
                     type="text" 
                     id="workspace-code-input" 
-                    placeholder="e.g. LIFE-26 or ACME-89" 
+                    placeholder="e.g. WKP-482" 
                     aria-label="Enter Workspace Code"
                     maxlength="12"
                     autocomplete="off"
