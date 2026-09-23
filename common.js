@@ -19,6 +19,11 @@ const STORAGE_KEYS = {
 const supabaseUrl = 'https://akhditjeiwjuzvubnacw.supabase.co';
 const supabaseKey = 'sb_publishable_9BkVRtmi-6UG15Va5xNHbw_R7J_hKhi';
 const supabaseClient = (typeof window !== 'undefined' && window.supabase) ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
+if (typeof window !== 'undefined') {
+    window.supabaseUrl = supabaseUrl;
+    window.supabaseKey = supabaseKey;
+    window.supabaseClient = supabaseClient;
+}
 
 /* ---------- Multi-Language Internationalization (i18n) ---------- */
 

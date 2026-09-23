@@ -1,6 +1,13 @@
-const supabaseUrl = (window.APP_CONFIG && window.APP_CONFIG.SUPABASE_URL) || 'https://akhditjeiwjuzvubnacw.supabase.co';
-const supabaseKey = (window.APP_CONFIG && window.APP_CONFIG.SUPABASE_KEY) || 'sb_publishable_9BkVRtmi-6UG15Va5xNHbw_R7J_hKhi';
-const supabaseClient = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
+// Safely obtain Supabase client reference without redeclaring globals
+const hybridSupabaseClient = (typeof window !== 'undefined' && window.supabaseClient)
+    ? window.supabaseClient
+    : ((typeof supabaseClient !== 'undefined')
+        ? supabaseClient
+        : (window.supabase ? window.supabase.createClient(
+            (window.APP_CONFIG && window.APP_CONFIG.SUPABASE_URL) || 'https://akhditjeiwjuzvubnacw.supabase.co',
+            (window.APP_CONFIG && window.APP_CONFIG.SUPABASE_KEY) || 'sb_publishable_9BkVRtmi-6UG15Va5xNHbw_R7J_hKhi'
+          ) : null));
+
 
 const urlParams = new URLSearchParams(window.location.search);
 const activeTenantSlug = (typeof getActiveTenantSlug === 'function' ? getActiveTenantSlug() : null) || urlParams.get('tenant') || 'lifecard';
@@ -55,9 +62,9 @@ async function loadDynamicStaff() {
             tenantStaff = await getTenantStaffList(activeTenantSlug);
         }
 
-        if ((!tenantStaff || !tenantStaff.length) && supabaseClient) {
+        if ((!tenantStaff || !tenantStaff.length) && hybridSupabaseClient) {
             try {
-                let query = supabaseClient.from('staff').select('*');
+                let query = hybridSupabaseClient.from('staff').select('*');
                 if (activeTenantSlug === 'lifecard') {
                     query = query.or('tenant_slug.eq.lifecard,tenant_slug.is.null');
                 } else {
@@ -337,8 +344,8 @@ async function autoSync(targetWeekKey) {
     const dataToSend = JSON.parse(JSON.stringify(currentData));
 
     try {
-        if (supabaseClient) {
-            const { error } = await supabaseClient
+        if (hybridSupabaseClient) {
+            const { error } = await hybridSupabaseClient
                 .from('hybrid_schedules')
                 .upsert({
                     week_key: scopedKey,
@@ -411,7 +418,7 @@ async function loadHistory(updateTable = false) {
     const localHistory = getLocalHistory();
     const backup = getLocalBackup();
 
-    if (!supabaseClient) {
+    if (!hybridSupabaseClient) {
         displayLocalHistoryOnly(container, localHistory, backup, updateTable);
         if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
         return;
@@ -419,7 +426,7 @@ async function loadHistory(updateTable = false) {
 
     try {
         // Query schedules belonging to active tenant
-        const { data: dbData, error } = await supabaseClient
+        const { data: dbData, error } = await hybridSupabaseClient
             .from('hybrid_schedules')
             .select('*')
             .order('timestamp', { ascending: false })
