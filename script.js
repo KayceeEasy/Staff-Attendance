@@ -638,7 +638,6 @@ function initStaffIdentityView() {
     const deptDisplay = document.getElementById('linked-dept-display');
     const staffSelect = document.getElementById('staff-name');
     const searchInput = document.getElementById('staff-search-input');
-    const switchBtn = document.getElementById('switch-identity-btn');
     const bioTriggerBtn = document.getElementById('biometric-auth-trigger');
 
     if (!linkedCard || !unlinkedBox) return;
@@ -685,12 +684,6 @@ function initStaffIdentityView() {
         updateSignInButtonsState();
         updateScheduleBanner(null);
         initSearchableStaffDropdown();
-    }
-
-    // Attach Switch / Change button handler
-    if (switchBtn && !switchBtn.dataset.bound) {
-        switchBtn.dataset.bound = 'true';
-        switchBtn.addEventListener('click', () => handleUnlinkStaff());
     }
 
     // Attach Biometric Trigger button handler
@@ -1002,11 +995,6 @@ function showBiometricEnrollModal(staffId, staffName) {
             showToast('Biometrics skipped. Phone is linked via device identity.', 'info');
         };
     }
-}
-
-function handleUnlinkStaff() {
-    // Device unlinking is strictly restricted to Company Admins only to prevent unauthorized account switching
-    showToast('Device unlinking is restricted. Only your company administrator can reset or transfer your device binding.', 'error');
 }
 
 async function loadStaffDropdown() {

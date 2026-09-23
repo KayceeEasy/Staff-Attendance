@@ -32,9 +32,9 @@ async function runTests() {
     assert(rootRes.body.includes('id="linked-identity-card"'), 'Missing linked-identity-card element');
     assert(rootRes.body.includes('id="unlinked-entry-box"'), 'Missing unlinked-entry-box element');
     assert(rootRes.body.includes('id="staff-search-input"'), 'Missing staff-search-input element');
-    assert(rootRes.body.includes('id="confirm-identity-btn"'), 'Missing confirm-identity-btn element');
-    assert(rootRes.body.includes('id="switch-identity-btn"'), 'Missing switch-identity-btn element');
-    console.log('   ✅ PASS: Zero-exposure UI elements verified!');
+    assert(!rootRes.body.includes('id="switch-identity-btn"'), 'Dead switch-identity-btn element must be removed');
+    assert(rootRes.body.includes('class="device-locked-pill"'), 'Missing device-locked-pill element');
+    console.log('   ✅ PASS: Zero-exposure UI elements verified (dead Change button eliminated)!');
 
     // Test 3: Check Super Admin links scrubbed from public pages
     console.log('3. Testing that Super Admin links are scrubbed from public client pages...');
