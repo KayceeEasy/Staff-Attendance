@@ -1,6 +1,6 @@
 # 🏢 Staff Attendance Cloud
 
-> A smart, secure, and modern digital attendance platform for companies and hybrid teams with GPS geofencing, biometric verification, and anti-proxy device binding.
+> A smart, secure, and modern digital attendance platform for companies and hybrid teams with GPS perimeter verification, biometric authentication, and anti-proxy device binding.
 
 ---
 
@@ -14,7 +14,7 @@ Whether your team is fully on-site or works a modern hybrid schedule, Staff Atte
 
 ## ✨ Key Benefits for Your Organization
 
-### 📍 True On-Site Verification (GPS Geofencing)
+### 📍 True On-Site Verification (GPS Perimeter)
 - Staff can only check in when they are physically within your company's designated office radius.
 - Eliminates proxy check-ins (staff signing in for coworkers) and fraudulent off-site check-ins.
 
@@ -69,7 +69,7 @@ Whether your team is fully on-site or works a modern hybrid schedule, Staff Atte
 ## 📲 Native Mobile Companion App
 
 - Optional native companion app for Android and iOS devices.
-- **Smart Arrival Notifications**: Automatically detects when you arrive within your office's geofence and sends a timely reminder to check in.
+- **Smart Arrival Notifications**: Automatically detects when you arrive within your office's perimeter and sends a timely reminder to check in.
 - **Weekend & Remote Protection**: Notifications are automatically silenced on weekends and on days you are scheduled to work from home or on leave.
 
 ---

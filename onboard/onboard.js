@@ -622,7 +622,7 @@ function showSuccessScreen(tenant) {
     currentWorkspaceCode = code;
 
     document.getElementById('success-company-sub').textContent = 
-        `${tenant.name} (${tenant.slug}) is ready on the ${tenant.plan_tier}. Geofence bound to ${tenant.office_name} (${tenant.radius}m radius).`;
+        `${tenant.name} (${tenant.slug}) is ready on the ${tenant.plan_tier}. Perimeter bound to ${tenant.office_name} (${tenant.radius}m radius).`;
 
     const displayCodeEl = document.getElementById('display-workspace-code');
     if (displayCodeEl) displayCodeEl.textContent = code;

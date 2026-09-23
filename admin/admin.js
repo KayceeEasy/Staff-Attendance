@@ -1189,7 +1189,7 @@ function requestWorkspaceDeletion() {
                     50% OFF for the Next 3 Months
                 </div>
                 <div style="font-size: 0.78rem; color: var(--text-muted);">
-                    Keep all your geofenced attendance logs, hybrid scheduling, and biometric authentication active.
+                    Keep all your perimeter-verified attendance logs, hybrid scheduling, and biometric authentication active.
                 </div>
             </div>
 
@@ -2800,7 +2800,7 @@ function renderAnalytics() {
                     ${pageEvents.map(e => `
                         <div class="logs-row" style="grid-template-columns:1.2fr 1.4fr 2.4fr">
                             <span style="font-size:0.75rem">${escapeHtml(e.time || '')}</span>
-                            <span class="status-pill-small ${e.type.includes('error') || e.type.includes('geofence') || e.type.includes('VIOLATION') ? 'late' : 'synced'}">${escapeHtml(e.type)}</span>
+                            <span class="status-pill-small ${e.type.includes('error') || e.type.includes('geofence') || e.type.includes('perimeter') || e.type.includes('VIOLATION') ? 'late' : 'synced'}">${escapeHtml(e.type)}</span>
                             <span style="font-size:0.75rem;word-break:break-all">${escapeHtml(e.details || '')}</span>
                         </div>
                     `).join('')}
@@ -2934,7 +2934,7 @@ async function loadAnalytics(filterType = null, customFrom = null, customTo = nu
             })
             : [];
 
-        const geofenceEvents = (alertsResponse.ok && (Array.isArray(alertsResponse.alerts) || Array.isArray(alertsResponse.logs)))
+        const perimeterEvents = (alertsResponse.ok && (Array.isArray(alertsResponse.alerts) || Array.isArray(alertsResponse.logs)))
             ? (alertsResponse.alerts || alertsResponse.logs || []).map(a => ({
                 type: 'LOCATION_ALERT',
                 details: `${a.name} attempted ${a.action} from ~${a.distance}m away (outside office radius)`,
@@ -2952,7 +2952,7 @@ async function loadAnalytics(filterType = null, customFrom = null, customTo = nu
             }))
             : [];
 
-        deviceEventsAll = [...clientEvents, ...geofenceEvents, ...auditEvents].sort((a, b) => b.sortValue - a.sortValue);
+        deviceEventsAll = [...clientEvents, ...perimeterEvents, ...auditEvents].sort((a, b) => b.sortValue - a.sortValue);
         deviceEventsPage = 1;
 
         renderAnalytics();
@@ -3145,10 +3145,10 @@ function renderAdminPanel() {
         </div>
         
         <div id="tab-config" class="tab-content">
-            <div class="section-header"><h3>System Configuration</h3><p class="admin-intro">Office location, attendance schedule & geofence settings</p></div>
+            <div class="section-header"><h3>System Configuration</h3><p class="admin-intro">Office location, attendance schedule & perimeter settings</p></div>
             
             <div class="config-section-group">
-                <h4>Office Location & Geofence</h4>
+                <h4>Office Location & Perimeter</h4>
                 <div class="config-cards">
                     <div class="config-card" data-tooltip="Physical GPS latitude coordinate of office premises">
                         <span class="config-icon"><i data-lucide="map-pin" size="18"></i></span>
@@ -3162,8 +3162,8 @@ function renderAdminPanel() {
                     </div>
                     <div class="config-card" data-tooltip="Allowable GPS radius for verified in-person check-ins">
                         <span class="config-icon"><i data-lucide="target" size="18"></i></span>
-                        <div class="config-info"><strong>Geofence Radius</strong><span class="config-value" id="config-radius-current">100 meters</span></div>
-                        <button id="config-radius-btn" class="admin-btn secondary small" type="button" data-tooltip="Edit geofence radius in meters">Edit</button>
+                        <div class="config-info"><strong>Perimeter Radius</strong><span class="config-value" id="config-radius-current">100 meters</span></div>
+                        <button id="config-radius-btn" class="admin-btn secondary small" type="button" data-tooltip="Edit perimeter radius in meters">Edit</button>
                     </div>
                 </div>
             </div>
@@ -3210,7 +3210,7 @@ function renderAdminPanel() {
             </div>
 
             <div class="config-section-group">
-                <h4>Geofence Calibration Tools</h4>
+                <h4>Perimeter Calibration Tools</h4>
                 <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
                     <button id="config-auto-location-btn" class="admin-btn secondary" type="button"><i data-lucide="crosshair" size="14"></i> Set Office to My Current Location</button>
                     <button id="config-test-distance-btn" class="admin-btn secondary" type="button"><i data-lucide="navigation" size="14"></i> Test Current Distance from Office</button>
@@ -3474,7 +3474,7 @@ function renderAdminPanel() {
         try { const res = await callBackend({ mode: 'update-config', key: 'OFFICE_LON', value: r[0], tenantSlug: getActiveAdminTenantSlug() }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-lon-current').textContent = r[0]; } catch (e) { showToast('Server error.', 'error'); }
     });
     document.getElementById('config-radius-btn').addEventListener('click', async () => {
-        const r = await showInlineDialog({ title: 'Geofence Radius (10-5000 meters)', fields: [{ placeholder: 'Meters' }], confirmLabel: 'Update' });
+        const r = await showInlineDialog({ title: 'Perimeter Radius (10-5000 meters)', fields: [{ placeholder: 'Meters' }], confirmLabel: 'Update' });
         if (!r) return;
         try { const res = await callBackend({ mode: 'update-config', key: 'RADIUS_METERS', value: r[0], tenantSlug: getActiveAdminTenantSlug() }); showToast(res.message, res.ok ? 'success' : 'error'); if (res.ok) document.getElementById('config-radius-current').textContent = r[0] + ' meters'; } catch (e) { showToast('Server error.', 'error'); }
     });
@@ -3647,11 +3647,11 @@ function renderAdminPanel() {
                 const dist = R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 
                 const isInside = dist <= radius;
-                const statusMsg = isInside ? 'INSIDE GEOFENCE' : 'OUTSIDE GEOFENCE';
+                const statusMsg = isInside ? 'INSIDE PERIMETER' : 'OUTSIDE PERIMETER';
 
                 showInlineDialog({
                     title: 'Distance Test Results',
-                    message: `Current Position:\nLat: ${curLat.toFixed(6)}, Lon: ${curLon.toFixed(6)}\n\nCalculated Distance: ${dist.toFixed(1)} meters\nGeofence Radius: ${radius} meters\n\nResult: ${statusMsg}`,
+                    message: `Current Position:\nLat: ${curLat.toFixed(6)}, Lon: ${curLon.toFixed(6)}\n\nCalculated Distance: ${dist.toFixed(1)} meters\nPerimeter Radius: ${radius} meters\n\nResult: ${statusMsg}`,
                     fields: [],
                     confirmLabel: 'OK'
                 });

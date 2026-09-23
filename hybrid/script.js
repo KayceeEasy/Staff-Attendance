@@ -119,6 +119,11 @@ function handleSwitchWorkspace() {
         sessionStorage.removeItem(`perimetrr_admin_unlocked_${activeTenantSlug}`);
     }
     activeTenantSlug = '';
+    try {
+        if (window.history && window.history.replaceState) {
+            window.history.replaceState(null, '', window.location.pathname);
+        }
+    } catch (e) {}
     const gate = document.getElementById('hybrid-auth-gate');
     const container = document.querySelector('.container');
     if (gate) gate.style.display = 'flex';

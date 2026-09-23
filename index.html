@@ -4,13 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Staff Attendance Portal | Perimetrr</title>
-    <meta name="description" content="Staff attendance tracking with GPS geofencing. Sign in and sign out at the office." />
+    <meta name="description" content="Staff attendance tracking with GPS perimeter verification. Sign in and sign out at the office." />
     <meta name="theme-color" content="#2563eb" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-status-bar-style" content="default" />
     <meta name="mobile-web-app-title" content="Perimetrr" />
     <meta property="og:title" content="Perimetrr Staff Attendance" />
-    <meta property="og:description" content="Daily attendance tracking for staff with GPS verification and geofence compliance." />
+    <meta property="og:description" content="Daily attendance tracking for staff with GPS verification and perimeter compliance." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://kayceeeasy.github.io/Staff-Attendance/" />
     <meta property="og:image" content="https://kayceeeasy.github.io/Staff-Attendance/image/png/icon-512.png" />
@@ -285,7 +285,7 @@
                             <i data-lucide="chevron-down" size="20" class="faq-chevron"></i>
                         </button>
                         <div class="faq-answer" aria-hidden="true">
-                            <p>The app uses geofencing to ensure you're within the office perimeter. If you're at the office but getting this message:</p>
+                            <p>The app uses GPS perimeter verification to ensure you're within the registered office perimeter. If you're at the office but getting this message:</p>
                             <ul>
                                 <li>Make sure you're inside the building, not in the parking lot</li>
                                 <li>Check that GPS accuracy is high (wait a few moments for GPS to stabilize)</li>
@@ -324,7 +324,7 @@
                             <ul>
                                 <li>You've selected your name from the dropdown</li>
                                 <li>GPS location has been verified</li>
-                                <li>You're within the office geofence</li>
+                                <li>You're within the registered office perimeter</li>
                             </ul>
                             <p>Once both conditions are met, the buttons will activate automatically.</p>
                         </div>
@@ -592,7 +592,7 @@
                         <div class="faq-answer" aria-hidden="true">
                             <p>The system uses multiple layers of verification:</p>
                             <ul>
-                                <li><strong>GPS geofencing:</strong> Ensures you're at the office location</li>
+                                <li><strong>GPS Perimeter Verification:</strong> Ensures you're within the registered workplace perimeter</li>
                                 <li><strong>Device registration:</strong> Prevents unauthorized sign-ins</li>
                                 <li><strong>Time stamps:</strong> Records exact sign in/out times</li>
                                 <li><strong>Server validation:</strong> All entries are verified server-side</li>
@@ -643,7 +643,7 @@
                 <p style="margin-bottom: 10px;">Location data is accessed <strong>strictly at the exact moment of attendance submission</strong> (signing in or signing out) to verify physical office presence. Your real-time movements and location history are <strong>never continuously tracked or recorded</strong>.</p>
 
                 <h4 style="color: var(--primary); margin: 14px 0 4px 0;"><i data-lucide="bell" size="16" style="vertical-align:middle; margin-right:4px;"></i> Passive Arrival Alerts (Mobile App)</h4>
-                <p style="margin-bottom: 10px;">On mobile devices, arrival alerts are handled passively by your phone's operating system (Android/iOS) using circular geofences. The app remains dormant until your phone enters the set office area boundary to deliver a single sign-in prompt notification.</p>
+                <p style="margin-bottom: 10px;">On mobile devices, arrival alerts are handled passively by your phone's operating system (Android/iOS) using circular perimeters. The app remains dormant until your phone enters the set office area perimeter to deliver a single sign-in prompt notification.</p>
 
                 <h4 style="color: var(--primary); margin: 14px 0 4px 0;"><i data-lucide="lock" size="16" style="vertical-align:middle; margin-right:4px;"></i> Device Identification</h4>
                 <p style="margin-bottom: 10px;">A unique cryptographic device identifier (UUID) is stored securely on your browser/device solely to bind your attendance account to your authorized phone and prevent multi-device account misuse.</p>
@@ -656,7 +656,9 @@
                 </div>
             </div>
         </div>
-    <!-- Workspace Connect Modal (Shown on clean '/' if device is unlinked from any workspace) -->
+    </div>
+
+    <!-- Workspace Connect Modal (Shown on clean '/' or when switching company workspaces) -->
     <div id="workspace-connect-overlay" class="faq-overlay" role="dialog" aria-modal="true" style="display:none; z-index: 9999; backdrop-filter: blur(8px); background: rgba(0,0,0,0.75);">
         <div class="faq-modal-content" style="max-width: 440px; text-align: center; padding: 22px 24px; position: relative;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; width: 100%;">
@@ -680,8 +682,22 @@
             <div style="margin-bottom: 8px; color: var(--primary); display: flex; justify-content: center;"><i data-lucide="building" size="38"></i></div>
             <h2 style="font-size: 1.3rem; font-weight: 700; margin-bottom: 6px; color: var(--text);" data-i18n="connectWorkspaceTitle">Connect to Your Workspace</h2>
             <p style="font-size: 0.86rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;" data-i18n="connectWorkspaceDesc">
-                Enter your organization's 6-character Workspace Code or open your company's setup link to pair this phone.
+                Select your organization below or enter your 6-character Workspace Code to switch.
             </p>
+            <!-- Quick Workspace Selector for Multi-Tenant Fleets -->
+            <div id="workspace-quick-select-wrap" style="display:none; margin-bottom: 16px; text-align: left;">
+                <label for="workspace-quick-select" style="display:block; font-size:0.75rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Select Company Workspace</label>
+                <div style="position:relative;">
+                    <select id="workspace-quick-select" aria-label="Select registered workspace" style="width: 100%; padding: 11px 12px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 0.92rem; font-weight: 600; cursor:pointer;">
+                        <option value="">-- Choose a Workspace --</option>
+                    </select>
+                </div>
+                <div style="display: flex; align-items: center; margin: 14px 0 10px; color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;">
+                    <div style="flex: 1; height: 1px; background: var(--border);"></div>
+                    <span style="padding: 0 8px; font-weight: 600;">or enter code manually</span>
+                    <div style="flex: 1; height: 1px; background: var(--border);"></div>
+                </div>
+            </div>
             <div style="margin-bottom: 14px;">
                 <input 
                     type="text" 

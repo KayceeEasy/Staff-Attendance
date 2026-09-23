@@ -1959,6 +1959,42 @@ function initPrivacyModal() {
     });
 }
 
+function populateWorkspaceQuickSelect() {
+    const wrap = document.getElementById('workspace-quick-select-wrap');
+    const select = document.getElementById('workspace-quick-select');
+    if (!wrap || !select) return;
+
+    getTenantRegistry().then(registry => {
+        const activeSlug = safeStorage.getItem('active_tenant_slug') || '';
+        if (Array.isArray(registry) && registry.length > 0) {
+            select.innerHTML = '<option value="">-- Choose a Workspace --</option>' +
+                registry.map(t => {
+                    const isCurrent = (t.slug && t.slug.toLowerCase() === activeSlug.toLowerCase());
+                    const label = `${t.name || t.slug}${isCurrent ? ' (Current)' : ''}${t.workspace_code ? ' [' + t.workspace_code + ']' : ''}`;
+                    return `<option value="${t.slug}">${label}</option>`;
+                }).join('');
+            wrap.style.display = 'block';
+
+            if (!select.dataset.bound) {
+                select.dataset.bound = 'true';
+                select.addEventListener('change', () => {
+                    const chosen = select.value;
+                    if (chosen) {
+                        const input = document.getElementById('workspace-code-input');
+                        if (input) input.value = chosen;
+                        const connectBtn = document.getElementById('connect-workspace-btn');
+                        if (connectBtn) connectBtn.click();
+                    }
+                });
+            }
+        } else {
+            wrap.style.display = 'none';
+        }
+    }).catch(err => {
+        console.warn('Could not populate workspace quick select:', err);
+    });
+}
+
 function openWorkspaceConnectModal() {
     const overlay = document.getElementById('workspace-connect-overlay');
     const input = document.getElementById('workspace-code-input');
@@ -1967,6 +2003,7 @@ function openWorkspaceConnectModal() {
         overlay.style.display = 'flex';
         overlay.classList.add('active');
         if (err) err.style.display = 'none';
+        populateWorkspaceQuickSelect();
         if (input) {
             input.value = '';
             setTimeout(() => input.focus(), 150);
@@ -2064,12 +2101,12 @@ function initWorkspaceConnect() {
             safeStorage.setItem('attendance_tenant_slug', matched.slug);
             stopWorkspaceQrScanner();
             closeWorkspaceConnectModal();
-            showToast(`Connected to ${matched.name}!`, 'success');
+            showToast(`Connected to ${matched.name}! Switching workspace...`, 'success');
 
-            // Apply branding and load identity view
-            await initTenantBranding();
-            initStaffIdentityView();
-            loadStaffDropdown();
+            // Cleanly reload workspace to initialize new office perimeter GPS coordinates, roster, and branding
+            setTimeout(() => {
+                window.location.reload();
+            }, 500);
         } catch (e) {
             if (err) {
                 err.textContent = 'Connection error. Please try again.';

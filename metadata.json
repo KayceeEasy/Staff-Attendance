@@ -1,7 +1,7 @@
 {
   "name": "Perimetrr Presence Verification Portal",
   "version": "3.0.0",
-  "description": "Enterprise multi-tenant presence verification and attendance tracking with perimeter geofencing. Presence you can prove.",
+  "description": "Enterprise multi-tenant presence verification and attendance tracking with perimeter verification. Presence you can prove.",
   "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

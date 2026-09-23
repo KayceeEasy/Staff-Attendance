@@ -150,7 +150,7 @@
                         <tr>
                             <th>Company & Workspace</th>
                             <th>Plan Tier</th>
-                            <th>HQ Office & Geofence</th>
+                            <th>HQ Office & Perimeter</th>
                             <th>Status</th>
                             <th style="min-width: 320px; text-align: right;">Quick Actions / Masquerade</th>
                         </tr>
@@ -319,8 +319,8 @@
 
                         <div class="form-row-2">
                             <div class="form-group">
-                                <label for="master-radius">Geofence Radius (meters)</label>
-                                <input type="number" id="master-radius" aria-label="Geofence Radius in meters" min="10" max="5000" required />
+                                <label for="master-radius">Perimeter Radius (meters)</label>
+                                <input type="number" id="master-radius" aria-label="Perimeter Radius in meters" min="10" max="5000" required />
                             </div>
                             <div class="form-group">
                                 <label for="master-grace-period">Morning Late Grace Period (minutes)</label>
@@ -403,7 +403,7 @@
 
                         <div style="display:flex; justify-content:flex-end; margin-top:16px;">
                             <button type="submit" class="btn-primary" id="btn-save-master-policies">
-                                <i data-lucide="save" size="14"></i> Save Policies & Geofence
+                                <i data-lucide="save" size="14"></i> Save Policies &amp; Perimeter
                             </button>
                         </div>
                     </form>
@@ -526,7 +526,7 @@
                             <i data-lucide="download" size="16"></i> Export Full Workspace Archive
                         </h4>
                         <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:12px;">
-                            Download a comprehensive, portable JSON backup of this company's profile, GPS geofence rules, schedule policies, and full employee roster.
+                            Download a comprehensive, portable JSON backup of this company's profile, GPS perimeter rules, schedule policies, and full employee roster.
                         </p>
                         <button type="button" class="btn-primary small" onclick="handleExportTenantData()">
                             <i data-lucide="download" size="14"></i> Download JSON Archive

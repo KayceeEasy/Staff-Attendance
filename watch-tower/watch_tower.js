@@ -529,11 +529,11 @@ async function handleSaveMasterPolicies(e) {
     });
 
     btn.disabled = false;
-    btn.innerHTML = '<i data-lucide="save" size="14"></i> Save Policies & Geofence';
+    btn.innerHTML = '<i data-lucide="save" size="14"></i> Save Policies &amp; Perimeter';
     if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
 
     if (res.ok) {
-        showToast('Office policies and geofence saved successfully!', 'success');
+        showToast('Office policies and perimeter saved successfully!', 'success');
         await loadFleetData();
     } else {
         showToast(res.message || 'Failed to save policies.', 'error');

@@ -55,7 +55,7 @@ TaskManager.defineTask(BACKGROUND_GEOFENCE_TASK, async ({ data: { eventType, reg
 
       // 1. Weekend Filter: Strictly reject Saturday (6) and Sunday (0)
       if (dayOfWeek === 0 || dayOfWeek === 6) {
-        console.log('Geofence alert suppressed: Weekend (Saturday/Sunday)');
+        console.log('Perimeter alert suppressed: Weekend (Saturday/Sunday)');
         return;
       }
 
@@ -64,7 +64,7 @@ TaskManager.defineTask(BACKGROUND_GEOFENCE_TASK, async ({ data: { eventType, reg
       const currentMinute = now.getMinutes();
       const timeInMinutes = currentHour * 60 + currentMinute;
       if (timeInMinutes < 6 * 60 + 30 || timeInMinutes > 13 * 60) {
-        console.log('Geofence alert suppressed: Outside standard arrival hours');
+        console.log('Perimeter alert suppressed: Outside standard arrival hours');
         return;
       }
 
@@ -79,7 +79,7 @@ TaskManager.defineTask(BACKGROUND_GEOFENCE_TASK, async ({ data: { eventType, reg
           
           // If scheduled as 'Home', 'Virtual', 'Leave', or anything other than 'Office', skip
           if (dayMode && dayMode !== 'office') {
-            console.log(`Geofence alert suppressed: today (${todayName}) is ${dayMode}`);
+            console.log(`Perimeter alert suppressed: today (${todayName}) is ${dayMode}`);
             return;
           }
         } catch(e) {}
@@ -195,9 +195,9 @@ export default function App() {
         notifyOnEnter: true,
         notifyOnExit: false,
       }]);
-      console.log(`Background geofencing active at [${lat}, ${lon}] radius ${radius}m`);
+      console.log(`Background perimeter active at [${lat}, ${lon}] radius ${radius}m`);
     } catch (e) {
-      console.warn('Could not start background geofencing:', e.message);
+      console.warn('Could not start background perimeter:', e.message);
     }
   };
 

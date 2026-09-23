@@ -1,7 +1,7 @@
 {
   "name": "Perimetrr Staff Attendance",
   "short_name": "Perimetrr",
-  "description": "Daily attendance tracking with GPS geofencing. Sign in and sign out at the office.",
+  "description": "Daily attendance tracking with GPS perimeter verification. Sign in and sign out at the office.",
   "id": "perimetrr-staff-attendance-pwa",
   "start_url": "./index.html",
   "scope": "./",
