@@ -2106,10 +2106,12 @@ function initWorkspaceConnect() {
         input.addEventListener('input', () => {
             let val = input.value.toUpperCase().replace(/[^A-Z0-9-]/g, '');
             const clean = val.replace(/-/g, '');
-            if (clean.length === 6 && !val.includes('-')) {
-                val = `${clean.slice(0, 3)}-${clean.slice(3)}`;
+            if (clean.length >= 5 && !val.includes('-')) {
+                val = `${clean.slice(0, 4)}-${clean.slice(4, 8)}`;
+            } else if (clean.length === 6 && !val.includes('-')) {
+                val = `${clean.slice(0, 3)}-${clean.slice(3, 6)}`;
             }
-            input.value = val;
+            input.value = val.slice(0, 9);
         });
     }
 
@@ -2117,7 +2119,7 @@ function initWorkspaceConnect() {
         const raw = (overrideCode && typeof overrideCode === 'string') ? overrideCode.trim() : (input ? input.value.trim() : '');
         if (!raw) {
             if (err) {
-                err.textContent = 'Please enter your 6-character Workspace Code.';
+                err.textContent = 'Please enter your Workspace Code (e.g. ABCD-1234).';
                 err.style.display = 'block';
             }
             return;
@@ -2480,7 +2482,7 @@ function initDeviceTransferModal() {
             requestTransferBtn.textContent = 'Sending request...';
 
             try {
-                await recordAnalyticsEvent('device_transfer_requested', { name: savedName });
+                await requestDeviceTransfer(savedName);
                 if (reqMsg) {
                     reqMsg.style.display = 'block';
                     reqMsg.style.color = '#10b981';

@@ -588,10 +588,17 @@ async function saveStaffMetadataMap(metadata) {
 
 /* ---------- Multi-Tenant Registry & Data Scoping (Commercial v3.0) ---------- */
 
-function generateWorkspaceCode(slug) {
-    const prefix = String(slug || 'WKS').replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase() || 'WKS';
-    const rand = Math.floor(10 + Math.random() * 90);
-    return `${prefix}-${rand}`;
+function generateWorkspaceCode(slugOrName) {
+    let raw = String(slugOrName || 'WKPX').replace(/[^a-zA-Z]/g, '').toUpperCase();
+    if (raw.length < 4) {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        while (raw.length < 4) {
+            raw += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+    }
+    const prefix = raw.substring(0, 4);
+    const randNum = Math.floor(1000 + Math.random() * 9000); // 4 digits: 1000..9999
+    return `${prefix}-${randNum}`;
 }
 
 async function getTenantRegistry() {
@@ -615,11 +622,11 @@ async function getTenantRegistry() {
         }
     } catch (e) {}
 
-    // Ensure all tenants have a valid workspace_code
+    // Ensure all tenants have a valid standardized workspace_code (ABCD-1234 format)
     let updated = false;
     tenants.forEach((t) => {
-        if (!t.workspace_code) {
-            t.workspace_code = generateWorkspaceCode(t.slug);
+        if (!t.workspace_code || !/^[A-Z]{4}-\d{4}$/.test(t.workspace_code)) {
+            t.workspace_code = generateWorkspaceCode(t.slug || t.name);
             updated = true;
         }
     });
@@ -1851,6 +1858,58 @@ async function callBackend(payload, timeoutMs = 20000) {
             case 'reassign-owner': {
                 return { ok: false, allowed: false, message: 'Please see the administrator to reset your device lock.' };
             }
+            case 'request-device-transfer': {
+                const staffName = payload.staffName || 'Employee';
+                const tenantSlug = payload.tenantSlug || 'default';
+                const deviceId = payload.deviceId || '';
+                try {
+                    await supabaseClient.from('device_transfers').insert([{
+                        tenant_slug: tenantSlug,
+                        staff_name: staffName,
+                        device_id: deviceId,
+                        requested_at: new Date().toISOString(),
+                        status: 'pending'
+                    }]);
+                } catch(e) {}
+                
+                try {
+                    const queueKey = `device_transfers_${tenantSlug}`;
+                    const queue = readStoredJson(queueKey, []);
+                    queue.unshift({
+                        id: 'tr_' + Date.now(),
+                        staffName: staffName,
+                        deviceId: deviceId,
+                        requestedAt: new Date().toISOString(),
+                        status: 'pending'
+                    });
+                    writeStoredJson(queueKey, queue.slice(0, 50));
+                } catch (e) {}
+
+                return { ok: true, message: 'Transfer request submitted.' };
+            }
+            case 'get-device-transfers': {
+                const tenantSlug = payload.tenantSlug || 'default';
+                try {
+                    const { data } = await supabaseClient.from('device_transfers').select('*').eq('tenant_slug', tenantSlug).order('requested_at', { ascending: false });
+                    if (Array.isArray(data) && data.length) return { ok: true, transfers: data };
+                } catch(e) {}
+                const queueKey = `device_transfers_${tenantSlug}`;
+                const localTransfers = readStoredJson(queueKey, []);
+                return { ok: true, transfers: localTransfers };
+            }
+            case 'approve-device-transfer': {
+                const tenantSlug = payload.tenantSlug || 'default';
+                const staffName = payload.staffName;
+                try {
+                    await supabaseClient.from('device_transfers').update({ status: 'approved', resolved_at: new Date().toISOString() }).eq('tenant_slug', tenantSlug).eq('staff_name', staffName);
+                    await supabaseClient.from('staff').update({ device_id: null }).eq('tenant_slug', tenantSlug).eq('name', staffName);
+                } catch(e) {}
+                const queueKey = `device_transfers_${tenantSlug}`;
+                let queue = readStoredJson(queueKey, []);
+                queue = queue.map(item => item.staffName === staffName ? { ...item, status: 'approved' } : item);
+                writeStoredJson(queueKey, queue);
+                return { ok: true, message: 'Device transfer approved and reset successfully.' };
+            }
             case 'list-tenants': {
                 const tenants = await getTenantRegistry();
                 return { ok: true, tenants };
@@ -2485,4 +2544,16 @@ function confirmDialog(message, { danger = false, confirmLabel = 'Confirm', titl
 
 function promptDialog(title, placeholder = '', type = 'text') {
     return showInlineDialog({ title, fields: [{ placeholder, type }] }).then((result) => (result ? result[0] : null));
+}
+
+async function requestDeviceTransfer(staffName) {
+    if (!staffName) return { ok: false, message: 'Staff name required.' };
+    const tenantSlug = safeStorage.getItem('active_tenant_slug') || safeStorage.getItem('attendance_tenant_slug') || 'default';
+    const deviceId = getDeviceId();
+    return callBackend({
+        mode: 'request-device-transfer',
+        staffName: staffName,
+        tenantSlug: tenantSlug,
+        deviceId: deviceId
+    });
 }

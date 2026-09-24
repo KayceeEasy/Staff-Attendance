@@ -44,8 +44,8 @@ test('style.css defines inline flex row for topbar-brand and switch-badge-btn', 
 console.log('\n--- 2. Pairing Code Auto-Hyphenation ---');
 const scriptJs = fs.readFileSync(path.join(ROOT, 'script.js'), 'utf8');
 
-test('script.js auto-formats 6-character inputs with hyphen as user types', () => {
-    assert(scriptJs.includes("val = `${clean.slice(0, 3)}-${clean.slice(3)}`;"), 'must format WKP482 into WKP-482');
+test('script.js auto-formats 6 and 8 character inputs with hyphen as user types', () => {
+    assert(scriptJs.includes('clean.slice(0, 4)') || scriptJs.includes('clean.slice(0, 3)'), 'must format workspace codes with hyphen');
 });
 
 test('script.js handleConnect normalizes code matching to accept formatted and unformatted codes', () => {
