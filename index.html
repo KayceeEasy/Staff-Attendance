@@ -770,10 +770,10 @@
     <!-- Biometric Enrollment Modal -->
     <div id="biometric-enroll-modal" class="faq-overlay" role="dialog" aria-modal="true" style="display:none; z-index: 9999; backdrop-filter: blur(8px); background: rgba(0,0,0,0.7);">
         <div class="faq-modal-content" style="max-width: 420px; text-align: center; padding: 26px 20px;">
-            <div style="margin-bottom: 12px; color: #10b981; display: flex; justify-content: center;"><i data-lucide="fingerprint" size="48"></i></div>
-            <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 6px; color: var(--text);">Enable Biometric Check-In?</h2>
-            <p style="font-size: 0.86rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">
-                Use your phone's native <strong>Face ID, Fingerprint, or Windows Hello</strong> for instant, seamless 1-tap daily sign-ins.
+            <div style="margin-bottom: 12px; color: #10b981; display: flex; justify-content: center;"><i data-lucide="shield-check" size="48"></i></div>
+            <h2 id="biometric-modal-title" style="font-size: 1.25rem; font-weight: 700; margin-bottom: 6px; color: var(--text);">Biometric / PIN Verification Required</h2>
+            <p id="biometric-modal-desc" style="font-size: 0.86rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">
+                To securely link this device to your profile, please verify your device's native <strong>Face ID, Fingerprint, or Device PIN</strong>.
             </p>
             <div style="display: flex; flex-direction: column; gap: 10px;">
                 <button 
@@ -781,14 +781,14 @@
                     id="enable-bio-confirm-btn" 
                     style="width: 100%; padding: 12px; background: #10b981; color: #ffffff; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;"
                 >
-                    <i data-lucide="fingerprint" size="18"></i> Enable Biometrics
+                    <i data-lucide="fingerprint" size="18"></i> Verify Biometrics / Device PIN
                 </button>
                 <button 
                     type="button" 
                     id="skip-bio-btn" 
                     style="width: 100%; padding: 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem; cursor: pointer;"
                 >
-                    Skip for Now (Device Only)
+                    Cancel Setup
                 </button>
             </div>
         </div>

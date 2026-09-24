@@ -1049,14 +1049,23 @@ function showBiometricEnrollModal(staffId, staffName, onEnrollSuccess, onEnrollC
     const modal = document.getElementById('biometric-enroll-modal');
     const confirmBtn = document.getElementById('enable-bio-confirm-btn');
     const skipBtn = document.getElementById('skip-bio-btn');
+    const titleEl = document.getElementById('biometric-modal-title');
+    const descEl = document.getElementById('biometric-modal-desc');
     if (!modal) return;
+
+    if (titleEl) {
+        titleEl.textContent = 'Biometric / PIN Verification Required';
+    }
+    if (descEl && staffName) {
+        descEl.innerHTML = `To securely link this device to <strong>${escapeHtml(staffName)}</strong>, please verify your device's native <strong>Face ID, Fingerprint, or Device PIN</strong>.`;
+    }
 
     modal.style.display = 'flex';
 
     if (confirmBtn) {
         confirmBtn.onclick = async () => {
             confirmBtn.disabled = true;
-            confirmBtn.innerHTML = 'Verifying Fingerprint / Face ID / Device PIN...';
+            confirmBtn.innerHTML = 'Verifying Biometrics / PIN...';
             try {
                 const tenant = await getActiveTenant();
                 await enrollBiometrics(staffId, staffName, tenant ? tenant.name : 'Attendance Cloud');
@@ -1064,7 +1073,7 @@ function showBiometricEnrollModal(staffId, staffName, onEnrollSuccess, onEnrollC
                 const bioBadge = document.getElementById('linked-bio-badge');
                 if (bioBadge) bioBadge.style.display = 'inline-block';
                 updateSignInButtonsState();
-                showToast('Biometric / Device PIN verification enabled!', 'success');
+                showToast(`Biometric / PIN verified! Device linked to ${staffName}.`, 'success');
                 if (typeof onEnrollSuccess === 'function') onEnrollSuccess();
             } catch (err) {
                 console.warn('Biometric enrollment error:', err);
@@ -1073,7 +1082,7 @@ function showBiometricEnrollModal(staffId, staffName, onEnrollSuccess, onEnrollC
                 if (typeof onEnrollCancel === 'function') onEnrollCancel();
             } finally {
                 confirmBtn.disabled = false;
-                confirmBtn.innerHTML = '<i data-lucide="fingerprint" size="18"></i> Enable Biometrics / Device PIN';
+                confirmBtn.innerHTML = '<i data-lucide="fingerprint" size="18"></i> Verify Biometrics / Device PIN';
                 if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
             }
         };
