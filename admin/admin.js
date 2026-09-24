@@ -3788,27 +3788,32 @@ async function runForgotPasswordFlow() {
 
 async function checkPendingDeviceTransferRequests() {
     try {
-        const response = await callBackend({ mode: 'list-audit-logs', limit: 20 });
-        if (!response.ok || !Array.isArray(response.events)) return;
+        const slug = getActiveAdminTenantSlug() || (currentTenantConfig ? currentTenantConfig.slug : 'default');
+        const response = await callBackend({ mode: 'get-device-transfers', tenantSlug: slug });
+        if (!response || !response.ok || !Array.isArray(response.transfers)) return;
 
-        const pendingRequests = response.events.filter(e => 
-            (e.type === 'DEVICE_TRANSFER_REQUEST' || e.action === 'DEVICE_TRANSFER_REQUEST') && e.status === 'PENDING'
+        const pendingRequests = response.transfers.filter(e => 
+            e.status === 'pending' || e.status === 'PENDING'
         );
 
         if (!pendingRequests.length) return;
 
         const req = pendingRequests[0];
+        const staffName = req.staff_name || req.staffName || req.name || 'A staff member';
+        const reqTime = req.requested_at || req.requestedAt || req.time || 'Recently';
+
         const dialog = document.createElement('div');
         dialog.className = 'dialog-overlay confirm-dialog-overlay active';
+        dialog.style.zIndex = '10000';
         dialog.innerHTML = `
             <div class="dialog-box confirm-dialog-card" style="max-width: 440px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-color, #f8fafc);"><i data-lucide="smartphone" size="18" style="vertical-align:middle; margin-right:6px;"></i> Device Transfer Request</h3>
-                    <button id="device-req-close-btn" style="background: none; border: none; color: var(--text-muted, #94a3b8); font-size: 1.2rem; cursor: pointer; padding: 2px 6px;">&times;</button>
+                    <h3 style="margin: 0; font-size: 1.1rem; color: var(--text);"><i data-lucide="smartphone" size="18" style="vertical-align:middle; margin-right:6px; color:var(--primary);"></i> Device Transfer Request</h3>
+                    <button id="device-req-close-btn" style="background: none; border: none; color: var(--muted); font-size: 1.2rem; cursor: pointer; padding: 2px 6px;">&times;</button>
                 </div>
-                <p style="font-size: 0.88rem; color: var(--text-color, #cbd5e1); line-height: 1.5; margin-bottom: 16px;">
-                    <strong>${escapeHtml(req.staffName || req.name || 'A staff member')}</strong> has requested to bind their attendance account to a new phone.
-                    <br><small style="color: var(--text-muted, #94a3b8);">Requested at: ${escapeHtml(req.time || 'Recently')}</small>
+                <p style="font-size: 0.88rem; color: var(--text); line-height: 1.5; margin-bottom: 16px;">
+                    <strong>${escapeHtml(staffName)}</strong> has requested to bind their attendance account to a new phone.
+                    <br><small style="color: var(--muted);">Requested at: ${escapeHtml(reqTime)}</small>
                 </p>
                 <div style="display: flex; gap: 10px; justify-content: flex-end;">
                     <button id="device-req-reject-btn" class="admin-btn secondary small danger" type="button"><i data-lucide="x" size="13" style="vertical-align:middle; margin-right:2px;"></i> Reject</button>
@@ -3829,8 +3834,8 @@ async function checkPendingDeviceTransferRequests() {
 
         document.getElementById('device-req-approve-btn').addEventListener('click', async () => {
             try {
-                const res = await handleResetStaffLock(req.staffName || req.name);
-                showToast('Device transfer approved and device unlinked!', 'success');
+                await callBackend({ mode: 'approve-device-transfer', tenantSlug: slug, staffName: staffName });
+                showToast(`Device transfer approved for ${staffName}! Device unlinked.`, 'success');
             } catch (e) {
                 showToast('Could not process approval.', 'error');
             } finally {
