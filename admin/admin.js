@@ -3933,6 +3933,12 @@ let currentTenantConfig = null;
 
 async function initAdminTenantBranding() {
     try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const querySlug = urlParams.get('tenant') || urlParams.get('slug');
+        if (querySlug) {
+            safeSession.setItem('admin_tenant_slug', querySlug);
+            safeStorage.setItem('active_tenant_slug', querySlug);
+        }
         const slug = getActiveAdminTenantSlug();
         currentTenantConfig = slug ? await getTenantConfig(slug) : await getActiveTenant();
         if (currentTenantConfig) {

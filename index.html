@@ -47,14 +47,14 @@
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <div id="main-content" class="card" role="main" aria-label="Staff Attendance App">
         <div class="topbar">
-            <div class="topbar-brand" id="topbar-brand" style="display:flex; align-items:center; gap:10px;">
-                <div id="tenant-logo-wrap" style="display:none; align-items:center;">
-                    <img id="tenant-logo-img" src="" alt="Company Logo" style="max-height:30px; max-width:95px; object-fit:contain; border-radius:4px;" />
+            <div class="topbar-brand" id="topbar-brand">
+                <div id="tenant-logo-wrap" class="tenant-logo-wrap" style="display:none;">
+                    <img id="tenant-logo-img" src="" alt="Company Logo" class="tenant-logo-img" />
                 </div>
-                <div>
-                    <div style="display:flex; align-items:center; gap:6px;">
-                        <span class="eyebrow" id="tenant-brand-name" data-i18n="appName">Staff Attendance</span>
-                        <button id="switch-workspace-btn" type="button" onclick="openWorkspaceConnectModal()" title="Switch Company Workspace" data-tooltip="Pair with a different company workspace" data-i18n="switchWorkspace" style="background:transparent; border:none; color:var(--text-muted); font-size:0.72rem; cursor:pointer; text-decoration:underline;">Switch</button>
+                <div class="tenant-info-wrap">
+                    <div class="tenant-name-row">
+                        <span class="tenant-brand-name" id="tenant-brand-name" data-i18n="appName">Staff Attendance</span>
+                        <button id="switch-workspace-btn" type="button" onclick="openWorkspaceConnectModal()" class="switch-badge-btn" title="Switch Company Workspace" data-tooltip="Pair with a different company workspace" data-i18n="switchWorkspace">Switch</button>
                     </div>
                     <div id="live-clock" class="live-clock" aria-live="polite">--:-- --</div>
                 </div>
@@ -166,7 +166,7 @@
             </div>
             <ul id="log-list" aria-label="Recent attendance records"></ul>
         </div>
-        <a id="admin-access-btn" class="admin-btn admin-link" href="./admin/" target="_self" aria-label="Admin access" data-tooltip="Sign in to the tenant administration console" data-i18n="adminLogin">Admin access</a>
+        <a id="admin-access-btn" class="admin-btn admin-link" href="./admin/index.html" target="_self" aria-label="Admin access" data-tooltip="Sign in to the tenant administration console" data-i18n="adminLogin">Admin access</a>
         <button id="install-btn" class="install-btn" aria-label="Install app as PWA">
             <i data-lucide="download" size="15"></i>
             <span>Install App</span>
@@ -636,23 +636,39 @@
                 </button>
             </div>
             
-            <div style="overflow-y: auto; flex: 1; padding-right: 4px; font-size: 0.88rem; line-height: 1.6; color: var(--text);">
-                <p style="margin-bottom: 12px;">The <strong>Kaycee Tech Staff Attendance System</strong> is built with strict privacy standards to protect company data.</p>
+            <div style="overflow-y: auto; flex: 1 1 auto; min-height: 0; padding-right: 4px; font-size: 0.88rem; line-height: 1.6; color: var(--text); display: flex; flex-direction: column; gap: 12px; -webkit-overflow-scrolling: touch;">
+                <p>The <strong id="privacy-policy-tenant-name">Perimetrr Workspace Platform</strong> is engineered with zero-surveillance architecture to guarantee individual privacy while maintaining authentic workplace presence verification.</p>
 
-                <h4 style="color: var(--primary); margin: 14px 0 4px 0;"><i data-lucide="map-pin" size="16" style="vertical-align:middle; margin-right:4px;"></i> Geolocation Data Usage</h4>
-                <p style="margin-bottom: 10px;">Location data is accessed <strong>strictly at the exact moment of attendance submission</strong> (signing in or signing out) to verify physical office presence. Your real-time movements and location history are <strong>never continuously tracked or recorded</strong>.</p>
+                <div class="policy-card" style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;">
+                    <h4 style="color: var(--primary); margin: 0 0 6px 0; display: flex; align-items: center; gap: 6px; font-size: 0.92rem; font-weight: 700;">
+                        <i data-lucide="map-pin" size="16"></i> 📍 Instantaneous Proximity Verification (Zero Tracking)
+                    </h4>
+                    <p style="margin: 0; font-size: 0.84rem; color: var(--text-2);">GPS coordinates are sampled <strong>strictly at the exact instant</strong> you tap "Sign In" or "Sign Out" to calculate your distance from the authorized office perimeter. Your route history, travel speed, and personal off-duty locations are <strong>never monitored, recorded, or transmitted</strong>.</p>
+                </div>
 
-                <h4 style="color: var(--primary); margin: 14px 0 4px 0;"><i data-lucide="bell" size="16" style="vertical-align:middle; margin-right:4px;"></i> Passive Arrival Alerts (Mobile App)</h4>
-                <p style="margin-bottom: 10px;">On mobile devices, arrival alerts are handled passively by your phone's operating system (Android/iOS) using circular perimeters. The app remains dormant until your phone enters the set office area perimeter to deliver a single sign-in prompt notification.</p>
+                <div class="policy-card" style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;">
+                    <h4 style="color: var(--primary); margin: 0 0 6px 0; display: flex; align-items: center; gap: 6px; font-size: 0.92rem; font-weight: 700;">
+                        <i data-lucide="bell" size="16"></i> 🔔 Passive Perimeter Arrival Reminders
+                    </h4>
+                    <p style="margin: 0; font-size: 0.84rem; color: var(--text-2);">Mobile arrival prompts rely on your phone OS's native low-power perimeter listener. The app stays dormant until your hardware enters the workplace radius to fire a single local notification. Zero location data leaves your device.</p>
+                </div>
 
-                <h4 style="color: var(--primary); margin: 14px 0 4px 0;"><i data-lucide="lock" size="16" style="vertical-align:middle; margin-right:4px;"></i> Device Identification</h4>
-                <p style="margin-bottom: 10px;">A unique cryptographic device identifier (UUID) is stored securely on your browser/device solely to bind your attendance account to your authorized phone and prevent multi-device account misuse.</p>
+                <div class="policy-card" style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;">
+                    <h4 style="color: var(--primary); margin: 0 0 6px 0; display: flex; align-items: center; gap: 6px; font-size: 0.92rem; font-weight: 700;">
+                        <i data-lucide="fingerprint" size="16"></i> 🔐 Hardware-Level Biometric Protection
+                    </h4>
+                    <p style="margin: 0; font-size: 0.84rem; color: var(--text-2);">Touch ID, Face ID, and Device PIN authentication are processed exclusively within your phone's hardware <strong>Secure Enclave</strong> via W3C WebAuthn standards. Biometric traits remain locked inside your device and are never uploaded or accessible to any server.</p>
+                </div>
 
-                <h4 style="color: var(--primary); margin: 14px 0 4px 0;"><i data-lucide="shield" size="16" style="vertical-align:middle; margin-right:4px;"></i> Data Ownership &amp; Rights</h4>
-                <p style="margin-bottom: 10px;">Attendance records (name, timestamp, sign-in status, distance from office) are stored in secure company backend database logs for administrative reporting. You may request history verification via your HR administrator.</p>
+                <div class="policy-card" style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;">
+                    <h4 style="color: var(--primary); margin: 0 0 6px 0; display: flex; align-items: center; gap: 6px; font-size: 0.92rem; font-weight: 700;">
+                        <i data-lucide="shield" size="16"></i> 🏢 Multi-Tenant Data Isolation &amp; Employee Rights
+                    </h4>
+                    <p style="margin: 0; font-size: 0.84rem; color: var(--text-2);">Attendance logs (timestamp, verification method, perimeter status) are encrypted in transit (TLS 1.3) and at rest (AES-256), isolated within your employer's workspace vault. You maintain rights to access and verify your attendance records via HR.</p>
+                </div>
 
-                <div style="margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 0.8rem; text-align: center; color: var(--muted);">
-                    Copyright &copy; 2026 Kaycee Tech. All Rights Reserved.
+                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 0.78rem; text-align: center; color: var(--muted);">
+                    Copyright &copy; 2026 Perimetrr Presence Systems. All Rights Reserved. • Version 3.0
                 </div>
             </div>
         </div>

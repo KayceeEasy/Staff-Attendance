@@ -824,33 +824,91 @@ function initSearchableStaffDropdown() {
         highlightedOptionIndex = -1;
     }
 
-    function selectStaffMember(name) {
-        select.value = name;
-        input.value = name;
-        if (clearBtn) clearBtn.style.display = name ? 'block' : 'none';
-
+    async function selectStaffMember(name) {
+        if (!name) return;
         const staffObj = staffDirectoryData.find(s => s.name && s.name.toLowerCase() === name.toLowerCase());
         const dept = staffObj?.dept || 'Staff Member';
+        const currentLock = getLocalDeviceLockHint();
 
-        safeStorage.setItem('saved_name', name);
-        safeStorage.setItem('saved_dept', dept);
-        setLocalDeviceLockHint(name);
+        // If device is already linked to this exact staff member, confirm selection
+        if (currentLock && currentLock.toLowerCase() === name.toLowerCase()) {
+            select.value = name;
+            input.value = name;
+            if (clearBtn) clearBtn.style.display = 'block';
+            safeStorage.setItem('saved_name', name);
+            safeStorage.setItem('saved_dept', dept);
+            closeDropdown();
+            initStaffIdentityView();
+            updateSignInButtonsState();
+            return;
+        }
 
-        closeDropdown();
-        initStaffIdentityView();
-        updateSignInButtonsState();
-        select.dispatchEvent(new Event('change', { bubbles: true }));
+        // Workflow Step 3: MUST verify biometrics / device PIN BEFORE linking name to device
+        const bioAvail = await isBiometricsAvailable().catch(() => false);
+        const isEnrolled = isBiometricsEnrolled(name);
 
-        showToast(`Selected ${name} (${dept})`, 'success');
+        if (isEnrolled) {
+            showToast(`Verifying Biometrics / PIN for ${name}...`, 'info');
+            const verifyRes = await verifyBiometrics(name);
+            if (verifyRes && verifyRes.success) {
+                select.value = name;
+                input.value = name;
+                if (clearBtn) clearBtn.style.display = 'block';
+                safeStorage.setItem('saved_name', name);
+                safeStorage.setItem('saved_dept', dept);
+                setLocalDeviceLockHint(name);
+                closeDropdown();
+                initStaffIdentityView();
+                updateSignInButtonsState();
+                showToast(`Biometrics verified! Device linked to ${name}.`, 'success');
+            } else {
+                clearSelection();
+                showToast(`Biometric verification failed. Device not linked.`, 'error');
+            }
+            return;
+        }
 
-        // Check if biometric authentication is available on device
-        try {
-            isBiometricsAvailable().then(bioAvail => {
-                if (bioAvail && !isBiometricsEnrolled(name)) {
-                    setTimeout(() => showBiometricEnrollModal(staffObj?.id || name, name), 350);
+        if (bioAvail) {
+            showBiometricEnrollModal(
+                staffObj?.id || name, 
+                name, 
+                () => {
+                    select.value = name;
+                    input.value = name;
+                    if (clearBtn) clearBtn.style.display = 'block';
+                    safeStorage.setItem('saved_name', name);
+                    safeStorage.setItem('saved_dept', dept);
+                    setLocalDeviceLockHint(name);
+                    closeDropdown();
+                    initStaffIdentityView();
+                    updateSignInButtonsState();
+                    showToast(`Device linked to ${name} with biometric protection!`, 'success');
+                },
+                () => {
+                    clearSelection();
+                    showToast(`Biometric / Device PIN verification required to link phone to ${name}.`, 'error');
                 }
-            }).catch(e => {});
-        } catch (e) {}
+            );
+            return;
+        }
+
+        // Fallback for browsers/devices without WebAuthn
+        const confirmBind = window.confirm(`Verify device linking for ${name} (${dept})?\n\nThis will pair this phone to your profile for daily 1-tap sign-ins.`);
+        if (confirmBind) {
+            select.value = name;
+            input.value = name;
+            if (clearBtn) clearBtn.style.display = 'block';
+            safeStorage.setItem('saved_name', name);
+            safeStorage.setItem('saved_dept', dept);
+            setLocalDeviceLockHint(name);
+            closeDropdown();
+            initStaffIdentityView();
+            updateSignInButtonsState();
+            showToast(`Device linked to ${name} (${dept})`, 'success');
+        } else {
+            clearSelection();
+            showToast(`Device linking cancelled.`, 'info');
+        }
     }
 
     function clearSelection() {
@@ -987,7 +1045,7 @@ function populateStaffDropdown(names) {
     initSearchableStaffDropdown();
 }
 
-function showBiometricEnrollModal(staffId, staffName) {
+function showBiometricEnrollModal(staffId, staffName, onEnrollSuccess, onEnrollCancel) {
     const modal = document.getElementById('biometric-enroll-modal');
     const confirmBtn = document.getElementById('enable-bio-confirm-btn');
     const skipBtn = document.getElementById('skip-bio-btn');
@@ -998,7 +1056,7 @@ function showBiometricEnrollModal(staffId, staffName) {
     if (confirmBtn) {
         confirmBtn.onclick = async () => {
             confirmBtn.disabled = true;
-            confirmBtn.innerHTML = 'Scanning Fingerprint / Face ID...';
+            confirmBtn.innerHTML = 'Verifying Fingerprint / Face ID / Device PIN...';
             try {
                 const tenant = await getActiveTenant();
                 await enrollBiometrics(staffId, staffName, tenant ? tenant.name : 'Attendance Cloud');
@@ -1006,14 +1064,16 @@ function showBiometricEnrollModal(staffId, staffName) {
                 const bioBadge = document.getElementById('linked-bio-badge');
                 if (bioBadge) bioBadge.style.display = 'inline-block';
                 updateSignInButtonsState();
-                showToast('Biometric verification enabled! Face ID / Fingerprint ready.', 'success');
+                showToast('Biometric / Device PIN verification enabled!', 'success');
+                if (typeof onEnrollSuccess === 'function') onEnrollSuccess();
             } catch (err) {
                 console.warn('Biometric enrollment error:', err);
                 modal.style.display = 'none';
-                showToast(err.message || 'Biometric enrollment skipped.', 'info');
+                showToast(err.message || 'Biometric / PIN enrollment cancelled.', 'error');
+                if (typeof onEnrollCancel === 'function') onEnrollCancel();
             } finally {
                 confirmBtn.disabled = false;
-                confirmBtn.innerHTML = '<i data-lucide="fingerprint" size="18"></i> Enable Biometrics';
+                confirmBtn.innerHTML = '<i data-lucide="fingerprint" size="18"></i> Enable Biometrics / Device PIN';
                 if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
             }
         };
@@ -1022,7 +1082,8 @@ function showBiometricEnrollModal(staffId, staffName) {
     if (skipBtn) {
         skipBtn.onclick = () => {
             modal.style.display = 'none';
-            showToast('Biometrics skipped. Phone is linked via device identity.', 'info');
+            showToast('Biometric verification cancelled. Device not linked.', 'info');
+            if (typeof onEnrollCancel === 'function') onEnrollCancel();
         };
     }
 }
@@ -1944,6 +2005,12 @@ function initPrivacyModal() {
     if (!privacyLink || !privacyModal) return;
 
     function openPrivacyModal() {
+        const tenantNameEl = document.getElementById('privacy-policy-tenant-name');
+        if (tenantNameEl) {
+            getActiveTenant().then(t => {
+                if (t && t.name) tenantNameEl.textContent = `${t.name} (Perimetrr Workspace)`;
+            }).catch(() => {});
+        }
         privacyModal.classList.add('active');
         privacyModal.setAttribute('aria-hidden', 'false');
         document.body.style.overflow = 'hidden';
@@ -2034,6 +2101,18 @@ function initWorkspaceConnect() {
     const guidanceText = document.getElementById('workspace-qr-guidance-text');
     const retryCamBtn = document.getElementById('retry-qr-camera-btn');
 
+    if (input && !input.dataset.hyphenBound) {
+        input.dataset.hyphenBound = 'true';
+        input.addEventListener('input', () => {
+            let val = input.value.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+            const clean = val.replace(/-/g, '');
+            if (clean.length === 6 && !val.includes('-')) {
+                val = `${clean.slice(0, 3)}-${clean.slice(3)}`;
+            }
+            input.value = val;
+        });
+    }
+
     async function handleConnect(overrideCode) {
         const raw = (overrideCode && typeof overrideCode === 'string') ? overrideCode.trim() : (input ? input.value.trim() : '');
         if (!raw) {
@@ -2050,12 +2129,24 @@ function initWorkspaceConnect() {
         }
 
         try {
-            const code = raw.toUpperCase();
+            const rawUpper = raw.toUpperCase();
+            const cleanInput = rawUpper.replace(/[^A-Z0-9]/g, '');
+            const formattedInput = cleanInput.length === 6 ? `${cleanInput.slice(0, 3)}-${cleanInput.slice(3)}` : rawUpper;
+
             const registry = await getTenantRegistry();
-            const matched = registry.find(t => 
-                (t.workspace_code && t.workspace_code.toUpperCase() === code) ||
-                (t.slug && t.slug.toLowerCase() === raw.toLowerCase())
-            );
+            const matched = registry.find(t => {
+                if (!t) return false;
+                const tCode = (t.workspace_code || t.workspaceCode || '').toUpperCase();
+                const cleanTCode = tCode.replace(/[^A-Z0-9]/g, '');
+                const tSlug = (t.slug || '').toLowerCase();
+
+                return (
+                    tCode === rawUpper ||
+                    tCode === formattedInput ||
+                    (cleanTCode && cleanTCode === cleanInput) ||
+                    (tSlug && tSlug === raw.toLowerCase())
+                );
+            });
 
             if (!matched) {
                 if (err) {
@@ -2274,7 +2365,7 @@ async function initTenantBranding() {
 
         // Carry tenant slug to admin button
         if (adminBtn && tenant.slug) {
-            adminBtn.href = `/tenant/${encodeURIComponent(tenant.slug)}/admin/`;
+            adminBtn.href = `./admin/index.html?tenant=${encodeURIComponent(tenant.slug)}`;
         }
 
         const switchBtn = document.getElementById('switch-workspace-btn');
