@@ -13,7 +13,6 @@ const STAFF = [
     { name: "Julianah", dept: "Investment" },
     { name: "Blessingjoy", dept: "University" },
     { name: "Ikechukwu", dept: "Investment" },
-    { name: "Ayomide", dept: "Investment" },
     { name: "Esther", dept: "University" },
     { name: "Paschaline", dept: "University" },
     { name: "Deborah", dept: "Investment" },
